@@ -3,6 +3,7 @@ import { createDatabase,type Database } from './database';
 import { Repository } from './repository';
 import { localActor } from './auth';
 import { ensureIds,plainText } from './document';
+import { changeSharing } from './sharing';
 
 const url=process.env.HS_TEST_POSTGRES_URL;
 let db:Database,r:Repository;
@@ -27,5 +28,16 @@ describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
     const op={operationId:crypto.randomUUID(),baseVersion:p.version,title:p.title,document:ensureIds({type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Durable'}]}]})};
     const results=await Promise.all([r.save(p.id,localActor,op),r.save(p.id,localActor,op)]);expect(results.filter(x=>x.replayed)).toHaveLength(1);
     await db.close();db=await createDatabase();r=new Repository(db);const saved=await r.get(p.id,localActor);expect(saved.version).toBe(2);expect(saved.document).toEqual(op.document);
+  });
+  it('serializes inherited-grant revocation with an in-flight document commit',async()=>{
+    const editor={id:crypto.randomUUID()};await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[editor.id]);await db.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-aplyd',$1)",[editor.id]);
+    const parent=await r.create(localActor,'Concurrent permissions','space-product'),child=await r.create(localActor,'Inherited child','space-product',parent.id);
+    await changeSharing(r,localActor,parent.id,{operationId:crypto.randomUUID(),expectedVersion:1,recipientId:editor.id,role:'editor'});
+    let signal!:()=>void,release!:()=>void;const entered=new Promise<void>(resolve=>{signal=resolve;}),gate=new Promise<void>(resolve=>{release=resolve;});
+    const paused=new Repository({...db,transaction:fn=>db.transaction(tx=>fn({query:async(sql,values)=>{if(sql.startsWith('UPDATE hs_pages SET title')){signal();await gate;}return tx.query(sql,values);}}))});
+    const edit=paused.save(child.id,editor,{operationId:crypto.randomUUID(),baseVersion:child.version,title:'Committed before revocation',document:child.document});await entered;
+    const revoke=changeSharing(r,localActor,parent.id,{operationId:crypto.randomUUID(),expectedVersion:2,recipientId:editor.id,role:null});
+    try{let blocked=false;for(let i=0;i<100;i++){const result=await db.query<{count:string}>("SELECT count(*) FROM pg_locks WHERE granted=false");if(Number(result.rows[0].count)>0){blocked=true;break;}await new Promise(resolve=>setTimeout(resolve,10));}expect(blocked).toBe(true);}finally{release();}
+    await Promise.all([edit,revoke]);expect((await r.get(child.id,localActor)).title).toBe('Committed before revocation');await expect(r.get(child.id,editor)).rejects.toMatchObject({status:404});await expect(r.save(child.id,editor,{operationId:crypto.randomUUID(),baseVersion:2,title:'Must not commit',document:child.document})).rejects.toMatchObject({status:404});
   });
 });

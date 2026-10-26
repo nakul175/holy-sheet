@@ -53,7 +53,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
   },[pageId,onSaved,checkpoint]);
   saveFunction.current=save;
 
-  function change(patch:Partial<Pick<DocumentPage,"title"|"document">>){const p=current.current;if(!p||p.role==="viewer")return;const next={...p,...patch};setCurrent(next);generation.current++;dirty.current=true;setStatus(latest?"conflict":"unsaved");
+  function change(patch:Partial<Pick<DocumentPage,"title"|"document">>){const p=current.current;if(!p||p.role==="viewer")return;const next={...p,...patch};if(signature(next.title,next.document)===signature(p.title,p.document))return;setCurrent(next);generation.current++;dirty.current=true;setStatus(latest?"conflict":"unsaved");
     if(saveTimer.current)clearTimeout(saveTimer.current);if(draftTimer.current)clearTimeout(draftTimer.current);
     draftTimer.current=setTimeout(()=>void checkpoint(),900);
     if(!latest){saveTimer.current=setTimeout(()=>void saveFunction.current(),750);if(!maxTimer.current)maxTimer.current=setTimeout(()=>{maxTimer.current=null;void saveFunction.current();},5000);}

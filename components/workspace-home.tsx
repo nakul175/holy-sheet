@@ -1,0 +1,12 @@
+'use client';
+import { useEffect,useState } from 'react';
+import { useRouter } from 'next/navigation';
+import type { Space } from '../lib/types';
+import { requestJson } from './editor/use-document-session';
+
+export default function WorkspaceHome(){
+  const router=useRouter(),[spaces,setSpaces]=useState<Space[]>([]),[space,setSpace]=useState(''),[title,setTitle]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  useEffect(()=>{let active=true;void Promise.all([requestJson<{pages:{id:string}[]}>('/api/pages'),requestJson<{spaces:Space[]}>('/api/spaces')]).then(([a,b])=>{if(!active)return;if(a.pages.length){router.replace(`/pages/${encodeURIComponent(a.pages[0].id)}`);return;}setSpaces(b.spaces);setSpace(b.spaces[0]?.id??'');setLoading(false);}).catch(e=>{if(active){setError(e instanceof Error?e.message:'Workspace unavailable');setLoading(false);}});return()=>{active=false;};},[router]);
+  async function create(e:React.FormEvent){e.preventDefault();setBusy(true);setError('');try{const data=await requestJson<{page:{id:string}}>('/api/pages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title,spaceId:space})});router.push(`/pages/${encodeURIComponent(data.page.id)}`);}catch(e){setError(e instanceof Error?e.message:'Could not create the page');setBusy(false);}}
+  return <main className="workspace-home"><div className="brand"><span>✦</span>Holy Sheet</div><section><h1>A clear place for your next idea.</h1>{loading?<p role="status">Opening your workspace…</p>:spaces.length?<form onSubmit={create}><p>Create your first private page in an accessible space.</p><label>Page title<input value={title} maxLength={240} placeholder="Untitled" onChange={e=>setTitle(e.target.value)}/></label><label>Space<select value={space} onChange={e=>setSpace(e.target.value)}>{spaces.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><button disabled={busy||!space}>{busy?'Creating…':'Create page'}</button></form>:<p>Your signed-in account needs access to a Holy Sheet workspace. Ask its owner to add you.</p>}{error&&<p role="alert">{error}</p>}</section></main>;
+}

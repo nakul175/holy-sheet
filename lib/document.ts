@@ -64,6 +64,8 @@ export function validateDocument(input: unknown): RichNode {
       const markKeys = m.type === "link" ? ["href","target","rel","class"] : m.type === "textStyle" ? ["color"] : m.type === "highlight" ? ["color"] : [];
       if (Object.keys(a).some(k => !markKeys.includes(k))) throw new DocumentError("Unsupported style attributes");
       if (m.type === "link" && (!safeUrl(String(a.href)) || (a.target && a.target !== "_blank"))) throw new DocumentError("Unsafe link destination");
+      if(m.type==='link'&&a.class!=null)throw new DocumentError('Unsupported link styling');
+      if(m.type==='link'&&a.rel!==undefined){const tokens=typeof a.rel==='string'?a.rel.split(/\s+/):[];if(!tokens.includes('noopener')||!tokens.includes('noreferrer')||tokens.some(t=>!['noopener','noreferrer','nofollow'].includes(t)))throw new DocumentError('Unsafe link relationship');}
       if (m.type === "textStyle" && a.color && !palette.includes(String(a.color))) throw new DocumentError("Unsupported text colour");
       if (m.type === "highlight" && a.color && !highlights.includes(String(a.color))) throw new DocumentError("Unsupported highlight");
     }

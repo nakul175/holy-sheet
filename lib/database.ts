@@ -1,4 +1,4 @@
-import { readFile, mkdir } from "node:fs/promises";
+import { readFile, mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Pool } from "pg";
 import { PGlite } from "@electric-sql/pglite";
@@ -7,10 +7,12 @@ export type Sql = { query<T = Record<string, unknown>>(sql: string, values?: unk
 export type Database = Sql & { transaction<T>(fn: (tx: Sql) => Promise<T>): Promise<T>; close(): Promise<void> };
 
 export async function createDatabase(dataDir?: string): Promise<Database> {
-  const migration = await readFile(path.join(process.cwd(), "db/002_documents.sql"), "utf8");
+  const directory=path.join(process.cwd(),'db');
+  const files=(await readdir(directory)).filter(name=>/^\d{3}_.+\.sql$/.test(name)&&name>='002_').sort();
+  const migration=(await Promise.all(files.map(name=>readFile(path.join(directory,name),'utf8')))).join('\n');
   if (process.env.DATABASE_URL && !dataDir) {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10, ssl: process.env.PGSSL === "require" ? {rejectUnauthorized:true} : undefined });
-    try { await pool.query(migration); } catch(error) { await pool.end(); throw error; }
+    try { await pool.query(`BEGIN; SELECT pg_advisory_xact_lock(730217439);\n${migration}\nCOMMIT;`); } catch(error) { await pool.end(); throw error; }
     return {
       query: async <T>(sql: string, values?: unknown[]) => ({rows:(await pool.query(sql,values)).rows as T[]}),
       transaction: async <T>(fn: (tx:Sql)=>Promise<T>) => { const c=await pool.connect();try { await c.query("BEGIN");const result=await fn({query:async <R>(sql:string,values?:unknown[])=>({rows:(await c.query(sql,values)).rows as R[]})});await c.query("COMMIT");return result; } catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();} },

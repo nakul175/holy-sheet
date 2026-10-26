@@ -17,11 +17,11 @@ BTF All view currently lists HOLY-1 through HOLY-8. HOLY-9 returns Issue not fou
 ## Story checkpoints
 
 - HOLY-3: local rich-document checkpoint `cae877c`; 48 tests/typecheck/build passed there. Remaining editor and integrated acceptance work documented separately. Continuing bounded editor improvements.
-- HOLY-4: requirements read; inherited sharing, effective access, owner-only management and audit required.
-- HOLY-5: requirements read; sensitive legacy mapping and administration decisions remain delivery gates. Do not infer blanket access to private content or activate central writer.
+- HOLY-4: inherited Viewer/Editor grants, owner-only review/apply/remove UI, current effective access, separate sharing versions/idempotency and append-only audit implemented. Local owner flow granted/revoked a synthetic viewer successfully. Candidate checks: 64 local tests, typecheck/build, and three separate real PostgreSQL tests passed. External suite/SHO and broader accessibility acceptance remain unqualified. Security review also hardened future-issued JWT rejection and link relationship/class validation. Fresh workspace entry no longer assumes a demo welcome page exists.
+- HOLY-5: blocked on recorded sensitive legacy mapping and administration decisions, plus the actual suite adapter. Do not infer blanket access to private content or activate central writer. Proceeding to HOLY-6 while preserving this gate.
 - HOLY-6: requirements read; discussions depend on Commenter and current effective access.
 - HOLY-7: requirements read; history requires 90 days from supersession, editor-only historical access and atomic restore.
 - HOLY-8: requirements read; explicit template-management/asset policies are delivery gates.
-- HOLY-9–17: not listed in current backlog inventory; requirements unresolved.
+- HOLY-9–17: not listed in current backlog inventory; HOLY-9 and HOLY-17 direct URLs both return Issue not found. Requirements unresolved.
 
 No story is marked Done by this ledger. Automated checks and manual BugOff execution remain distinct.
