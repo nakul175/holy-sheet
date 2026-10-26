@@ -1,0 +1,51 @@
+{
+  "name": "holy-sheet-staging",
+  "services": {
+    "database": {
+      "image": "postgres:18-bookworm@sha256:bbf83594798e144bff365a9c191c5d779f181fb3135902064ab8ff11918020fc",
+      "environment": {"POSTGRES_DB":"holy_sheet","POSTGRES_USER":"holy_sheet","POSTGRES_PASSWORD":"${POSTGRES_PASSWORD:?Set a distinct staging PostgreSQL password}"},
+      "volumes":["postgres:/var/lib/postgresql"],
+      "networks":["backend"],
+      "healthcheck":{"test":["CMD-SHELL","pg_isready -U holy_sheet -d holy_sheet"],"interval":"5s","timeout":"5s","retries":20}
+    },
+    "storage": {
+      "image":"quay.io/minio/minio:latest",
+      "command":["server","/data","--console-address",":9001"],
+      "environment":{"MINIO_ROOT_USER":"${MINIO_ROOT_USER:?Set storage administrator}","MINIO_ROOT_PASSWORD":"${MINIO_ROOT_PASSWORD:?Set a distinct storage administrator password}"},
+      "volumes":["objects:/data"],"networks":["backend"]
+    },
+    "storage-init": {
+      "image":"quay.io/minio/mc:latest",
+      "entrypoint":["/bin/sh","/bootstrap.sh"],
+      "environment":{"MINIO_ROOT_USER":"${MINIO_ROOT_USER:?Required}","MINIO_ROOT_PASSWORD":"${MINIO_ROOT_PASSWORD:?Required}","HS_STORAGE_ACCESS_KEY":"${HS_STORAGE_ACCESS_KEY:?Required}","HS_STORAGE_SECRET_KEY":"${HS_STORAGE_SECRET_KEY:?Required}"},
+      "volumes":["./deployment/storage-bootstrap.sh:/bootstrap.sh:ro","./deployment/media-policy.json:/media-policy.json:ro"],
+      "depends_on":{"storage":{"condition":"service_started"}},"networks":["backend"]
+    },
+    "scanner": {
+      "image":"clamav/clamav:stable",
+      "volumes":["signatures:/var/lib/clamav","./deployment/clamd.conf:/etc/clamav/clamd.conf:ro"],
+      "networks":["backend","egress"],
+      "healthcheck":{"test":["CMD","clamdscan","--ping=1"],"interval":"30s","timeout":"10s","retries":15,"start_period":"180s"}
+    },
+    "app": {
+      "build":{"context":"."},
+      "environment": {
+        "NODE_ENV":"production","HS_LOCAL_PREVIEW":"0","HS_RICH_EDITOR_ENABLED":"${HS_RICH_EDITOR_ENABLED:-0}",
+        "HS_ORIGIN":"${HS_ORIGIN:?Set the exact staging HTTPS origin}",
+        "DATABASE_URL":"postgresql://holy_sheet:${POSTGRES_PASSWORD:?Required}@database:5432/holy_sheet",
+        "HS_IDENTITY_ISSUER":"${HS_IDENTITY_ISSUER:?Set the trusted suite issuer}","HS_IDENTITY_JWKS_URL":"${HS_IDENTITY_JWKS_URL:?Set the trusted HTTPS JWKS URL}","HS_IDENTITY_AUDIENCE":"${HS_IDENTITY_AUDIENCE:-holy-sheet}",
+        "HS_RECOVERY_MASTER_KEY":"${HS_RECOVERY_MASTER_KEY:?Set a 32-byte recovery master key}",
+        "HS_MAINTENANCE_TOKEN":"${HS_MAINTENANCE_TOKEN:?Set a separate operator credential}",
+        "S3_ENDPOINT":"http://storage:9000","S3_REGION":"us-east-1","S3_BUCKET":"holy-sheet",
+        "AWS_ACCESS_KEY_ID":"${HS_STORAGE_ACCESS_KEY:?Required}","AWS_SECRET_ACCESS_KEY":"${HS_STORAGE_SECRET_KEY:?Required}",
+        "CLAMAV_HOST":"scanner","CLAMAV_PORT":"3310",
+        "HS_BOOTSTRAP_USER_ID":"${HS_BOOTSTRAP_USER_ID:-}","HS_BOOTSTRAP_USER_NAME":"${HS_BOOTSTRAP_USER_NAME:-Staging owner}"
+      },
+      "ports":["127.0.0.1:3100:3000"],"networks":["backend","egress"],
+      "depends_on":{"database":{"condition":"service_healthy"},"storage-init":{"condition":"service_completed_successfully"},"scanner":{"condition":"service_healthy"}},
+      "read_only":true,"tmpfs":["/tmp","/app/.next/cache"],"security_opt":["no-new-privileges:true"],"cap_drop":["ALL"]
+    }
+  },
+  "volumes":{"postgres":{},"objects":{},"signatures":{}},
+  "networks":{"backend":{"internal":true},"egress":{}}
+}

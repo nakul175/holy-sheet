@@ -1,0 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+import { repository } from "../../../../lib/repository";
+import { maintainStorage } from "../../../../lib/maintenance";
+export async function POST(req:Request){const expected=process.env.HS_MAINTENANCE_TOKEN;if(!expected||expected.length<32)return Response.json({error:'Maintenance is not configured'},{status:503});const token=req.headers.get('authorization')?.replace(/^Bearer /,'')??'';if(!timingSafeEqual(createHash('sha256').update(token).digest(),createHash('sha256').update(expected).digest()))return Response.json({error:'Unauthorized'},{status:401});try{return Response.json(await maintainStorage(await repository()),{headers:{'Cache-Control':'no-store'}});}catch{return Response.json({error:'Maintenance failed; inspect service health without exposing document content'},{status:503});}}
