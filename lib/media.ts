@@ -29,7 +29,7 @@ export async function validateMediaBytes(name:string,bytes:Uint8Array){
   if(['docx','xlsx','pptx'].includes(ext)&&/vbaProject\.bin|EncryptedPackage|EncryptionInfo/i.test(Buffer.from(bytes).toString('latin1')))throw new DocumentError("Macro-enabled or encrypted Office files are not allowed");
   return mime;
 }
-function client(){return new S3Client({region:process.env.S3_REGION??"us-east-1",endpoint:process.env.S3_ENDPOINT,forcePathStyle:true});}
+function client(){const endpoint=process.env.S3_ENDPOINT;if(process.env.NODE_ENV==='production'&&endpoint&&new URL(endpoint).protocol!=='https:')throw new DocumentError('Production object storage requires HTTPS','storage_configuration',503);return new S3Client({region:process.env.S3_REGION??"us-east-1",endpoint,forcePathStyle:true});}
 async function putObject(key:string,bytes:Uint8Array,mime:string){
   if(process.env.S3_BUCKET){await client().send(new PutObjectCommand({Bucket:process.env.S3_BUCKET,Key:key,Body:bytes,ContentType:mime}));return;}
   if(process.env.NODE_ENV==="production")throw new DocumentError("Private object storage is not configured","storage_unavailable",503);
@@ -107,7 +107,7 @@ export async function finishMedia(r:Repository,actor:Actor,id:string,bytes:Uint8
   });
   if(alreadyReady)return {id,state:"ready"};
   await putObject(media.object_key,bytes,mime);
-  try{await scanBytes(bytes);}catch(e){if(e instanceof DocumentError&&e.code==="unsafe_file")await r.db.query("UPDATE hs_media SET state='rejected' WHERE id=$1",[id]);throw e;}
+  try{await scanBytes(bytes);}catch(e){if(e instanceof DocumentError&&e.code==="unsafe_file"){await r.db.query("UPDATE hs_media SET state='rejected' WHERE id=$1",[id]);try{await deleteObject(media.object_key);}catch{/* The rejected tombstone remains unavailable; bounded maintenance retries deletion. */}}throw e;}
   return r.db.transaction(async tx=>{await r.access(tx,media.page_id,actor,true,true);const ready=await tx.query("UPDATE hs_media SET state='ready',scanned_at=now() WHERE id=$1 AND state='processing' RETURNING id",[id]);if(!ready.rows.length)throw new DocumentError("Upload was cancelled","upload_cancelled",409);return {id,state:"ready"};});
 }
 export async function startMedia(r:Repository,actor:Actor,id:string){
