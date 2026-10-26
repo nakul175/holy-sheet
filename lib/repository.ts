@@ -63,10 +63,11 @@ export class Repository {
   async createSpace(actor:Actor,name:string,workspaceId:string) {
     if(!name.trim() || name.length>80)throw new DocumentError("Space name must be between 1 and 80 characters");
     const id=crypto.randomUUID();
-    return this.db.transaction(async tx=>{const m=await tx.query("SELECT user_id FROM hs_members WHERE workspace_id=$1 AND user_id=$2 AND active=true FOR UPDATE",[workspaceId,actor.id]);if(!m.rows.length)throw new DocumentError("Workspace unavailable","not_found",404);await tx.query("INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)",[id,workspaceId,name.trim()]);return {id,workspaceId,name:name.trim()};});
+    return this.db.transaction(async tx=>{await tx.query('SELECT w.id FROM hs_workspaces w JOIN hs_members m ON m.workspace_id=w.id AND m.user_id=$2 AND m.active=true WHERE w.id=$1 FOR UPDATE OF w',[workspaceId,actor.id]);const m=await tx.query("SELECT user_id FROM hs_members WHERE workspace_id=$1 AND user_id=$2 AND active=true FOR UPDATE",[workspaceId,actor.id]);if(!m.rows.length)throw new DocumentError("Workspace unavailable","not_found",404);await tx.query("INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)",[id,workspaceId,name.trim()]);return {id,workspaceId,name:name.trim()};});
   }
   async create(actor:Actor,title:string,spaceId:string,parentId?:string|null) {
     return this.db.transaction(async tx=>{
+      await tx.query('SELECT w.id FROM hs_workspaces w JOIN hs_spaces s ON s.workspace_id=w.id JOIN hs_members m ON m.workspace_id=w.id AND m.user_id=$2 AND m.active=true WHERE s.id=$1 FOR UPDATE OF w',[spaceId,actor.id]);
       const {rows}=await tx.query<{workspace_id:string}>("SELECT s.workspace_id FROM hs_spaces s JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$2 AND m.active=true WHERE s.id=$1 FOR UPDATE OF m",[spaceId,actor.id]);
       if(!rows.length)throw new DocumentError("Space unavailable","not_found",404);
       if(parentId){const parent=await this.access(tx,parentId,actor,true,true);if(parent.space_id!==spaceId)throw new DocumentError("Subpages must use their parent's space");}
