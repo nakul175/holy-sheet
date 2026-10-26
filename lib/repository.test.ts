@@ -46,11 +46,12 @@ describe('request boundaries',()=>{
 describe('bounded media maintenance',()=>{
   it('preserves live references and recovery leases while retrying failed erasures',async()=>{
     const p=await fixture();
-    const insert=async(state='ready')=>{const id=crypto.randomUUID();await db.query("INSERT INTO hs_media(id,page_id,uploader_id,operation_id,name,mime,size,object_key,state,created_at,scanned_at,deleted_at) VALUES($1,$2,$3,$4,'file.txt','text/plain',1,$6,$5,now()-interval '10 days',now()-interval '10 days',now()-interval '8 days')",[id,p.id,owner.id,crypto.randomUUID(),state,id]);return id;};
+    const insert=async(state='ready')=>{const id=crypto.randomUUID();await db.query("INSERT INTO hs_media(id,page_id,uploader_id,operation_id,name,mime,size,object_key,state,created_at,scanned_at,deleted_at) VALUES($1,$2,$3,$4,'file.txt','text/plain',1,$6,$5,now(),now(),now()-interval '8 days')",[id,p.id,owner.id,crypto.randomUUID(),state,id]);return id;};
     const active=await insert(),leased=await insert(),expired=await insert();
     const document=ensureIds({type:'doc',content:[{type:'file',attrs:{attachmentId:active,title:'file.txt'}}]});
     await r.save(p.id,owner,{...operation(p,''),document});
     await draftKey(r,owner,p.id,{id:crypto.randomUUID(),attachmentIds:[leased]});
+    await db.query("UPDATE hs_media SET created_at=now()-interval '10 days',scanned_at=now()-interval '10 days' WHERE page_id=$1",[p.id]);
     const erase=vi.fn(async(_key:string)=>{throw new Error('storage unavailable');});
     const first=await maintainStorage(r,erase);expect(first.failed).toBeGreaterThanOrEqual(1);expect(erase.mock.calls.some(call=>String(call[0])===active)).toBe(false);expect(erase.mock.calls.some(call=>String(call[0])===leased)).toBe(false);
     expect((await db.query<{state:string}>('SELECT state FROM hs_media WHERE id=$1',[expired])).rows[0].state).toBe('purging');

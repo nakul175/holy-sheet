@@ -7,6 +7,8 @@ import { fileTypeFromBuffer } from "file-type";
 import type { Actor } from "./auth";
 import { DocumentError, documentBlocks } from "./document";
 import type { Repository } from "./repository";
+import { canEdit } from './types';
+import { mediaIdPattern,usableMedia } from './media-authorization';
 
 export type MediaRow = {id:string;page_id:string;uploader_id:string;name:string;mime:string;size:string|number;object_key:string;state:string;replaced_id:string|null;created_at:string;sha256:string|null};
 export const mediaPolicy = {images:["png","jpg","jpeg","webp","gif"],files:["pdf","docx","xlsx","pptx","csv","txt","md","markdown"],imageBytes:10_000_000,fileBytes:25_000_000,pageBytes:100_000_000,pageObjects:100};
@@ -79,15 +81,16 @@ export async function reserveMedia(r:Repository,actor:Actor,pageId:string,input:
   });
 }
 export async function mediaAccess(r:Repository,actor:Actor,id:string,edit=false){
-  if(!/^[a-f0-9-]{36}$/.test(id))throw new DocumentError("File unavailable","not_found",404);
+  if(!mediaIdPattern.test(id))throw new DocumentError("File unavailable","not_found",404);
   const {rows}=await r.db.query<MediaRow>("SELECT * FROM hs_media WHERE id=$1",[id]);if(!rows.length)throw new DocumentError("File unavailable","not_found",404);
   const m=rows[0];await r.access(r.db,m.page_id,actor,edit);
   if(edit&&m.uploader_id!==actor.id)throw new DocumentError("File unavailable","not_found",404);
-  if(!edit){const p=await r.get(m.page_id,actor);if(m.state!=="ready"||(!mediaReferences(p.document).has(m.id)&&m.uploader_id!==actor.id))throw new DocumentError("File unavailable","not_found",404);}
+  if(!edit){const p=await r.get(m.page_id,actor),active=mediaReferences(p.document).has(m.id);if(m.state!=='ready'||(!active&&(!canEdit(p.role)||!await usableMedia(r.db,m.page_id,actor.id,m.id,false))))throw new DocumentError("File unavailable","not_found",404);}
   return m;
 }
 export async function finishMedia(r:Repository,actor:Actor,id:string,bytes:Uint8Array){
   const media=await mediaAccess(r,actor,id,true);
+  if(['cancelled','purging','purged'].includes(media.state))throw new DocumentError('Upload was cancelled','upload_cancelled',409);
   const hash=createHash("sha256").update(bytes).digest("hex");
   if(media.state==="ready"){if(media.sha256!==hash)throw new DocumentError("Upload contents differ from the acknowledged file","operation_mismatch",409);return {id,state:"ready"};}
   if(Number(media.size)!==bytes.length)throw new DocumentError("Upload length differs from reserved size");
@@ -99,6 +102,7 @@ export async function finishMedia(r:Repository,actor:Actor,id:string,bytes:Uint8
     if(current.sha256 && current.sha256!==hash)throw new DocumentError("Upload operation contents differ","operation_mismatch",409);
     if(current.state==="ready")return true;
     if(current.state==="rejected")throw new DocumentError("Rejected uploads cannot be activated","unsafe_file",422);
+    if(['cancelled','purging','purged'].includes(current.state))throw new DocumentError('Upload was cancelled','upload_cancelled',409);
     await tx.query("UPDATE hs_media SET state='processing',sha256=$2 WHERE id=$1",[id,hash]);return false;
   });
   if(alreadyReady)return {id,state:"ready"};
@@ -112,5 +116,5 @@ export async function startMedia(r:Repository,actor:Actor,id:string){
 }
 export async function cancelMedia(r:Repository,actor:Actor,id:string){
   const m=await mediaAccess(r,actor,id,true);
-  return r.db.transaction(async tx=>{await r.access(tx,m.page_id,actor,true,true);const p=await r.get(m.page_id,actor,tx);if(mediaReferences(p.document).has(id))throw new DocumentError("This attachment is already part of the saved page","conflict",409);await tx.query("UPDATE hs_media SET state='cancelled',deleted_at=COALESCE(deleted_at,now()) WHERE id=$1 AND state NOT IN ('purged','purging')",[id]);return {id,state:'cancelled'};});
+  return r.db.transaction(async tx=>{await r.access(tx,m.page_id,actor,true,true);const p=await r.get(m.page_id,actor,tx);if(mediaReferences(p.document).has(id))throw new DocumentError("This attachment is already part of the saved page","conflict",409);const history=await tx.query("SELECT rm.media_id FROM hs_revision_media rm JOIN hs_revisions v ON v.page_id=rm.page_id AND v.version=rm.version JOIN hs_pages p ON p.id=v.page_id WHERE rm.media_id=$1 AND p.deleted_at IS NULL AND (p.version=v.version OR v.superseded_at>clock_timestamp()-interval '90 days') LIMIT 1",[id]);if(history.rows.length)throw new DocumentError('This attachment is retained in saved page history','history_retained',409);await tx.query("UPDATE hs_media SET state='cancelled',deleted_at=COALESCE(deleted_at,now()) WHERE id=$1 AND state NOT IN ('purged','purging')",[id]);return {id,state:'cancelled'};});
 }

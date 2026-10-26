@@ -6,6 +6,7 @@ import type { Actor } from "./auth";
 import type { Repository } from "./repository";
 import { mediaReferences } from "./media";
 import { canEdit } from "./types";
+import { mediaIdPattern,usableMedia } from './media-authorization';
 
 async function masterKey(){
   if(process.env.HS_RECOVERY_MASTER_KEY){const b=Buffer.from(process.env.HS_RECOVERY_MASTER_KEY,"base64");if(b.length!==32)throw new DocumentError("Recovery key service is not configured","recovery_unavailable",503);return b;}
@@ -38,5 +39,6 @@ export async function draftKey(r:Repository,actor:Actor,pageId:string,input:{id:
   });
 }
 async function validateReferences(r:Repository,tx:Parameters<Repository["access"]>[0],actor:Actor,pageId:string,ids:string[]){
-  for(const id of ids){if(!/^[a-f0-9-]{36}$/.test(id))throw new DocumentError("Invalid recovery attachment");const m=await tx.query("SELECT id FROM hs_media WHERE id=$1 AND page_id=$2 AND state='ready' AND (uploader_id=$3 OR id IN (SELECT (node->'attrs'->>'attachmentId')::uuid FROM hs_blocks WHERE page_id=$2 AND type IN ('image','file'))) FOR UPDATE",[id,pageId,actor.id]);if(!m.rows.length)throw new DocumentError("Recovery attachment unavailable");}
+  const current=await r.get(pageId,actor,tx),active=mediaReferences(current.document);
+  for(const id of ids){if(!mediaIdPattern.test(id)||!await usableMedia(tx,pageId,actor.id,id,active.has(id)))throw new DocumentError('Recovery attachment unavailable');}
 }

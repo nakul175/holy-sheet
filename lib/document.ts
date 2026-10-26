@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Block } from "./types";
+import { mediaIdPattern,type Block } from './types';
 import { richSchema } from "./rich-schema";
 
 export type RichNode = { type: string; text?: string; attrs?: Record<string, unknown>; marks?: { type: string; attrs?: Record<string, unknown> }[]; content?: RichNode[] };
@@ -53,7 +53,7 @@ export function validateDocument(input: unknown): RichNode {
     if(n.attrs?.align!=null)throw new DocumentError("Unsupported table alignment");
     if (n.type === "codeBlock" && !languages.includes(String(n.attrs?.language ?? "plaintext"))) throw new DocumentError("Unsupported code language");
     if (n.type === "callout" && !["neutral","blue","green","amber","red"].includes(String(n.attrs?.theme ?? "neutral"))) throw new DocumentError("Unsupported callout theme");
-    if (["image","file"].includes(n.type) && (!/^[a-f0-9-]{36}$/.test(String(n.attrs?.attachmentId)) || (n.type === "image" && !String(n.attrs?.alt ?? "").trim()))) throw new DocumentError("Media requires a verified attachment and image alternative text");
+    if (["image","file"].includes(n.type) && (!mediaIdPattern.test(String(n.attrs?.attachmentId)) || (n.type === "image" && !String(n.attrs?.alt ?? "").trim()))) throw new DocumentError("Media requires a verified attachment and image alternative text");
     if (n.attrs?.src && n.attrs.src !== `/api/media/${n.attrs.attachmentId}`) throw new DocumentError("Images must use the protected HS media gateway");
     if (n.type === "pageLink" && !/^[a-zA-Z0-9_-]{1,100}$/.test(String(n.attrs?.pageId))) throw new DocumentError("Invalid page reference");
     if (n.type === "tableOfContents" && parent !== "doc") throw new DocumentError("Table of contents must be at page root");

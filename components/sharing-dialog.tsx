@@ -16,6 +16,7 @@ export default function SharingDialog({pageId,onClose}:{pageId:string;onClose:()
     finally{setBusy(false);}
   }
   return <Dialog title="Share this page" onClose={onClose}><p>Sharing applies to this page and its existing and future subpages. Parent and sibling pages stay outside this grant.</p>
+    <p>Editors can inspect and restore available page history, including earlier content and retained attachments. Viewers and Commenters cannot open page history.</p>
     {notice&&<p role="status">{notice}</p>}{error&&<div role="alert"><p>{error}</p><button disabled={busy} onClick={()=>void load()}>Refresh access and review</button></div>}
     {!state?<p role="status">Loading current access…</p>:<>
       <form onSubmit={e=>{e.preventDefault();const person=state.members.find(m=>m.id===recipient);if(person){setReview({id:person.id,name:person.name,role});setNotice('');}}}><label>Workspace member<select value={recipient} disabled={busy||!!review} required onChange={e=>setRecipient(e.target.value)}><option value="">Choose a person</option>{state.members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label><label>Role<select value={role} disabled={busy||!!review} onChange={e=>setRole(e.target.value as GrantRole)}><option value="viewer">Viewer — read and download</option><option value="commenter">Commenter — discuss without editing content</option><option value="editor">Editor — edit content and create subpages</option></select></label><button disabled={busy||!!review||!recipient}>Review sharing</button></form>
