@@ -6,7 +6,7 @@ import { DocumentError, documentBlocks, fromLegacy, mergeDocuments, plainText, s
 import { listDemoPages } from "./demo-store";
 import type { Page } from "./types";
 
-type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;schema_version:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:"owner"|"editor"|"viewer"};
+type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:"owner"|"editor"|"viewer"};
 export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:"owner"|"editor"|"viewer"};
 export class Repository {
   constructor(public db:Database) {}
@@ -21,13 +21,20 @@ export class Repository {
     });
   }
   async access(tx:Sql, id:string, actor:Actor, edit=false, lock=false):Promise<StoredPage> {
-    // The membership row is locked too, so revocation cannot race commit.
-    const {rows}=await tx.query<StoredPage>(`SELECT p.*,w.name AS workspace_name,s.name AS space_name,parent.title AS parent_title,
-      CASE WHEN p.owner_id=$2 THEN 'owner' WHEN EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$2 OR (p.visibility='space' AND g.subject='space')) AND g.role='editor') THEN 'editor' ELSE 'viewer' END AS role
+    // Serialize permission changes and document mutations within the workspace. A source grant
+    // cannot be revoked between an inherited-access check and the document commit.
+    if(lock)await tx.query(`SELECT w.id FROM hs_workspaces w JOIN hs_pages p ON p.workspace_id=w.id
+      JOIN hs_members m ON m.workspace_id=w.id AND m.user_id=$2 AND m.active=true WHERE p.id=$1 FOR UPDATE OF w`,[id,actor.id]);
+    const {rows}=await tx.query<StoredPage>(`WITH RECURSIVE ancestors AS (
+      SELECT id,parent_id,workspace_id,visibility,owner_id,ARRAY[id] AS path FROM hs_pages WHERE id=$1 AND deleted_at IS NULL
+      UNION ALL SELECT p.id,p.parent_id,p.workspace_id,p.visibility,p.owner_id,a.path||p.id FROM hs_pages p JOIN ancestors a ON p.id=a.parent_id AND p.workspace_id=a.workspace_id
+      WHERE p.deleted_at IS NULL AND NOT p.id=ANY(a.path) AND cardinality(a.path)<100
+    ) SELECT p.*,w.name AS workspace_name,s.name AS space_name,parent.title AS parent_title,
+      CASE WHEN p.owner_id=$2 THEN 'owner' WHEN EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.role='editor') THEN 'editor' ELSE 'viewer' END AS role
       FROM hs_pages p JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
       JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$2 AND m.active=true
       LEFT JOIN hs_pages parent ON parent.id=p.parent_id AND parent.owner_id=$2
-      WHERE p.id=$1 AND p.deleted_at IS NULL AND (p.owner_id=$2 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$2 OR (p.visibility='space' AND g.subject='space')))) ${lock ? "FOR UPDATE OF p,m" : ""}`,[id,actor.id]);
+      WHERE p.id=$1 AND p.deleted_at IS NULL AND EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.subject IS NOT NULL) ${lock ? "FOR UPDATE OF p,m" : ""}`,[id,actor.id]);
     if(!rows.length) throw new DocumentError("Page is restricted or unavailable","not_found",404);
     if(edit && rows[0].role==="viewer") throw new DocumentError("This page is read only","read_only",403);
     return rows[0];
@@ -39,8 +46,12 @@ export class Repository {
     return {id:p.id,workspaceId:p.workspace_id,workspaceName:p.workspace_name,spaceId:p.space_id,spaceName:p.space_name,parentPageId:p.parent_id,parentTitle:p.parent_title,title:p.title,visibility:p.visibility,version:p.version,updatedAt:new Date(p.updated_at).toISOString(),schemaVersion:p.schema_version,role:p.role,document,blocks:(document.content ?? []).map((n,i)=>({id:String(n.attrs?.id),pageId:id,parentBlockId:null,type:n.type==="heading"?"heading":"paragraph",text:plainText(n),position:i}))};
   }
   async list(actor:Actor) {
-    const {rows}=await this.db.query<{id:string}>("SELECT p.id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true WHERE p.deleted_at IS NULL AND (p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space')))) ORDER BY p.updated_at DESC",[actor.id]);
-    return Promise.all(rows.map(r=>this.get(r.id,actor)));
+    const {rows}=await this.db.query<{id:string}>(`WITH RECURSIVE permitted AS (
+      SELECT p.id,p.workspace_id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
+      WHERE p.deleted_at IS NULL AND (p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
+      UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN permitted p ON c.parent_id=p.id AND c.workspace_id=p.workspace_id WHERE c.deleted_at IS NULL
+    ) SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.id ORDER BY p.updated_at DESC,p.id`,[actor.id]);
+    const pages=await Promise.all(rows.map(async row=>{try{return await this.get(row.id,actor);}catch(e){if(e instanceof DocumentError&&e.status===404)return null;throw e;}}));return pages.filter((p):p is DocumentPage=>p!==null);
   }
   async spaces(actor:Actor) {
     const {rows}=await this.db.query<{id:string;workspaceId:string;name:string}>(`SELECT s.id,s.workspace_id AS "workspaceId",s.name FROM hs_spaces s JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$1 AND m.active=true ORDER BY s.name`,[actor.id]);return rows;
@@ -97,6 +108,11 @@ export class Repository {
         if(!mediaIds.has(media.rows[0].id)){mediaIds.add(media.rows[0].id);mediaBytes+=Number(media.rows[0].size);}
       }
       if(mediaIds.size>100||mediaBytes>100_000_000)throw new DocumentError("Active page upload allowance exceeded; your draft is retained","quota_exceeded",422);
+      const current=await this.get(id,actor,tx);
+      if(nextTitle===p.title&&stableStringify(next)===stableStringify(current.document)){
+        await tx.query('INSERT INTO hs_operations(page_id,operation_id,actor_id,request_hash,version) VALUES($1,$2,$3,$4,$5)',[id,input.operationId,actor.id,hash,p.version]);
+        return {page:current,acknowledgedOperationId:input.operationId,committedVersion:p.version,replayed:false,merged};
+      }
       const version=p.version+1;
       await this.writeDocument(tx,id,next,version,nextTitle);
       await tx.query("UPDATE hs_media m SET deleted_at=CASE WHEN EXISTS(SELECT 1 FROM hs_blocks b WHERE b.page_id=$1 AND b.type IN ('image','file') AND b.node->'attrs'->>'attachmentId'=m.id::text) THEN NULL ELSE COALESCE(m.deleted_at,now()) END WHERE m.page_id=$1 AND m.state='ready'",[id]);

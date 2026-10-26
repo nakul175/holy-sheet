@@ -235,3 +235,21 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
   .editor-dialog { padding:18px; max-height:90dvh; }
   .conflict-versions { grid-template-columns:1fr; }
 }
+.page-access-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 20px; }
+.page-access-actions button,.sharing-list button { min-height:44px; border:1px solid var(--line); border-radius:8px; background:white; padding:8px 12px; }
+.page-access-actions span { color:var(--muted); font-size:12px; }
+.sharing-review { margin:20px 0; padding:16px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+.sharing-list { padding:0; list-style:none; }
+.sharing-list li { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:12px 0; border-bottom:1px solid var(--line); }
+.sharing-list li>span { flex:1 1 180px; }
+.sharing-list small { flex-basis:100%; color:var(--muted); }
+.editor-dialog form>button { min-height:44px; padding:9px 14px; border:1px solid var(--ink); border-radius:9px; background:var(--ink); color:white; font-size:13px; font-weight:550; }
+.editor-dialog p { font-size:14px; line-height:1.5; }
+.editor-dialog h3 { font-size:15px; letter-spacing:-.015em; margin-top:24px; }
+.workspace-home { max-width:740px; margin:48px auto; padding:24px; }
+.workspace-home section { margin-top:80px; }
+.workspace-home h1 { font-size:clamp(32px,5vw,50px); letter-spacing:-.04em; line-height:1.1; }
+.workspace-home form { display:grid; gap:20px; max-width:420px; }
+.workspace-home label { display:grid; gap:8px; font-size:13px; color:var(--muted); }
+.workspace-home input,.workspace-home select { width:100%; min-height:44px; border:1px solid var(--line); border-radius:9px; padding:10px; background:white; }
+.workspace-home button { min-height:44px; border:0; border-radius:9px; padding:12px; background:var(--ink); color:white; }

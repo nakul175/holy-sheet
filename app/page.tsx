@@ -1,3 +1,2 @@
-import { redirect } from "next/navigation";
-
-export default function Home() { redirect("/pages/welcome"); }
+import WorkspaceHome from '../components/workspace-home';
+export default function Home(){return <WorkspaceHome/>;}

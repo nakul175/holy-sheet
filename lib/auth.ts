@@ -1,9 +1,14 @@
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { DocumentError } from "./document";
 
 export type Actor = { id: string; name?: string };
 export const localActor: Actor = {id:"00000000-0000-4000-8000-000000000001",name:"Your workspace"};
 const keys = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+export async function verifyIdentityToken(token:string,keyset:JWTVerifyGetKey,issuer:string,audience:string):Promise<Actor>{
+  const {payload}=await jwtVerify(token,keyset,{issuer,audience,algorithms:['RS256','ES256'],requiredClaims:['sub','exp','iat'],maxTokenAge:'1h',clockTolerance:5});
+  if(!payload.sub||payload.sub.length>200||payload.exp!-Number(payload.iat)>3600||payload.exp!<=Number(payload.iat))throw new Error('Invalid session');
+  return {id:payload.sub};
+}
 export function localPreview(request: Request) {
   const host=request.headers.get("host")??new URL(request.url).host;
   return process.env.NODE_ENV !== "production" && process.env.HS_LOCAL_PREVIEW !== "0" && /^(localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/.test(host) && ["localhost","127.0.0.1","[::1]"].includes(new URL(request.url).hostname);
@@ -25,9 +30,7 @@ export async function authenticate(request: Request): Promise<Actor> {
   if(!token) throw new DocumentError("Sign in to open this page", "authentication_required",401);
   try {
     let keyset=keys.get(jwks);if(!keyset){keyset=createRemoteJWKSet(new URL(jwks));keys.set(jwks,keyset);}
-    const {payload}=await jwtVerify(token,keyset,{issuer,audience:process.env.HS_IDENTITY_AUDIENCE ?? "holy-sheet",algorithms:["RS256","ES256"],requiredClaims:["sub","exp","iat"]});
-    if(!payload.sub || payload.exp! - Number(payload.iat) > 3600) throw new Error("Invalid session");
-    return {id:payload.sub};
+    return await verifyIdentityToken(token,keyset,issuer,process.env.HS_IDENTITY_AUDIENCE??'holy-sheet');
   } catch { throw new DocumentError("Session is invalid or expired", "authentication_required",401); }
 }
 
