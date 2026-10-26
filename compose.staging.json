@@ -2,7 +2,7 @@
   "name": "holy-sheet-staging",
   "services": {
     "database": {
-      "image": "postgres:18-bookworm",
+      "image": "postgres:18-bookworm@sha256:bbf83594798e144bff365a9c191c5d779f181fb3135902064ab8ff11918020fc",
       "environment": {"POSTGRES_DB":"holy_sheet","POSTGRES_USER":"holy_sheet","POSTGRES_PASSWORD":"${POSTGRES_PASSWORD:?Set a distinct staging PostgreSQL password}"},
       "volumes":["postgres:/var/lib/postgresql"],
       "networks":["backend"],

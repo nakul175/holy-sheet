@@ -9,6 +9,20 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-bookworm@sha256:bbf83594798e144bff365a9c191c5d779f181fb3135902064ab8ff11918020fc
+        env:
+          POSTGRES_DB: holy_sheet_acceptance
+          POSTGRES_USER: holy_sheet_acceptance
+          POSTGRES_PASSWORD: ephemeral-ci-acceptance-only
+        ports:
+          - 55493:5432
+        options: >-
+          --health-cmd "pg_isready -U holy_sheet_acceptance -d holy_sheet_acceptance"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      HS_TEST_POSTGRES_URL: postgresql://holy_sheet_acceptance:ephemeral-ci-acceptance-only@127.0.0.1:55493/holy_sheet_acceptance
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

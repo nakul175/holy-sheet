@@ -10,7 +10,7 @@ export async function createDatabase(dataDir?: string): Promise<Database> {
   const migration = await readFile(path.join(process.cwd(), "db/002_documents.sql"), "utf8");
   if (process.env.DATABASE_URL && !dataDir) {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10, ssl: process.env.PGSSL === "require" ? {rejectUnauthorized:true} : undefined });
-    await pool.query(migration);
+    try { await pool.query(migration); } catch(error) { await pool.end(); throw error; }
     return {
       query: async <T>(sql: string, values?: unknown[]) => ({rows:(await pool.query(sql,values)).rows as T[]}),
       transaction: async <T>(fn: (tx:Sql)=>Promise<T>) => { const c=await pool.connect();try { await c.query("BEGIN");const result=await fn({query:async <R>(sql:string,values?:unknown[])=>({rows:(await c.query(sql,values)).rows as R[]})});await c.query("COMMIT");return result; } catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();} },
