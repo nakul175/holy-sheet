@@ -1,4 +1,8 @@
 export const blockTypes = ["paragraph", "heading", "bullet", "number", "checklist"] as const;
+export type PageRole='owner'|'editor'|'commenter'|'viewer';
+export type GrantRole=Exclude<PageRole,'owner'>;
+export const canEdit=(role:string)=>role==='owner'||role==='editor';
+export const canComment=(role:string)=>canEdit(role)||role==='commenter';
 export type BlockType = (typeof blockTypes)[number];
 
 export type Block = {
