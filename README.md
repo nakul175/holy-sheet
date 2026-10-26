@@ -1,6 +1,6 @@
 # Holy Sheet
 
-Standalone document pages for the Aplyd productivity suite. This first vertical slice implements **HOLY-1 document pages** and **HOLY-2 search**.
+Standalone document pages for the Aplyd productivity suite. HOLY-1 pages and HOLY-2 search are on main. This branch develops HOLY-3 rich documents and is **not release qualified yet**.
 
 ## Included
 
@@ -11,7 +11,7 @@ Standalone document pages for the Aplyd productivity suite. This first vertical 
 - Permanent page URLs (`/pages/:id`)
 - `Cmd/Ctrl+K` full-text search with phrase/prefix matching, space filter, previews, ranking, and keyboard navigation
 - PostgreSQL relational schema with JSON block content and search indexes
-- Local zero-setup demo store for development
+- Durable embedded PostgreSQL for local development
 
 ## Run locally
 
@@ -24,10 +24,14 @@ Open `http://localhost:3000`. Run `npm test`, `npm run typecheck`, and `npm run 
 
 ## Persistence and identity
 
-The checked-in schema at `db/001_initial.sql` is the production data model. The UI currently uses the in-process demo repository so it can be evaluated without services; it resets when the server restarts. Before deployment, connect the API handlers to PostgreSQL and the suite identity provider. Every page read and search query must include a membership/owner/grant predicate—indexes accelerate results but never grant access.
+`db/002_documents.sql` adds the rich-document schema. Production requires PostgreSQL through `DATABASE_URL`, trusted suite JWT configuration, a recovery master key, private storage and a malware scanner. Local loopback development uses a preview identity and durable PGlite at `.holy-sheet/postgres`. Preview identity and filesystem fallbacks are disabled in production. Page reads, writes, search, references, recovery and media enforce current membership and page grants. Uploads remain unavailable until validated and scanned.
+
+The production feature flag defaults off. See [staging preparation](deployment/STAGING.md) and the [implementation checkpoint](deployment/IMPLEMENTATION-STATUS.md) for setup, missing behaviors and release gates. No staging deployment has been performed.
 
 Pages are private by default. `version` is used for optimistic concurrency: a stale writer receives HTTP 409 instead of overwriting newer content.
 
 ## SHO integration contract
 
 SHO can launch the same create-page flow with an optional source task ID, then retain the returned Holy Sheet page ID and permanent URL. The page always belongs to one selected Holy Sheet workspace and space; users may create a new space during the flow. SHO does not own or duplicate document content.
+
+`/embed/pages/:id` renders the same rich editor component with reduced navigation. This is an integration surface; the actual SHO host and suite login adapter still require integration and qualification.

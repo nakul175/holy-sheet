@@ -1,0 +1,109 @@
+import { createHash } from "node:crypto";
+import { database, type Database, type Sql } from "./database";
+import type { Actor } from "./auth";
+import { localActor } from "./auth";
+import { DocumentError, documentBlocks, fromLegacy, mergeDocuments, plainText, schemaVersion, stableStringify, validateDocument, type RichNode } from "./document";
+import { listDemoPages } from "./demo-store";
+import type { Page } from "./types";
+
+type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;schema_version:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:"owner"|"editor"|"viewer"};
+export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:"owner"|"editor"|"viewer"};
+export class Repository {
+  constructor(public db:Database) {}
+  async seedLocal() {
+    await this.db.transaction(async tx=>{
+      await tx.query("INSERT INTO hs_users(id,name) VALUES($1,$2) ON CONFLICT DO NOTHING",[localActor.id,localActor.name]);
+      await tx.query("INSERT INTO hs_workspaces(id,name) VALUES('ws-aplyd','Aplyd') ON CONFLICT DO NOTHING");
+      await tx.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-aplyd',$1) ON CONFLICT DO NOTHING",[localActor.id]);
+      await tx.query("INSERT INTO hs_spaces(id,workspace_id,name) VALUES('space-private','ws-aplyd','My pages'),('space-product','ws-aplyd','Product') ON CONFLICT DO NOTHING");
+      const {rows}=await tx.query("SELECT id FROM hs_pages WHERE id='welcome'");
+      if(!rows.length){const p=listDemoPages().find(p=>p.id==="welcome")!;await tx.query("INSERT INTO hs_pages(id,workspace_id,space_id,owner_id,title) VALUES($1,$2,$3,$4,$5)",[p.id,p.workspaceId,p.spaceId,localActor.id,p.title]);await this.writeDocument(tx,p.id,fromLegacy(p.blocks),1,p.title);}
+    });
+  }
+  async access(tx:Sql, id:string, actor:Actor, edit=false, lock=false):Promise<StoredPage> {
+    // The membership row is locked too, so revocation cannot race commit.
+    const {rows}=await tx.query<StoredPage>(`SELECT p.*,w.name AS workspace_name,s.name AS space_name,parent.title AS parent_title,
+      CASE WHEN p.owner_id=$2 THEN 'owner' WHEN EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$2 OR (p.visibility='space' AND g.subject='space')) AND g.role='editor') THEN 'editor' ELSE 'viewer' END AS role
+      FROM hs_pages p JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
+      JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$2 AND m.active=true
+      LEFT JOIN hs_pages parent ON parent.id=p.parent_id AND parent.owner_id=$2
+      WHERE p.id=$1 AND p.deleted_at IS NULL AND (p.owner_id=$2 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$2 OR (p.visibility='space' AND g.subject='space')))) ${lock ? "FOR UPDATE OF p,m" : ""}`,[id,actor.id]);
+    if(!rows.length) throw new DocumentError("Page is restricted or unavailable","not_found",404);
+    if(edit && rows[0].role==="viewer") throw new DocumentError("This page is read only","read_only",403);
+    return rows[0];
+  }
+  async get(id:string,actor:Actor,tx:Sql=this.db):Promise<DocumentPage> {
+    const p=await this.access(tx,id,actor);
+    const {rows}=await tx.query<{node:RichNode}>("SELECT node FROM hs_blocks WHERE page_id=$1 AND parent_id IS NULL ORDER BY position",[id]);
+    const document:RichNode={type:"doc",content:rows.map(r=>r.node)};
+    return {id:p.id,workspaceId:p.workspace_id,workspaceName:p.workspace_name,spaceId:p.space_id,spaceName:p.space_name,parentPageId:p.parent_id,parentTitle:p.parent_title,title:p.title,visibility:p.visibility,version:p.version,updatedAt:new Date(p.updated_at).toISOString(),schemaVersion:p.schema_version,role:p.role,document,blocks:(document.content ?? []).map((n,i)=>({id:String(n.attrs?.id),pageId:id,parentBlockId:null,type:n.type==="heading"?"heading":"paragraph",text:plainText(n),position:i}))};
+  }
+  async list(actor:Actor) {
+    const {rows}=await this.db.query<{id:string}>("SELECT p.id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true WHERE p.deleted_at IS NULL AND (p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space')))) ORDER BY p.updated_at DESC",[actor.id]);
+    return Promise.all(rows.map(r=>this.get(r.id,actor)));
+  }
+  async spaces(actor:Actor) {
+    const {rows}=await this.db.query<{id:string;workspaceId:string;name:string}>(`SELECT s.id,s.workspace_id AS "workspaceId",s.name FROM hs_spaces s JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$1 AND m.active=true ORDER BY s.name`,[actor.id]);return rows;
+  }
+  async createSpace(actor:Actor,name:string,workspaceId:string) {
+    if(!name.trim() || name.length>80)throw new DocumentError("Space name must be between 1 and 80 characters");
+    const id=crypto.randomUUID();
+    return this.db.transaction(async tx=>{const m=await tx.query("SELECT user_id FROM hs_members WHERE workspace_id=$1 AND user_id=$2 AND active=true FOR UPDATE",[workspaceId,actor.id]);if(!m.rows.length)throw new DocumentError("Workspace unavailable","not_found",404);await tx.query("INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)",[id,workspaceId,name.trim()]);return {id,workspaceId,name:name.trim()};});
+  }
+  async create(actor:Actor,title:string,spaceId:string,parentId?:string|null) {
+    return this.db.transaction(async tx=>{
+      const {rows}=await tx.query<{workspace_id:string}>("SELECT s.workspace_id FROM hs_spaces s JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$2 AND m.active=true WHERE s.id=$1 FOR UPDATE OF m",[spaceId,actor.id]);
+      if(!rows.length)throw new DocumentError("Space unavailable","not_found",404);
+      if(parentId){const parent=await this.access(tx,parentId,actor,true,true);if(parent.space_id!==spaceId)throw new DocumentError("Subpages must use their parent's space");}
+      const id=crypto.randomUUID(), actualTitle=title.trim()||"Untitled";
+      if(actualTitle.length>240)throw new DocumentError("Title is too long");
+      await tx.query("INSERT INTO hs_pages(id,workspace_id,space_id,parent_id,owner_id,title) VALUES($1,$2,$3,$4,$5,$6)",[id,rows[0].workspace_id,spaceId,parentId??null,actor.id,actualTitle]);
+      await this.writeDocument(tx,id,fromLegacy([]),1,actualTitle);
+      return this.get(id,actor,tx);
+    });
+  }
+  async writeDocument(tx:Sql,id:string,document:RichNode,version:number,title:string) {
+    const rows=documentBlocks(document);
+    const previous=await tx.query<{id:string;version:number;node:RichNode}>("SELECT id,version,node FROM hs_blocks WHERE page_id=$1",[id]);
+    const byId=new Map(previous.rows.map(b=>[b.id,b]));
+    const payload=rows.map(b=>{const old=byId.get(b.id);return {id:b.id,parent_id:b.parentId,position:b.position,type:b.type,node:b.node,version:old?old.version+(stableStringify(old.node)===stableStringify(b.node)?0:1):1};});
+    // Retain only current stable IDs for this page. Cross-page ID reuse fails atomically.
+    await tx.query("DELETE FROM hs_blocks WHERE page_id=$1",[id]);
+    await tx.query("INSERT INTO hs_blocks(id,page_id,parent_id,position,type,node,version) SELECT x.id,$1,x.parent_id,x.position,x.type,x.node,x.version FROM jsonb_to_recordset($2::jsonb) AS x(id text,parent_id text,position integer,type text,node jsonb,version integer)",[id,JSON.stringify(payload)]);
+    await tx.query("INSERT INTO hs_revisions(page_id,version,title,document) VALUES($1,$2,$3,$4)",[id,version,title,JSON.stringify(document)]);
+  }
+  async save(id:string,actor:Actor,input:{operationId:string;baseVersion:number;title:string;document:unknown}) {
+    const document=validateDocument(input.document), title=input.title.trim()||"Untitled";
+    const hash=createHash("sha256").update(stableStringify(input)).digest("hex");
+    return this.db.transaction(async tx=>{
+      const p=await this.access(tx,id,actor,true,true);
+      if(p.schema_version!==schemaVersion)throw new DocumentError("This document requires a newer editor","schema_version",409);
+      const existing=await tx.query<{actor_id:string;request_hash:string;version:number}>("SELECT * FROM hs_operations WHERE page_id=$1 AND operation_id=$2",[id,input.operationId]);
+      if(existing.rows.length){const op=existing.rows[0];if(op.actor_id!==actor.id||op.request_hash!==hash)throw new DocumentError("Operation ID was reused with different content","operation_mismatch",409);return {page:await this.get(id,actor,tx),acknowledgedOperationId:input.operationId,committedVersion:op.version,replayed:true,merged:false};}
+      let next=document, nextTitle=title, merged=false;
+      if(p.version!==input.baseVersion){
+        const base=await tx.query<{document:RichNode;title:string}>("SELECT document,title FROM hs_revisions WHERE page_id=$1 AND version=$2",[id,input.baseVersion]);
+        const latest=await this.get(id,actor,tx);
+        if(!base.rows.length)throw new DocumentError("Base revision unavailable; review against the latest saved page","conflict",409);
+        const candidate=mergeDocuments(base.rows[0].document,latest.document,document);
+        if(!candidate || (title!==base.rows[0].title && latest.title!==base.rows[0].title && title!==latest.title))throw new DocumentError("This page changed elsewhere. Your draft is retained for review.","conflict",409);
+        next=candidate; nextTitle=title===base.rows[0].title?latest.title:title;merged=true;
+      }
+      // A media object cannot be attached by guessing its ID or borrowing another page's object.
+      let mediaBytes=0;const mediaIds=new Set<string>();
+      for(const b of documentBlocks(next))if(["image","file"].includes(b.type)){
+        const media=await tx.query<{id:string;size:string}>("SELECT id,size FROM hs_media WHERE id=$1 AND page_id=$2 AND state='ready' FOR UPDATE",[b.node.attrs?.attachmentId,id]);
+        if(!media.rows.length)throw new DocumentError("Attachment is unavailable or still processing");
+        if(!mediaIds.has(media.rows[0].id)){mediaIds.add(media.rows[0].id);mediaBytes+=Number(media.rows[0].size);}
+      }
+      if(mediaIds.size>100||mediaBytes>100_000_000)throw new DocumentError("Active page upload allowance exceeded; your draft is retained","quota_exceeded",422);
+      const version=p.version+1;
+      await this.writeDocument(tx,id,next,version,nextTitle);
+      await tx.query("UPDATE hs_media m SET deleted_at=CASE WHEN EXISTS(SELECT 1 FROM hs_blocks b WHERE b.page_id=$1 AND b.type IN ('image','file') AND b.node->'attrs'->>'attachmentId'=m.id::text) THEN NULL ELSE COALESCE(m.deleted_at,now()) END WHERE m.page_id=$1 AND m.state='ready'",[id]);
+      await tx.query("UPDATE hs_pages SET title=$2,version=$3,updated_at=now() WHERE id=$1",[id,nextTitle,version]);
+      await tx.query("INSERT INTO hs_operations(page_id,operation_id,actor_id,request_hash,version) VALUES($1,$2,$3,$4,$5)",[id,input.operationId,actor.id,hash,version]);
+      return {page:await this.get(id,actor,tx),acknowledgedOperationId:input.operationId,committedVersion:version,replayed:false,merged};
+    });
+  }
+}
+export async function repository(local=false) { const r=new Repository(await database());if(local)await r.seedLocal();return r; }

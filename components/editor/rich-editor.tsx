@@ -1,0 +1,191 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
+import StarterKit from "@tiptap/starter-kit";
+import { TextStyle, Color } from "@tiptap/extension-text-style";
+import Highlight from "@tiptap/extension-highlight";
+import TaskList from "@tiptap/extension-task-list";
+import TaskItem from "@tiptap/extension-task-item";
+import { TableKit } from "@tiptap/extension-table";
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import Image from "@tiptap/extension-image";
+import { Details, DetailsSummary, DetailsContent } from "@tiptap/extension-details";
+import UniqueID from "@tiptap/extension-unique-id";
+import { createLowlight, all } from "lowlight";
+import DOMPurify from "dompurify";
+import { NodeSelection, TextSelection } from "@tiptap/pm/state";
+import type { Node as PMNode } from "@tiptap/pm/model";
+import { ensureIds, highlights, idTypes, languages, palette, plainText, safeUrl, stableStringify, type RichNode } from "../../lib/document";
+import { Callout, FileBlock, FindExtension, PageLink, TableOfContents, findKey } from "./extensions";
+import { requestJson } from "./use-document-session";
+import { leaveBlock, reorderTable, selectedTable } from './table-actions';
+
+const lowlight=createLowlight(all);
+const ProtectedImage=Image.extend({
+  addAttributes(){return {...this.parent?.(),attachmentId:{default:null},caption:{default:""},width:{default:640}};},
+  renderHTML({HTMLAttributes}){const {caption,...attrs}=HTMLAttributes;return ["figure",{"data-hs-image":""},["img",attrs],...(caption?[["figcaption",{},String(caption)]]:[])];},
+});
+type Insert = {name:string;description:string;type:string;level?:number};
+const catalogue:Insert[]=[
+  {name:"Text",description:"A simple paragraph",type:"paragraph"},
+  ...[1,2,3].map(level=>({name:`Heading ${level}`,description:"Give your document structure",type:"heading",level})),
+  {name:"Bulleted list",description:"Unordered ideas",type:"bulletList"},{name:"Numbered list",description:"A sequence of steps",type:"orderedList"},{name:"Checklist",description:"Track what is done",type:"taskList"},
+  {name:"Quote",description:"A passage worth calling out",type:"blockquote"},{name:"Callout",description:"An important note",type:"callout"},{name:"Divider",description:"A quiet visual break",type:"horizontalRule"},
+  {name:"Code",description:"Code with syntax highlighting",type:"codeBlock"},{name:"Table",description:"Rows, columns and checklists",type:"table"},{name:"Collapsible section",description:"A title with nested content",type:"details"},
+  {name:"Table of contents",description:"Navigate the page headings",type:"tableOfContents"},{name:"Page link",description:"Reference a Holy Sheet page",type:"pageLink"},{name:"Image",description:"PNG, JPEG, WebP or GIF · up to 10 MB",type:"image"},{name:"File",description:"Documents and text · up to 25 MB",type:"file"},
+];
+function rgbToHex(value:string){const m=/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/.exec(value);return m?'#'+m.slice(1).map(v=>Number(v).toString(16).padStart(2,'0')).join(''):value.toLowerCase();}
+export function normalizeRichDocument(document:RichNode):RichNode {
+  function walk(n:RichNode):RichNode {
+    const attrs={...n.attrs};
+    // Alignment is not part of the HS table schema; Tiptap supplies it as a nullable default.
+    if(["tableCell","tableHeader"].includes(n.type))delete attrs.align;
+    if(n.type==="codeBlock")attrs.language=languages.includes(String(attrs.language))?attrs.language:"plaintext";
+    if(n.type==="image"){delete attrs.height;attrs.src=`/api/media/${attrs.attachmentId}`;}
+    const marks=(n.marks??[]).flatMap(m=>{
+      if(m.type==="link"&&!safeUrl(String(m.attrs?.href)))return [];
+      if(m.type==="textStyle"&&m.attrs?.color){const color=rgbToHex(String(m.attrs.color));return palette.includes(color)?[{type:m.type,attrs:{color}}]:[];}
+      if(m.type==="highlight"&&m.attrs?.color){const color=rgbToHex(String(m.attrs.color));return highlights.includes(color)?[{type:m.type,attrs:{color}}]:[];}
+      return [m];
+    });
+    return {...n,...(n.attrs?{attrs}:{}),...(n.marks?{marks}:{}),...(n.content?{content:n.content.map(walk)}:{})};
+  }
+  return ensureIds(walk(document));
+}
+
+export function sanitizePaste(html:string):string {
+  const clean=DOMPurify.sanitize(html,{FORBID_TAGS:["script","style","iframe","object","embed","svg","math","form","input","button","textarea","link","meta","template"],FORBID_ATTR:["srcset","src","id"],ALLOW_DATA_ATTR:false});
+  const doc=new DOMParser().parseFromString(clean,"text/html");
+  doc.querySelectorAll("[hidden],[aria-hidden='true']").forEach(e=>e.remove());
+  doc.querySelectorAll("a").forEach(a=>{if(!safeUrl(a.getAttribute("href")??""))a.removeAttribute("href");else{a.setAttribute("target","_blank");a.setAttribute("rel","noopener noreferrer");}});
+  doc.querySelectorAll("img").forEach(img=>{img.replaceWith(doc.createTextNode(`[Image requires upload${img.alt?`: ${img.alt}`:""}]`));});
+  doc.querySelectorAll<HTMLElement>("[style]").forEach(e=>{const color=rgbToHex(e.style.color),bg=rgbToHex(e.style.backgroundColor),bold=e.style.fontWeight,italic=e.style.fontStyle,decoration=e.style.textDecoration;e.removeAttribute("style");if(palette.includes(color))e.style.color=color;if(highlights.includes(bg))e.style.backgroundColor=bg;if(["bold","700","600"].includes(bold))e.style.fontWeight="bold";if(italic==="italic")e.style.fontStyle="italic";if(/^(underline|line-through)$/.test(decoration))e.style.textDecoration=decoration;});
+  return doc.body.innerHTML;
+}
+
+export function Dialog({title,onClose,children}:{title:string;onClose:()=>void;children:ReactNode}){
+  const ref=useRef<HTMLDivElement>(null),previous=useRef<Element|null>(null);
+  useEffect(()=>{previous.current=document.activeElement;ref.current?.querySelector<HTMLElement>("input,button,select,textarea")?.focus();return()=>{(previous.current as HTMLElement|null)?.focus?.();};},[]);
+  return <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}><div ref={ref} className="modal editor-dialog" role="dialog" aria-modal="true" aria-label={title} onKeyDown={e=>{if(e.key==="Escape"){e.preventDefault();onClose();}if(e.key==="Tab"){const items=Array.from(ref.current?.querySelectorAll<HTMLElement>("button:not(:disabled),input,select,textarea,a[href]")??[]);if(!items.length)return;if(e.shiftKey&&document.activeElement===items[0]){e.preventDefault();items.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===items.at(-1)){e.preventDefault();items[0].focus();}}}}><div className="dialog-heading"><h2>{title}</h2><button aria-label="Close dialog" onClick={onClose}>×</button></div>{children}</div></div>;
+}
+
+function blockRange(editor:Editor){
+  const {$from}=editor.state.selection;let depth=$from.depth;
+  if(editor.state.selection instanceof NodeSelection)return {node:editor.state.selection.node,from:editor.state.selection.from,to:editor.state.selection.to,parent:$from.parent,index:$from.index(),parentStart:$from.start()};
+  for(let d=1;d<=$from.depth;d++){const name=$from.node(d).type.name;if(name==="table"){depth=d;break;}if(["listItem","taskItem"].includes(name))depth=d;else if(name==="detailsSummary"){depth=d-1;break;}}
+  if(!depth)return null;
+  return {node:$from.node(depth),from:$from.before(depth),to:$from.after(depth),parent:$from.node(depth-1),index:$from.index(depth-1),parentStart:depth===1?0:$from.start(depth-1)};
+}
+
+export default function RichEditor({document,editable,onChange,pageId,preferenceKey}:{document:RichNode;editable:boolean;onChange:(doc:RichNode)=>void;pageId:string;preferenceKey:string}){
+  const [insertOpen,setInsertOpen]=useState(false),[query,setQuery]=useState(""),[active,setActive]=useState(0),[notice,setNotice]=useState(""),[linkOpen,setLinkOpen]=useState(false),[pageOpen,setPageOpen]=useState(false),[media,setMedia]=useState<"image"|"file"|null>(null),[findOpen,setFindOpen]=useState(false),[findQuery,setFindQuery]=useState(""),[matchCase,setMatchCase]=useState(false),[matchIndex,setMatchIndex]=useState(0);
+  const slash=useRef(false),insertAt=useRef<number|null>(null),onChangeRef=useRef(onChange),lastEmitted=useRef(stableStringify(document)),restoring=useRef(false),savedFindSelection=useRef<{from:number;to:number}|null>(null),temporaryOpen=useRef<Element[]>([]);
+  onChangeRef.current=onChange;
+  const editor=useEditor({immediatelyRender:false,editable,content:document,extensions:[
+    StarterKit.configure({heading:{levels:[1,2,3]},codeBlock:false,undoRedo:{depth:100,newGroupDelay:750},link:{openOnClick:false,autolink:false,linkOnPaste:false,isAllowedUri:url=>safeUrl(url),HTMLAttributes:{target:"_blank",rel:"noopener noreferrer"}}}),
+    TextStyle,Color,Highlight.configure({multicolor:true}),TaskList,TaskItem.configure({nested:true}),TableKit.configure({table:{resizable:true,allowTableNodeSelection:true}}),
+    CodeBlockLowlight.configure({lowlight,defaultLanguage:"plaintext"}),ProtectedImage.configure({allowBase64:false}),Details.configure({persist:false}),DetailsSummary,DetailsContent,Callout,TableOfContents,PageLink,FileBlock,FindExtension,
+    UniqueID.configure({types:idTypes,attributeName:"id",generateID:()=>crypto.randomUUID()}),
+  ],editorProps:{attributes:{class:"rich-prose",role:"textbox","aria-label":"Document content","aria-multiline":"true",spellcheck:"true"},transformPastedHTML:sanitizePaste,
+    handleKeyDown:(view,event)=>{
+      if(event.isComposing)return false;
+      if(event.key==='Tab'&&!event.shiftKey&&editor){const table=selectedTable(editor);if(table&&table.node.childCount===100&&table.row===99&&table.column===table.node.lastChild!.childCount-1){event.preventDefault();leaveBlock(editor,'table');setNotice('Maximum 100 rows reached. Continued below the table.');return true;}}
+      if(event.key==='Tab'&&view.state.selection.$from.parent.type.name==='codeBlock'){
+        event.preventDefault();const {from,to,$from}=view.state.selection,start=$from.start();const text=$from.parent.textContent;
+        if(from===to&&!event.shiftKey){view.dispatch(view.state.tr.insertText('  ',from));return true;}
+        const first=text.lastIndexOf('\n',Math.max(-1,from-start-1))+1,positions=[first];
+        for(let at=text.indexOf('\n',first);at>=0&&start+at<to;at=text.indexOf('\n',at+1))positions.push(at+1);
+        const tr=view.state.tr;for(const pos of positions.reverse()){if(event.shiftKey){const spaces=/^ {1,2}/.exec(text.slice(pos))?.[0].length??0;if(spaces)tr.delete(start+pos,start+pos+spaces);}else tr.insertText('  ',start+pos);}
+        view.dispatch(tr.scrollIntoView());return true;
+      }
+      if(event.key==="/"&&view.state.selection.empty&&view.state.selection.$from.parent.type.name==="paragraph"&&!view.state.selection.$from.parent.textContent){event.preventDefault();slash.current=true;insertAt.current=view.state.selection.from;setQuery("");setActive(0);setInsertOpen(true);return true;}
+      if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="f"){event.preventDefault();savedFindSelection.current={from:view.state.selection.from,to:view.state.selection.to};setFindOpen(true);return true;}
+      if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="k"&&(!view.state.selection.empty||view.state.selection.$from.marks().some(m=>m.type.name==="link"))){event.preventDefault();setLinkOpen(true);return true;}
+      if((event.metaKey||event.ctrlKey)&&event.shiftKey&&event.key.toLowerCase()==="s"){event.preventDefault();editor?.chain().focus().toggleStrike().run();return true;}
+      if((event.metaKey||event.ctrlKey)&&event.key==="\\"){event.preventDefault();clearFormatting(editor);return true;}
+      return false;
+    },
+    handlePaste:(view,event)=>{if(event.clipboardData?.files.length){event.preventDefault();setNotice("Use Image or File to upload with progress, limits and alternative text.");return true;}const html=event.clipboardData?.getData("text/html");if(html&&new Blob([html]).size>25_000_000){event.preventDefault();setNotice("This paste is too large. Split it into smaller sections; existing content is unchanged.");return true;}return false;},
+    handleDrop:(_view,event)=>{if(event.dataTransfer?.files.length){event.preventDefault();setNotice("Choose Image or File from Add block to upload this file safely.");return true;}return false;},
+  },onUpdate:({editor:e})=>{if(restoring.current)return;const value=normalizeRichDocument(e.getJSON() as RichNode);lastEmitted.current=stableStringify(value);onChangeRef.current(value);}});
+  const state=useEditorState({editor,selector:({editor:e})=>e?{selection:e.state.selection.from,selectionEnd:e.state.selection.to,find:findKey.getState(e.state),undo:e.can().undo(),redo:e.can().redo(),table:e.isActive("table"),code:e.isActive("codeBlock"),image:e.isActive("image"),callout:e.isActive("callout"),bold:e.isActive("bold"),italic:e.isActive("italic"),underline:e.isActive("underline"),strike:e.isActive("strike")}:null});
+  useEffect(()=>{editor?.setEditable(editable);},[editor,editable]);
+  useEffect(()=>{const json=stableStringify(document);if(editor&&json!==lastEmitted.current){restoring.current=true;editor.commands.setContent(document,{emitUpdate:false});lastEmitted.current=json;restoring.current=false;}},[editor,document]);
+  useEffect(()=>{if(editor)editor.view.dispatch(editor.state.tr.setMeta(findKey,{query:findQuery,matchCase}));setMatchIndex(0);},[editor,findQuery,matchCase]);
+  useEffect(()=>{if(!editor)return;const click=(e:Event)=>{const target=e.target as HTMLElement;const details=target.closest<HTMLElement>("[data-type='details']");if(details&&target.closest("button"))queueMicrotask(()=>{try{localStorage.setItem(`hs-collapse:${preferenceKey}:${details.getAttribute('data-id')}`,details.classList.contains("is-open")?"open":"closed");}catch{}});};editor.view.dom.addEventListener("click",click);const restore=()=>{editor.view.dom.querySelectorAll<HTMLElement>("[data-type='details']").forEach(d=>{try{const value=localStorage.getItem(`hs-collapse:${preferenceKey}:${d.getAttribute('data-id')}`);if(value==="open"&&!d.classList.contains("is-open"))d.querySelector<HTMLButtonElement>("button")?.click();}catch{}});};restore();return()=>editor.view.dom.removeEventListener("click",click);},[editor,preferenceKey]);
+  const filtered=catalogue.filter(c=>(c.name+" "+c.description).toLowerCase().includes(query.toLowerCase()));
+  function closeInsert(){if(slash.current&&query)editor?.chain().focus().insertContent('/'+query).run();else if(slash.current)editor?.chain().focus().insertContent('/').run();slash.current=false;setInsertOpen(false);}
+  function insert(item:Insert){
+    if(!editor||!editable)return;setInsertOpen(false);slash.current=false;
+    if(item.type==="pageLink"){setPageOpen(true);return;}if(item.type==="image"||item.type==="file"){setMedia(item.type);return;}
+    const chain=editor.chain().focus();if(insertAt.current!==null)chain.setTextSelection(insertAt.current);
+    if(item.type==="paragraph")chain.setParagraph().run();
+    else if(item.type==="heading")chain.setHeading({level:item.level as 1|2|3}).run();
+    else if(item.type==="bulletList")chain.toggleBulletList().run();else if(item.type==="orderedList")chain.toggleOrderedList().run();else if(item.type==="taskList")chain.toggleTaskList().run();
+    else if(item.type==="blockquote")chain.toggleBlockquote().run();else if(item.type==="codeBlock")chain.setCodeBlock({language:"plaintext"}).run();
+    else if(item.type==="table")chain.insertTable({rows:3,cols:3,withHeaderRow:true}).run();
+    else if(item.type==="horizontalRule")chain.setHorizontalRule().run();
+    else if(item.type==="details")chain.insertContent(ensureIds({type:"doc",content:[{type:"details",content:[{type:"detailsSummary",content:[{type:"text",text:"Untitled section"}]},{type:"detailsContent",content:[{type:"paragraph"}]}]}]}).content!).run();
+    else chain.insertContent(ensureIds({type:"doc",content:[item.type==="callout"?{type:"callout",attrs:{theme:"neutral",icon:"✦"},content:[{type:"paragraph"}]}:{type:item.type}]}).content!).run();
+  }
+  function addBlock(){if(!editor)return;const range=blockRange(editor);if(range){editor.commands.insertContentAt(range.to,{type:"paragraph"});editor.commands.setTextSelection(Math.min(range.to+1,editor.state.doc.content.size));}insertAt.current=editor.state.selection.from;slash.current=false;setQuery("");setActive(0);setInsertOpen(true);}
+  function act(action:"up"|"down"|"duplicate"|"delete"){
+    if(!editor)return;const range=blockRange(editor);if(!range)return;
+    const {from,to,node,parent,index,parentStart}=range;
+    if(action==="duplicate"){editor.chain().focus().insertContentAt(to,ensureIds(node.toJSON() as RichNode,true)).run();return;}
+    if(action==="delete"){editor.chain().focus().deleteRange({from,to}).run();return;}
+    const direction=action==="up"?-1:1,target=index+direction;if(target<0||target>=parent.childCount){setNotice("This block is already at the boundary of its section.");return;}
+    let destination=parentStart;for(let i=0;i<(direction<0?target:target+1);i++)destination+=parent.child(i).nodeSize;
+    const tr=editor.state.tr.delete(from,to);const mapped=tr.mapping.map(destination);tr.insert(mapped,node);tr.setSelection(TextSelection.near(tr.doc.resolve(mapped+1)));editor.view.dispatch(tr);editor.commands.focus();setNotice(`Block moved ${action}.`);
+  }
+  function navigateFind(delta:number){const matches=state?.find?.matches??[];if(!editor||!matches.length)return;const next=(matchIndex+delta+matches.length)%matches.length;setMatchIndex(next);const m=matches[next];editor.commands.setTextSelection(m);const dom=editor.view.domAtPos(m.from).node.parentElement;let p=dom;while(p){if(p.getAttribute("data-type")==="details"&&!p.classList.contains("is-open")){p.classList.add("is-open");temporaryOpen.current.push(p);}p=p.parentElement;}dom?.scrollIntoView({block:"center"});}
+  function closeFind(){setFindOpen(false);setFindQuery("");for(const e of temporaryOpen.current)e.classList.remove("is-open");temporaryOpen.current=[];if(editor&&savedFindSelection.current){const {from,to}=savedFindSelection.current;if(to<=editor.state.doc.content.size)editor.commands.setTextSelection({from,to});editor.commands.focus();}}
+  if(!editor)return <div className="editor-skeleton" aria-label="Loading editor"/>;
+  const button=(label:string,children:ReactNode,run:()=>void,pressed=false,disabled=false)=><button type="button" key={label} aria-label={label} title={label} aria-pressed={pressed} disabled={!editable||disabled} onMouseDown={e=>e.preventDefault()} onClick={run}>{children}</button>;
+  function toolbar(){if(!editor)return null;return <div className="format-tools" role="toolbar" aria-label="Text formatting">
+    {button("Bold","B",()=>editor.chain().focus().toggleBold().run(),!!state?.bold)}{button("Italic",<i>I</i>,()=>editor.chain().focus().toggleItalic().run(),!!state?.italic)}{button("Underline",<u>U</u>,()=>editor.chain().focus().toggleUnderline().run(),!!state?.underline)}{button("Strikethrough",<s>S</s>,()=>editor.chain().focus().toggleStrike().run(),!!state?.strike)}
+    {button("Edit link","↗",()=>setLinkOpen(true))}{button("Clear formatting","Tx",()=>clearFormatting(editor))}
+    <label className="colour-control">Text colour<select aria-label="Text colour" disabled={!editable} value={palette.includes(editor.getAttributes('textStyle').color)?editor.getAttributes('textStyle').color:""} onChange={e=>e.target.value?editor.chain().focus().setColor(e.target.value).run():editor.chain().focus().unsetColor().run()}><option value="">Default</option>{palette.map((c,i)=><option key={c} value={c}>{["Black","Grey","Blue","Green","Amber","Red","Purple"][i]}</option>)}</select></label>
+    <label className="colour-control">Highlight<select aria-label="Text highlight" disabled={!editable} defaultValue="" onChange={e=>e.target.value?editor.chain().focus().setHighlight({color:e.target.value}).run():editor.chain().focus().unsetHighlight().run()}><option value="">None</option>{highlights.map((c,i)=><option key={c} value={c}>{["Amber","Blue","Green","Red","Purple"][i]}</option>)}</select></label>
+  </div>;}
+  return <div className="rich-editor" data-editable={editable}>
+    <div className="editor-actions" role="toolbar" aria-label="Document tools">
+      <button onClick={addBlock} disabled={!editable}>＋ Insert</button>
+      {button("Undo","↶",()=>editor.chain().focus().undo().run(),false,!state?.undo)}{button("Redo","↷",()=>editor.chain().focus().redo().run(),false,!state?.redo)}
+      <details className="block-actions"><summary aria-label="Block actions">⋮ Block</summary><div role="group" aria-label="Block actions"><button disabled={!editable} onClick={()=>act('up')}>Move up</button><button disabled={!editable} onClick={()=>act('down')}>Move down</button><button disabled={!editable} onClick={()=>act('duplicate')}>Duplicate block</button><button disabled={!editable} onClick={()=>act('delete')}>Delete block and contents</button><button disabled={!editable} onClick={()=>editor.chain().focus().sinkListItem(editor.isActive('taskItem')?'taskItem':'listItem').run()}>Indent list item</button><button disabled={!editable} onClick={()=>editor.chain().focus().liftListItem(editor.isActive('taskItem')?'taskItem':'listItem').run()}>Outdent list item</button><button onClick={()=>{insertAt.current=editor.state.selection.from;setInsertOpen(true);setQuery("");}}>Turn into…</button></div></details>
+      <button className="find-button" onClick={()=>{savedFindSelection.current={from:editor.state.selection.from,to:editor.state.selection.to};setFindOpen(true);}}>⌕ Find</button>
+    </div>
+    <div className="persistent-format">{toolbar()}</div>
+    <BubbleMenu editor={editor} shouldShow={()=>editable&&!editor.state.selection.empty}>{toolbar()}</BubbleMenu>
+    {state?.code&&<div className="context-tools"><label>Language <select aria-label="Code language" disabled={!editable} value={editor.getAttributes('codeBlock').language??"plaintext"} onChange={e=>editor.chain().focus().updateAttributes('codeBlock',{language:e.target.value}).run()}>{languages.map(l=><option key={l}>{l}</option>)}</select></label><button onClick={()=>{const range=blockRange(editor);if(range)navigator.clipboard.writeText(range.node.textContent).then(()=>setNotice("Code copied."),()=>setNotice("Clipboard unavailable. Select and copy the code manually."));}}>Copy code</button><button disabled={!editable} onClick={()=>leaveBlock(editor,'codeBlock')}>Continue below code</button></div>}
+    {state?.table&&<div className="context-tools" role="group" aria-label="Reorder table"><button disabled={!editable} onClick={()=>reorderTable(editor,'row',-1)}>Row up</button><button disabled={!editable} onClick={()=>reorderTable(editor,'row',1)}>Row down</button><button disabled={!editable} onClick={()=>reorderTable(editor,'column',-1)}>Column left</button><button disabled={!editable} onClick={()=>reorderTable(editor,'column',1)}>Column right</button></div>}
+    {state?.table&&<div className="context-tools" role="toolbar" aria-label="Table tools">{button("Insert row","＋ Row",()=>{const row=editor.state.selection.$from;let n:PMNode|null=null;for(let i=1;i<=row.depth;i++)if(row.node(i).type.name==='table')n=row.node(i);if(n&&n.childCount>=100){setNotice('Tables support at most 100 rows.');return;}editor.chain().focus().addRowAfter().run();})}{button("Insert column","＋ Column",()=>{const p=editor.state.selection.$from;for(let i=1;i<=p.depth;i++)if(p.node(i).type.name==='table'&&p.node(i).firstChild!.childCount>=20){setNotice('Tables support at most 20 columns.');return;}editor.chain().focus().addColumnAfter().run();})}{button("Delete row","− Row",()=>{if(window.confirm("Delete the current row? If this is the last row, the table will be removed."))editor.chain().focus().deleteRow().run();})}{button("Delete column","− Column",()=>{if(window.confirm("Delete the current column? If this is the last column, the table will be removed."))editor.chain().focus().deleteColumn().run();})}{button("Toggle header row","Header",()=>editor.chain().focus().toggleHeaderRow().run())}{button("Checklist in cell","☑",()=>editor.chain().focus().toggleTaskList().run())}</div>}
+    {state?.callout&&<div className="context-tools"><label>Callout theme <select aria-label="Callout theme" disabled={!editable} value={editor.getAttributes('callout').theme} onChange={e=>editor.chain().focus().updateAttributes('callout',{theme:e.target.value}).run()}>{["neutral","blue","green","amber","red"].map(t=><option key={t}>{t}</option>)}</select></label></div>}
+    {state?.image&&<div className="context-tools"><label>Image size <select aria-label="Image size" disabled={!editable} value={editor.getAttributes('image').width??640} onChange={e=>editor.commands.updateAttributes('image',{width:Number(e.target.value)})}>{[[240,"Small"],[400,"Medium"],[640,"Large"],[1000,"Full width"]].map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></label><label>Alternative text<input aria-label="Image alternative text" disabled={!editable} value={editor.getAttributes('image').alt??""} onChange={e=>editor.commands.updateAttributes('image',{alt:e.target.value})}/></label><label>Caption<input aria-label="Image caption" disabled={!editable} value={editor.getAttributes('image').caption??""} onChange={e=>editor.commands.updateAttributes('image',{caption:e.target.value})}/></label></div>}
+    {findOpen&&<div className="page-find" role="search" aria-label="Find within page" onKeyDown={e=>{if(e.key==='Escape')closeFind();if(e.key==='Enter'){e.preventDefault();navigateFind(e.shiftKey?-1:1);}}}><input autoFocus aria-label="Find in this page" value={findQuery} onChange={e=>setFindQuery(e.target.value)} placeholder="Find in this page…"/><label><input type="checkbox" checked={matchCase} onChange={e=>setMatchCase(e.target.checked)}/>Match case</label><span role="status">{state?.find?.matches.length?`${matchIndex+1} of ${state.find.matches.length}`:findQuery.length<2?'2 characters minimum':'No matches'}</span><button aria-label="Previous match" onClick={()=>navigateFind(-1)}>↑</button><button aria-label="Next match" onClick={()=>navigateFind(1)}>↓</button><button aria-label="Close find" onClick={closeFind}>×</button></div>}
+    <EditorContent editor={editor}/>
+    {editable&&<button className="add-block" onClick={addBlock}>＋ Add block <span>or type / on an empty line</span></button>}
+    {notice&&<div className="editor-notice" role="status">{notice}<button aria-label="Dismiss notice" onClick={()=>setNotice("")}>×</button></div>}
+    {insertOpen&&<Dialog title="Insert a block" onClose={closeInsert}><input className="command-input" aria-label="Search block types" placeholder="Search blocks…" value={query} onChange={e=>{setQuery(e.target.value);setActive(0);}} onKeyDown={e=>{if(e.key==='ArrowDown'){e.preventDefault();setActive(i=>Math.min(filtered.length-1,i+1));}if(e.key==='ArrowUp'){e.preventDefault();setActive(i=>Math.max(0,i-1));}if(e.key==='Enter'&&filtered[active]){e.preventDefault();insert(filtered[active]);}}}/><div className="insert-results" role="listbox" aria-label="Block types">{filtered.map((item,i)=><button key={item.name} role="option" aria-selected={i===active} onMouseEnter={()=>setActive(i)} onClick={()=>insert(item)}><strong>{item.name}</strong><small>{item.description}</small></button>)}{!filtered.length&&<p>No matching block types. Try another name.</p>}</div></Dialog>}
+    {linkOpen&&<LinkDialog editor={editor} onClose={()=>setLinkOpen(false)}/>}
+    {pageOpen&&<PageDialog onClose={()=>setPageOpen(false)} onSelect={id=>{editor.chain().focus().insertContent({type:'pageLink',attrs:{id:crypto.randomUUID(),pageId:id}}).run();setPageOpen(false);}}/>}
+    {media&&<UploadDialog pageId={pageId} type={media} onClose={()=>setMedia(null)} onReady={(id,alt,caption,name)=>{editor.chain().focus().insertContent(media==='image'?{type:'image',attrs:{id:crypto.randomUUID(),attachmentId:id,src:`/api/media/${id}`,alt,caption,width:640}}:{type:'file',attrs:{id:crypto.randomUUID(),attachmentId:id,title:name}}).run();setMedia(null);}}/>}
+  </div>;
+}
+
+function clearFormatting(editor:Editor|null){if(!editor)return;const chain=editor.chain().focus();for(const mark of ["bold","italic","underline","strike","textStyle","highlight","code"])chain.unsetMark(mark);chain.run();}
+function LinkDialog({editor,onClose}:{editor:Editor;onClose:()=>void}){const [url,setUrl]=useState(String(editor.getAttributes('link').href??"")),[label,setLabel]=useState(""),[error,setError]=useState("");return <Dialog title="Edit link" onClose={onClose}><form onSubmit={e=>{e.preventDefault();if(!safeUrl(url)){setError('Use an https, http, mailto, tel or Holy Sheet page link.');return;}if(label.trim())editor.chain().focus().insertContent({type:'text',text:label,marks:[{type:'link',attrs:{href:url,target:'_blank',rel:'noopener noreferrer'}}]}).run();else editor.chain().focus().extendMarkRange('link').setLink({href:url}).run();onClose();}}><label>Destination<input aria-label="Link destination" value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://…"/></label><label>Display text (optional)<input aria-label="Link display text" value={label} onChange={e=>setLabel(e.target.value)}/></label>{error&&<p role="alert">{error}</p>}<div className="actions"><button type="button" onClick={()=>{editor.chain().focus().extendMarkRange('link').unsetLink().run();onClose();}}>Remove link</button><button className="primary">Save link</button></div></form></Dialog>;}
+function PageDialog({onClose,onSelect}:{onClose:()=>void;onSelect:(id:string)=>void}){const [pages,setPages]=useState<{id:string;title:string}[]>([]),[q,setQ]=useState(""),[error,setError]=useState("");useEffect(()=>{requestJson<{pages:{id:string;title:string}[]}>("/api/pages").then(d=>setPages(d.pages)).catch(()=>setError('Pages could not be loaded. Retry by reopening this dialog.'));},[]);return <Dialog title="Link a page" onClose={onClose}><input className="command-input" aria-label="Find an accessible page" value={q} onChange={e=>setQ(e.target.value)} placeholder="Find a page…"/>{error&&<p role="alert">{error}</p>}<div className="insert-results">{pages.filter(p=>p.title.toLowerCase().includes(q.toLowerCase())).map(p=><button key={p.id} onClick={()=>onSelect(p.id)}>{p.title}</button>)}</div></Dialog>;}
+function UploadDialog({pageId,type,onClose,onReady}:{pageId:string;type:'image'|'file';onClose:()=>void;onReady:(id:string,alt:string,caption:string,name:string)=>void}){
+  const [file,setFile]=useState<File|null>(null),[alt,setAlt]=useState(""),[caption,setCaption]=useState(""),[error,setError]=useState(""),[progress,setProgress]=useState(0),[busy,setBusy]=useState(false),[processing,setProcessing]=useState(false);const attempt=useRef<{id:string;operationId:string}|null>(null),xhr=useRef<XMLHttpRequest|null>(null);
+  async function upload(e:React.FormEvent){e.preventDefault();if(!file)return;if(type==='image'&&!alt.trim()){setError('Add alternative text before sharing this image.');return;}if(file.size>(type==='image'?10_000_000:25_000_000)){setError(`This file exceeds the ${type==='image'?10:25} MB limit.`);return;}setBusy(true);setError('');setProcessing(false);
+    try{if(!attempt.current){const operationId=crypto.randomUUID();const d=await requestJson<{id:string}>(`/api/v1/pages/${pageId}/uploads`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({operationId,name:file.name,size:file.size})});attempt.current={id:d.id,operationId};}
+      const id=attempt.current.id;
+      await new Promise<void>((resolve,reject)=>{const request=new XMLHttpRequest();xhr.current=request;request.open('PUT',`/api/uploads/${id}`);request.upload.onprogress=e=>{if(e.lengthComputable)setProgress(Math.round(e.loaded/e.total*100));};request.upload.onload=()=>setProcessing(true);request.onload=()=>{try{const d=JSON.parse(request.responseText);if(request.status>=200&&request.status<300)resolve();else reject(new Error(d.error??'Upload could not be verified'));}catch{reject(new Error('Could not confirm the upload. Retry.'));}};request.onerror=()=>reject(new Error('Connection lost. Retry the same file.'));request.onabort=()=>reject(new Error('Upload cancelled.'));request.send(file);});
+      onReady(id,alt.trim(),caption,file.name);
+    }catch(e){setError(e instanceof Error?e.message:'Upload failed. Retry.');}finally{setBusy(false);setProcessing(false);}}
+  function cancel(){xhr.current?.abort();if(attempt.current)void requestJson(`/api/uploads/${attempt.current.id}`,{method:'DELETE'}).catch(()=>{});onClose();}
+  return <Dialog title={type==='image'?'Add an image':'Attach a file'} onClose={cancel}><form onSubmit={upload}><p className="upload-policy">{type==='image'?'PNG, JPEG, WebP or GIF · maximum 10 MB':'PDF, DOCX, XLSX, PPTX, CSV, TXT or Markdown · maximum 25 MB'}. Page allowance: 100 files / 100 MB. Every upload is privately stored and checked before it is shared.</p><label>Choose file<input type="file" accept={type==='image'?'.png,.jpg,.jpeg,.webp,.gif':'.pdf,.docx,.xlsx,.pptx,.csv,.txt,.md,.markdown'} disabled={busy} onChange={e=>{setFile(e.target.files?.[0]??null);attempt.current=null;setProgress(0);}}/></label>{type==='image'&&<><label>Alternative text<input aria-label="Image description" value={alt} onChange={e=>setAlt(e.target.value)} placeholder="Describe what this image communicates" required/></label><label>Caption (optional)<input value={caption} onChange={e=>setCaption(e.target.value)}/></label></>}{busy&&<div role="status"><progress max={100} value={progress} aria-label="Upload progress"/>{processing?'Processing and checking file…':`Uploading ${progress}%`}</div>}{error&&<p className="form-error" role="alert">{error}</p>}<div className="actions"><button type="button" onClick={cancel}>Cancel</button><button className="primary" disabled={busy||!file}>{busy?'Working…':error?'Retry upload':'Upload privately'}</button></div></form></Dialog>;
+}

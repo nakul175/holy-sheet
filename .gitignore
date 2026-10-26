@@ -3,3 +3,8 @@ node_modules/
 *.tsbuildinfo
 .env.local
 .DS_Store
+.holy-sheet/
+playwright-report/
+test-results/
+artifacts/
+.env.staging

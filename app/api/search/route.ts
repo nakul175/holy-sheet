@@ -1,9 +1,4 @@
-import { NextResponse } from "next/server";
-import { searchDemoPages } from "../../../lib/demo-store";
-
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const query = searchParams.get("q") ?? "";
-  const spaceId = searchParams.get("spaceId");
-  return NextResponse.json({ results: searchDemoPages(query, spaceId).slice(0, 20) });
-}
+import { api, localPreview } from "../../../lib/auth";
+import { repository } from "../../../lib/repository";
+import { searchPages } from "../../../lib/search";
+export async function GET(req:Request){return api(req,async actor=>{const p=new URL(req.url).searchParams;const pages=await (await repository(localPreview(req))).list(actor);return {results:searchPages(pages,(p.get("q")??"").slice(0,512),p.get("spaceId")).slice(0,20)};});}
