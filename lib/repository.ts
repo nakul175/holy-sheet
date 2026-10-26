@@ -5,6 +5,8 @@ import { localActor } from "./auth";
 import { DocumentError, documentBlocks, fromLegacy, mergeDocuments, plainText, schemaVersion, stableStringify, validateDocument, type RichNode } from "./document";
 import { listDemoPages } from "./demo-store";
 import { updateCommentAnchors } from './comment-anchors';
+import { revisionDigest } from './revision';
+import { usableMedia } from './media-authorization';
 import { canEdit,type Page,type PageRole } from './types';
 
 type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
@@ -18,7 +20,7 @@ export class Repository {
       await tx.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-aplyd',$1) ON CONFLICT DO NOTHING",[localActor.id]);
       await tx.query("INSERT INTO hs_spaces(id,workspace_id,name) VALUES('space-private','ws-aplyd','My pages'),('space-product','ws-aplyd','Product') ON CONFLICT DO NOTHING");
       const {rows}=await tx.query("SELECT id FROM hs_pages WHERE id='welcome'");
-      if(!rows.length){const p=listDemoPages().find(p=>p.id==="welcome")!;await tx.query("INSERT INTO hs_pages(id,workspace_id,space_id,owner_id,title) VALUES($1,$2,$3,$4,$5)",[p.id,p.workspaceId,p.spaceId,localActor.id,p.title]);await this.writeDocument(tx,p.id,fromLegacy(p.blocks),1,p.title);}
+      if(!rows.length){const p=listDemoPages().find(p=>p.id==="welcome")!;await tx.query("INSERT INTO hs_pages(id,workspace_id,space_id,owner_id,title) VALUES($1,$2,$3,$4,$5)",[p.id,p.workspaceId,p.spaceId,localActor.id,p.title]);await this.writeDocument(tx,p.id,fromLegacy(p.blocks),1,p.title,localActor.id,'local-preview');}
     });
   }
   async access(tx:Sql, id:string, actor:Actor, edit=false, lock=false):Promise<StoredPage> {
@@ -71,11 +73,11 @@ export class Repository {
       const id=crypto.randomUUID(), actualTitle=title.trim()||"Untitled";
       if(actualTitle.length>240)throw new DocumentError("Title is too long");
       await tx.query("INSERT INTO hs_pages(id,workspace_id,space_id,parent_id,owner_id,title) VALUES($1,$2,$3,$4,$5,$6)",[id,rows[0].workspace_id,spaceId,parentId??null,actor.id,actualTitle]);
-      await this.writeDocument(tx,id,fromLegacy([]),1,actualTitle);
+      await this.writeDocument(tx,id,fromLegacy([]),1,actualTitle,actor.id,'api');
       return this.get(id,actor,tx);
     });
   }
-  async writeDocument(tx:Sql,id:string,document:RichNode,version:number,title:string) {
+  async writeDocument(tx:Sql,id:string,document:RichNode,version:number,title:string,actorId?:string,surface='api',restoredFrom?:number) {
     const rows=documentBlocks(document);
     const previous=await tx.query<{id:string;version:number;node:RichNode;parent_id:string|null}>("SELECT id,version,node,parent_id FROM hs_blocks WHERE page_id=$1",[id]);
     const byId=new Map(previous.rows.map(b=>[b.id,b]));
@@ -84,7 +86,10 @@ export class Repository {
     await tx.query("DELETE FROM hs_blocks WHERE page_id=$1",[id]);
     await tx.query("INSERT INTO hs_blocks(id,page_id,parent_id,position,type,node,version) SELECT x.id,$1,x.parent_id,x.position,x.type,x.node,x.version FROM jsonb_to_recordset($2::jsonb) AS x(id text,parent_id text,position integer,type text,node jsonb,version integer)",[id,JSON.stringify(payload)]);
     await updateCommentAnchors(tx,id,{type:'doc',content:previous.rows.filter(b=>b.parent_id===null).map(b=>b.node)},document);
-    await tx.query("INSERT INTO hs_revisions(page_id,version,title,document) VALUES($1,$2,$3,$4)",[id,version,title,JSON.stringify(document)]);
+    await tx.query('UPDATE hs_revisions SET superseded_at=clock_timestamp() WHERE page_id=$1 AND version<$2 AND superseded_at IS NULL',[id,version]);
+    await tx.query('INSERT INTO hs_revisions(page_id,version,title,document,actor_id,source_surface,schema_version,restored_from,content_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',[id,version,title,JSON.stringify(document),actorId??null,surface,schemaVersion,restoredFrom??null,revisionDigest(title,document)]);
+    const mediaIds=new Set<string>();function media(n:RichNode){if((n.type==='image'||n.type==='file')&&typeof n.attrs?.attachmentId==='string')mediaIds.add(n.attrs.attachmentId);n.content?.forEach(media);}media(document);
+    for(const mediaId of mediaIds)await tx.query('INSERT INTO hs_revision_media(page_id,version,media_id) SELECT $1,$2,id FROM hs_media WHERE id=$3 AND page_id=$1 ON CONFLICT DO NOTHING',[id,version,mediaId]);
   }
   async save(id:string,actor:Actor,input:{operationId:string;baseVersion:number;title:string;document:unknown}) {
     const document=validateDocument(input.document), title=input.title.trim()||"Untitled";
@@ -104,22 +109,22 @@ export class Repository {
         next=candidate; nextTitle=title===base.rows[0].title?latest.title:title;merged=true;
       }
       // A media object cannot be attached by guessing its ID or borrowing another page's object.
-      let mediaBytes=0;const mediaIds=new Set<string>();
+      let mediaBytes=0;const mediaIds=new Set<string>(),activeDocument=await this.get(id,actor,tx),activeMedia=new Set(documentBlocks(activeDocument.document).filter(b=>b.type==='image'||b.type==='file').map(b=>String(b.node.attrs?.attachmentId)));
       for(const b of documentBlocks(next))if(["image","file"].includes(b.type)){
         const media=await tx.query<{id:string;size:string}>("SELECT id,size FROM hs_media WHERE id=$1 AND page_id=$2 AND state='ready' FOR UPDATE",[b.node.attrs?.attachmentId,id]);
-        if(!media.rows.length)throw new DocumentError("Attachment is unavailable or still processing");
+        if(!media.rows.length||!await usableMedia(tx,id,actor.id,String(b.node.attrs?.attachmentId),activeMedia.has(String(b.node.attrs?.attachmentId))))throw new DocumentError("Attachment is unavailable or still processing");
         if(!mediaIds.has(media.rows[0].id)){mediaIds.add(media.rows[0].id);mediaBytes+=Number(media.rows[0].size);}
       }
       if(mediaIds.size>100||mediaBytes>100_000_000)throw new DocumentError("Active page upload allowance exceeded; your draft is retained","quota_exceeded",422);
-      const current=await this.get(id,actor,tx);
+      const current=activeDocument;
       if(nextTitle===p.title&&stableStringify(next)===stableStringify(current.document)){
         await tx.query('INSERT INTO hs_operations(page_id,operation_id,actor_id,request_hash,version) VALUES($1,$2,$3,$4,$5)',[id,input.operationId,actor.id,hash,p.version]);
         return {page:current,acknowledgedOperationId:input.operationId,committedVersion:p.version,replayed:false,merged};
       }
       const version=p.version+1;
-      await this.writeDocument(tx,id,next,version,nextTitle);
+      await this.writeDocument(tx,id,next,version,nextTitle,actor.id,'api');
       await tx.query("UPDATE hs_media m SET deleted_at=CASE WHEN EXISTS(SELECT 1 FROM hs_blocks b WHERE b.page_id=$1 AND b.type IN ('image','file') AND b.node->'attrs'->>'attachmentId'=m.id::text) THEN NULL ELSE COALESCE(m.deleted_at,now()) END WHERE m.page_id=$1 AND m.state='ready'",[id]);
-      await tx.query("UPDATE hs_pages SET title=$2,version=$3,updated_at=now() WHERE id=$1",[id,nextTitle,version]);
+      await tx.query("UPDATE hs_pages SET title=$2,version=$3,updated_at=clock_timestamp() WHERE id=$1",[id,nextTitle,version]);
       await tx.query("INSERT INTO hs_operations(page_id,operation_id,actor_id,request_hash,version) VALUES($1,$2,$3,$4,$5)",[id,input.operationId,actor.id,hash,version]);
       return {page:await this.get(id,actor,tx),acknowledgedOperationId:input.operationId,committedVersion:version,replayed:false,merged};
     });

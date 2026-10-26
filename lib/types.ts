@@ -1,6 +1,7 @@
 export const blockTypes = ["paragraph", "heading", "bullet", "number", "checklist"] as const;
 export type PageRole='owner'|'editor'|'commenter'|'viewer';
 export type GrantRole=Exclude<PageRole,'owner'>;
+export const mediaIdPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export const canEdit=(role:string)=>role==='owner'||role==='editor';
 export const canComment=(role:string)=>canEdit(role)||role==='commenter';
 export type BlockType = (typeof blockTypes)[number];

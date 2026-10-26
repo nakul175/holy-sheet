@@ -5,10 +5,12 @@ import { localActor } from './auth';
 import { ensureIds,plainText } from './document';
 import { changeSharing } from './sharing';
 import { changeDiscussion,discussions } from './discussions';
+import { previewHistory,restoreHistory,listHistory } from './history';
 
 const url=process.env.HS_TEST_POSTGRES_URL;
 let db:Database,r:Repository;
 describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
+  it('atomically restores immutable history and deduplicates concurrent restore retries',async()=>{const p=await r.create(localActor,'Restore on PostgreSQL','space-product');const saved=await r.save(p.id,localActor,{operationId:crypto.randomUUID(),baseVersion:1,title:'Changed title',document:ensureIds({type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Changed content'}]}]})});const preview=await previewHistory(r,localActor,p.id,1),input={operationId:crypto.randomUUID(),previewId:preview.previewId,sourceVersion:1,expectedVersion:saved.page.version};const results=await Promise.all([restoreHistory(r,localActor,p.id,input),restoreHistory(r,localActor,p.id,input)]);expect(results.filter(x=>x.replayed)).toHaveLength(1);const live=await r.get(p.id,localActor);expect(live.version).toBe(3);expect(live.title).toBe(p.title);expect(live.document).toEqual(p.document);expect((await listHistory(r,localActor,p.id)).versions[0].restoredFrom).toBe(1);await expect(db.query("UPDATE hs_revisions SET title='tampered' WHERE page_id=$1 AND version=1",[p.id])).rejects.toThrow('immutable');});
   beforeAll(async()=>{
     const parsed=new URL(url!);
     if(!['127.0.0.1','localhost'].includes(parsed.hostname)||parsed.pathname!=='/holy_sheet_acceptance')throw new Error('Integration tests require the dedicated loopback acceptance database');

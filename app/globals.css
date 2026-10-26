@@ -290,5 +290,15 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .notification-list li { padding:16px 0; border-bottom:1px solid var(--line); }
 .notification-link { display:grid; gap:6px; padding:0; width:100%; border:0; background:transparent; text-align:left; min-height:44px; }
 .notification-link small { color:var(--muted); }
+.editor-dialog:has(.history-dialog) { width:min(1100px,95vw); }
+.history-dialog { color:var(--muted); }
+.history-versions { display:grid; gap:8px; max-height:240px; overflow:auto; padding:4px; }
+.history-versions button { display:grid; gap:5px; text-align:left; padding:14px; border:1px solid var(--line); border-radius:10px; background:white; min-height:44px; }
+.history-versions button[aria-pressed=true] { border-color:#6a7169; background:#f3f5f1; }
+.history-preview { margin-top:24px; border-top:1px solid var(--line); padding-top:20px; color:var(--ink); }
+.history-preview .rich-editor { margin:16px 0; }
+.history-change { border-bottom:1px solid var(--line); padding:16px 0; }
+.history-change pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+.history-restore { margin-top:24px; padding:16px; border:1px solid var(--line); border-radius:12px; }
 @media(min-width:1250px) { .discussions-open .document { margin-right:390px; } }
 @media(max-width:900px) { .discussion-panel { width:100%; padding:20px; } }
