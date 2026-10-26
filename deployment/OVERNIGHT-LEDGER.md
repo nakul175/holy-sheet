@@ -22,6 +22,7 @@ BTF All view currently lists HOLY-1 through HOLY-8. HOLY-9 returns Issue not fou
 - PR #2 (HOLY-4 foundation), merge `49cf51231a5cca30bcd78ac080f79dce478a934f`.
 - PR #3 (HOLY-6 foundation), merge `65df4c6441dfb964962483a70cad9a7a70e67fe0`.
 - PR #4 (HOLY-7 foundation), merge `a5b4ab866f66acba89edd1167ace4c1b734d96ab`.
+- PR #5 (HOLY-8 private template foundation), merge `e541a2cd3f0e20a838b19ea8ed9d10446d5c5fc8`.
 
 Each merge followed passing GitHub CI and exact source-tree verification. Local main was fast-forwarded to the same revision; current HOLY-7 work starts there. These merges are incremental, with production access still disabled. They do not mark any story Done or replace the documented acceptance gates.
 
@@ -36,3 +37,7 @@ Each merge followed passing GitHub CI and exact source-tree verification. Local 
 - HOLY-9–17: not listed in current backlog inventory; HOLY-9 and HOLY-17 direct URLs both return Issue not found. Requirements unresolved.
 
 No story is marked Done by this ledger. Automated checks and manual BugOff execution remain distinct.
+
+## Additional qualification
+
+Five real ClamAV checks passed, including encrypted archive/signature detection and quarantine retry. A separate synthetic PostgreSQL restore matched all 26 tables and 38 authorized document reads. The immutable HOLY-8 package passed 13 disabled-access runtime checks with non-root/read-only verification. Full boundaries and exact revisions are in LOCAL-QUALIFICATION.md. The unavailable MinIO registry dependency has been removed from the deployment path in favor of a required qualified HTTPS private S3 endpoint. Staging DNS remained unresolved on recheck.

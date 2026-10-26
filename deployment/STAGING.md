@@ -1,18 +1,20 @@
 # HOLY-3 staging preparation
 
-This repository contains an **unexecuted staging scaffold**. No services have been deployed. The production feature flag defaults to off. Local tests use embedded PostgreSQL (PGlite); they do not qualify the Docker services, suite identity or SHO integration.
+This repository contains staging configuration; no service has been deployed to the requested staging domain. The production feature flag defaults to off. Local qualification includes PGlite regression tests, six real PostgreSQL concurrency/integration tests and five real ClamAV checks. These do not qualify suite identity, private cloud object storage or actual SHO integration.
 
 ## Configuration and prerequisites
 
-Use Docker Engine with Compose v2 on a dedicated staging host. Copy `.env.staging.example` to `.env.staging` locally; that file is ignored by Git. Supply distinct PostgreSQL, storage administrator, storage service-account and maintenance credentials. Generate a 32-byte Base64 recovery master key, retain it in the staging secret manager and protect its backup separately from database backups. Losing it makes existing encrypted recovery drafts unreadable. Passwords interpolated into `DATABASE_URL` must be URI-safe (random hexadecimal values work).
+Use Docker Engine with Compose v2 on a dedicated staging host. Copy `.env.staging.example` to `.env.staging` locally; that file is ignored by Git. Supply distinct PostgreSQL, scoped storage service-account and maintenance credentials. Generate a 32-byte Base64 recovery master key, retain it in the staging secret manager and protect its backup separately from database backups. Losing it makes existing encrypted recovery drafts unreadable. Passwords interpolated into `DATABASE_URL` must be URI-safe (random hexadecimal values work).
 
 Set `HS_ORIGIN` to the exact HTTPS origin served by your reverse proxy. Only the application binds a host port, on loopback port 3100. The proxy must terminate TLS, preserve the Host header, forward the Origin header unchanged, enforce request limits above the application's 25 MB upload boundary, and disable buffering/caching for authenticated media. Do not expose the database, storage console or scanner publicly.
 
 Replace the placeholder suite issuer and HTTPS JWKS URL with an agreed identity adapter. The application currently verifies RS256/ES256 JWTs with `sub`, `iat`, `exp`, issuer and audience `holy-sheet`, accepting at most one hour of token lifetime. There is no implemented suite login callback or token exchange. An authenticated bridge must provide the session as an HttpOnly, Secure, SameSite cookie named `hs_session`; document the bridge and logout propagation before enabling access. Do not place tokens in page URLs. Set the bootstrap subject to the exact trusted `sub`, not an email address.
 
-Pin the PostgreSQL, MinIO, mc, ClamAV and Node images to reviewed immutable digests before qualification. The current tags are preparation placeholders. Validate service compatibility and scanner signature freshness on the intended host.
+Set `S3_ENDPOINT` to a qualified HTTPS S3-compatible endpoint and `S3_BUCKET` to a private bucket with public access disabled. Scope the service account to that bucket and verify anonymous denial, authorization loss, range requests and cleanup against the actual provider. The previous MinIO/mc registry tags could not be pulled (registry 401); the official MinIO source repository is archived. They are no longer deployment dependencies. Existing `storage-bootstrap.sh` and `media-policy.json` remain unqualified MinIO-specific reference material, not an automatic deployment step. See [the official repository](https://github.com/minio/minio).
 
-## Commands for a later, explicitly authorized deployment
+PostgreSQL, ClamAV and Node are pinned to immutable image digests. The qualified local ClamAV image is amd64; choose a qualified native image/platform for another target architecture. Service compatibility and signature freshness checks on the intended host remain required. Scanner acceptance used isolated loopback services, not a public deployment.
+
+## Deployment after prerequisites are satisfied
 
 The following commands are documentation only; they have not been run:
 
@@ -23,11 +25,11 @@ docker compose --env-file .env.staging -f compose.staging.json up -d
 docker compose --env-file .env.staging -f compose.staging.json exec app node scripts/provision-workspace.mjs
 ```
 
-Provisioning adds the configured owner, workspace and space using an additive transaction; it does not change existing grants. The application applies `db/002_documents.sql` on database initialization. Back up the database before migration and verify restoration with matching private objects and recovery master key. The old tables remain available, but turning off the feature is not a reverse data migration.
+Provisioning adds the configured owner, workspace and space using an additive transaction; it does not change existing grants. The application applies the ordered additive migrations from `db/002_documents.sql` onward under a database migration lock. Back up the database before migration and verify restoration with matching private objects and recovery master key. The old tables remain available, but turning off the feature is not a reverse data migration.
 
-Keep `HS_RICH_EDITOR_ENABLED=0` until identity and proxy checks pass. Enabling it requires a configuration change and service recreation during an authorized qualification run. The application must return feature-disabled responses while off. Storage bootstrap creates a private bucket and a separate account restricted to that bucket. Scanner failures keep uploads unavailable. Confirm both properties against actual services.
+Keep `HS_RICH_EDITOR_ENABLED=0` until identity and proxy checks pass. Enabling it requires a configuration change and service recreation during an authorized qualification run. The application must return feature-disabled responses while off. Scanner failures keep uploads unavailable. Confirm private bucket/service-account boundaries and quarantine against actual services.
 
-Maintenance is an explicit operator action: `POST /api/internal/maintenance` with `Authorization: Bearer <HS_MAINTENANCE_TOKEN>`. It processes at most 50 candidates per call, honors live references and unexpired recovery leases, retains scanned detached objects for at least seven days, and retries storage deletions after failures. No schedule is installed or enabled. Do not delete storage objects directly to work around a failed cleanup.
+Maintenance is an explicit operator action: `POST /api/internal/maintenance` with `Authorization: Bearer <HS_MAINTENANCE_TOKEN>`. It processes at most 50 candidates per call, honors live references, unexpired recovery leases and available history pins, retains ordinary scanned detached objects for at least seven days, and retries storage deletions after failures. Security-rejected objects bypass these retention protections and are purged promptly. History availability expires 90 days after supersession; current revisions remain retained. No schedule is installed or enabled. Do not delete storage objects directly to work around a failed cleanup.
 
 ## Qualification required before HOLY-3 completion
 
