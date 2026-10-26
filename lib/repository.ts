@@ -4,10 +4,11 @@ import type { Actor } from "./auth";
 import { localActor } from "./auth";
 import { DocumentError, documentBlocks, fromLegacy, mergeDocuments, plainText, schemaVersion, stableStringify, validateDocument, type RichNode } from "./document";
 import { listDemoPages } from "./demo-store";
-import type { Page } from "./types";
+import { updateCommentAnchors } from './comment-anchors';
+import { canEdit,type Page,type PageRole } from './types';
 
-type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:"owner"|"editor"|"viewer"};
-export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:"owner"|"editor"|"viewer"};
+type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
+export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole};
 export class Repository {
   constructor(public db:Database) {}
   async seedLocal() {
@@ -30,13 +31,14 @@ export class Repository {
       UNION ALL SELECT p.id,p.parent_id,p.workspace_id,p.visibility,p.owner_id,a.path||p.id FROM hs_pages p JOIN ancestors a ON p.id=a.parent_id AND p.workspace_id=a.workspace_id
       WHERE p.deleted_at IS NULL AND NOT p.id=ANY(a.path) AND cardinality(a.path)<100
     ) SELECT p.*,w.name AS workspace_name,s.name AS space_name,parent.title AS parent_title,
-      CASE WHEN p.owner_id=$2 THEN 'owner' WHEN EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.role='editor') THEN 'editor' ELSE 'viewer' END AS role
+      CASE WHEN p.owner_id=$2 THEN 'owner' WHEN EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.role='editor') THEN 'editor'
+      WHEN EXISTS(SELECT 1 FROM ancestors a JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE g.role='commenter') THEN 'commenter' ELSE 'viewer' END AS role
       FROM hs_pages p JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
       JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$2 AND m.active=true
       LEFT JOIN hs_pages parent ON parent.id=p.parent_id AND parent.owner_id=$2
       WHERE p.id=$1 AND p.deleted_at IS NULL AND EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.subject IS NOT NULL) ${lock ? "FOR UPDATE OF p,m" : ""}`,[id,actor.id]);
     if(!rows.length) throw new DocumentError("Page is restricted or unavailable","not_found",404);
-    if(edit && rows[0].role==="viewer") throw new DocumentError("This page is read only","read_only",403);
+    if(edit && !canEdit(rows[0].role)) throw new DocumentError("This page is read only","read_only",403);
     return rows[0];
   }
   async get(id:string,actor:Actor,tx:Sql=this.db):Promise<DocumentPage> {
@@ -75,12 +77,13 @@ export class Repository {
   }
   async writeDocument(tx:Sql,id:string,document:RichNode,version:number,title:string) {
     const rows=documentBlocks(document);
-    const previous=await tx.query<{id:string;version:number;node:RichNode}>("SELECT id,version,node FROM hs_blocks WHERE page_id=$1",[id]);
+    const previous=await tx.query<{id:string;version:number;node:RichNode;parent_id:string|null}>("SELECT id,version,node,parent_id FROM hs_blocks WHERE page_id=$1",[id]);
     const byId=new Map(previous.rows.map(b=>[b.id,b]));
     const payload=rows.map(b=>{const old=byId.get(b.id);return {id:b.id,parent_id:b.parentId,position:b.position,type:b.type,node:b.node,version:old?old.version+(stableStringify(old.node)===stableStringify(b.node)?0:1):1};});
     // Retain only current stable IDs for this page. Cross-page ID reuse fails atomically.
     await tx.query("DELETE FROM hs_blocks WHERE page_id=$1",[id]);
     await tx.query("INSERT INTO hs_blocks(id,page_id,parent_id,position,type,node,version) SELECT x.id,$1,x.parent_id,x.position,x.type,x.node,x.version FROM jsonb_to_recordset($2::jsonb) AS x(id text,parent_id text,position integer,type text,node jsonb,version integer)",[id,JSON.stringify(payload)]);
+    await updateCommentAnchors(tx,id,{type:'doc',content:previous.rows.filter(b=>b.parent_id===null).map(b=>b.node)},document);
     await tx.query("INSERT INTO hs_revisions(page_id,version,title,document) VALUES($1,$2,$3,$4)",[id,version,title,JSON.stringify(document)]);
   }
   async save(id:string,actor:Actor,input:{operationId:string;baseVersion:number;title:string;document:unknown}) {

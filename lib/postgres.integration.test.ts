@@ -4,6 +4,7 @@ import { Repository } from './repository';
 import { localActor } from './auth';
 import { ensureIds,plainText } from './document';
 import { changeSharing } from './sharing';
+import { changeDiscussion,discussions } from './discussions';
 
 const url=process.env.HS_TEST_POSTGRES_URL;
 let db:Database,r:Repository;
@@ -39,5 +40,9 @@ describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
     const revoke=changeSharing(r,localActor,parent.id,{operationId:crypto.randomUUID(),expectedVersion:2,recipientId:editor.id,role:null});
     try{let blocked=false;for(let i=0;i<100;i++){const result=await db.query<{count:string}>("SELECT count(*) FROM pg_locks WHERE granted=false");if(Number(result.rows[0].count)>0){blocked=true;break;}await new Promise(resolve=>setTimeout(resolve,10));}expect(blocked).toBe(true);}finally{release();}
     await Promise.all([edit,revoke]);expect((await r.get(child.id,localActor)).title).toBe('Committed before revocation');await expect(r.get(child.id,editor)).rejects.toMatchObject({status:404});await expect(r.save(child.id,editor,{operationId:crypto.randomUUID(),baseVersion:2,title:'Must not commit',document:child.document})).rejects.toMatchObject({status:404});
+  });
+  it('deduplicates concurrent discussion retries and notification delivery on PostgreSQL',async()=>{
+    const actor={id:crypto.randomUUID()};await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);await db.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-aplyd',$1)",[actor.id]);const p=await r.create(localActor,'PostgreSQL discussions','space-product');await changeSharing(r,localActor,p.id,{operationId:crypto.randomUUID(),expectedVersion:1,recipientId:actor.id,role:'commenter'});
+    const op={kind:'create' as const,operationId:crypto.randomUUID(),body:'Thank you @Your workspace',mentionIds:[localActor.id],baseVersion:p.version,anchors:[]};const result=await Promise.all([changeDiscussion(r,actor,p.id,op),changeDiscussion(r,actor,p.id,op)]);expect(result.filter(x=>x.replayed)).toHaveLength(1);expect((await discussions(r,localActor,p.id)).threads).toHaveLength(1);expect((await db.query<{n:number}>('SELECT count(*)::integer AS n FROM hs_notifications WHERE event_id=$1',[result[0].eventId])).rows[0].n).toBe(1);expect((await r.get(p.id,localActor)).version).toBe(p.version);
   });
 });

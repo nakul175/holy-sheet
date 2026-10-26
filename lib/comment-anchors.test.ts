@@ -1,0 +1,9 @@
+import { describe,expect,it } from 'vitest';
+import { ensureIds,type RichNode } from './document';
+import { createAnchors,mapAnchors } from './comment-anchors';
+const document=(text:string):RichNode=>ensureIds({type:'doc',content:[{type:'paragraph',attrs:{id:'stable'},content:[{type:'text',text}]}]});
+describe('conservative discussion anchors',()=>{
+  it('preserves a moved block and maps insertion/removal before the passage',()=>{const before=document('Hello orchid'),anchors=createAnchors(before,[{blockId:'stable',start:6,end:12}]);expect(mapAnchors(anchors,before,document('New Hello orchid'))[0]).toMatchObject({start:10,end:16,status:'attached'});expect(mapAnchors(anchors,before,document('orchid'))[0]).toMatchObject({start:0,end:6,status:'attached'});const moved=document('Hello orchid');moved.content!.unshift(...ensureIds({type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'New block'}]}]}).content!);expect(mapAnchors(anchors,before,moved)).toEqual(anchors);});
+  it('does not silently reattach a deleted or changed passage to unrelated matching text',()=>{const before=document('Hello orchid'),anchors=createAnchors(before,[{blockId:'stable',start:6,end:12}]);const changed=mapAnchors(anchors,before,document('Hello flower'));expect(changed[0].status).toBe('changed');expect(mapAnchors(changed,document('Hello flower'),document('Hello orchid'))[0].status).toBe('changed');expect(mapAnchors(anchors,before,{type:'doc',content:[{type:'paragraph',attrs:{id:'other'},content:[{type:'text',text:'orchid'}]}]})[0].status).toBe('changed');});
+  it('validates source ranges and uses the current server passage as the quote',()=>{expect(()=>createAnchors(document('Text'),[{blockId:'stable',start:0,end:999}])).toThrow('changed');expect(createAnchors(document('Text'),[{blockId:'stable',start:0,end:4}])[0].quote).toBe('Text');});
+});

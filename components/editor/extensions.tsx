@@ -4,7 +4,8 @@ import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from "@tip
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { useEffect, useState } from "react";
+import { useEffect, useState,useRef } from "react";
+import { openSectionsForNavigation,restoreTemporarySections,type TemporarySection } from "./section-navigation";
 
 export const Callout = Node.create({
   name:"callout",group:"block",content:"paragraph+",defining:true,
@@ -14,13 +15,15 @@ export const Callout = Node.create({
 });
 
 function ContentsView({editor}:NodeViewProps) {
+  const temporary=useRef<TemporarySection[]>([]);
+  useEffect(()=>{const outside=(event:MouseEvent)=>{if(temporary.current.some(e=>e.element.contains(event.target as globalThis.Node)))return;temporary.current=restoreTemporarySections(temporary.current);};document.addEventListener("click",outside);return()=>{document.removeEventListener("click",outside);restoreTemporarySections(temporary.current);};},[]);
   const [headings,setHeadings]=useState<{id:string;level:number;text:string}[]>([]);
   useEffect(()=>{const collect=()=>{const next:typeof headings=[];editor.state.doc.descendants(n=>{if(n.type.name==="heading")next.push({id:n.attrs.id,level:n.attrs.level,text:n.textContent||"Untitled heading"});});setHeadings(next);};collect();editor.on("update",collect);return()=>{editor.off("update",collect);};},[editor]);
   function navigate(id:string) {
     const target=editor.view.dom.querySelector(`[data-id="${CSS.escape(id)}"]`);
     if(!target)return;
-    let ancestor=target.parentElement;
-    while(ancestor){if(ancestor.getAttribute("data-type")==="details")ancestor.classList.add("is-open");ancestor=ancestor.parentElement;}
+    const key=editor.view.dom.closest("[data-preference-key]")?.getAttribute("data-preference-key")??"session";
+    openSectionsForNavigation(target,key,temporary.current);
     target.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth",block:"center"});
     target.setAttribute("tabindex","-1");(target as HTMLElement).focus({preventScroll:true});
   }

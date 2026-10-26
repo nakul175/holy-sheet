@@ -4,7 +4,7 @@ import type { Repository } from './repository';
 import type { Sql } from './database';
 import { DocumentError,stableStringify } from './document';
 
-type Role='editor'|'viewer';
+type Role='editor'|'commenter'|'viewer';
 export type SharingState={version:number;members:{id:string;name:string}[];direct:{id:string;name:string;role:Role;active:boolean}[];inherited:{sourceId:string;sourceTitle:string;sourceReadable:boolean;recipientId:string;recipientName:string;role:Role}[]};
 export type ShareChange={operationId:string;expectedVersion:number;recipientId:string;role:Role|null};
 async function recipientRole(r:Repository,tx:Sql,pageId:string,id:string){try{return (await r.access(tx,pageId,{id})).role;}catch(e){if(e instanceof DocumentError&&e.status===404)return null;throw e;}}

@@ -1,0 +1,15 @@
+# HOLY-6 discussion checkpoint
+
+Implemented locally: page and selected-passage threads, stable-block/range anchors, inline markers, a responsive discussion panel, chronological replies, Open/Resolved/All filters, Commenter role inheritance, author edits with version checks, soft deletion, 30-day authority-checked restoration, owner moderation, resolve/reopen controls, eligible mention suggestions, deduplicated durable notification events and a permission-filtered in-app inbox.
+
+Unsent comment drafts stay in memory within the page session, including across panel close/reopen. They are not represented as server-saved or crash-recoverable drafts. Navigation warns before leaving unsent discussion text. Ambiguous posting failures retain the operation ID for confirmation retry. A readable account can acknowledge its own already-committed operation after a role downgrade, without creating a new comment or audit event; fresh writes still require Commenter or higher.
+
+Notifications persist a durable event with the comment transaction, then deliver separately. Delivery failures preserve the confirmed comment and leave the event retryable. Posting and inbox reads attempt event delivery; no recurring schedule was created. Every delivery and inbox view checks current page access. Actual production delivery latency and sustained backlog behavior remain unqualified.
+
+Anchors map only reliable surrounding edits to the same stable block. Changed/deleted/ambiguous passages retain an authorized original quote and display an explicit fallback. They never silently reattach after their status becomes changed. Selected anchors currently have safety bounds of 100 text blocks and 10,000 quoted characters; these limits need product acceptance before final sign-off.
+
+Local browser rehearsal on the synthetic QA page verified: selecting “orchid,” retaining an unsent draft across close/reopen, posting the anchored comment, keyboard selection of a self-mention, a chronological reply, author editing, hiding a resolved thread from Open, viewing Resolved, reopening, navigating to the passage and reopening the same thread through its marker. Evidence is retained in the project output directory. The synthetic thread is not a real communication to another person.
+
+The implementation also fixes two discovered rich-editor regressions: hidden details content now expands with its accessibility state during navigation, and changed remote content resets unsafe whole-page Undo history while unchanged acknowledgements preserve Undo. Unchanged comment edits acknowledge without fabricating an Edited timestamp or content transition.
+
+Remaining release gates: actual suite/app entitlement and HOLY-5 administration mapping; actual SHO host integration; full BugOff execution; device/screen-reader/browser-matrix and performance evidence; notification durability across a real service outage; comprehensive large-thread pagination; long-session role-change and mixed-host acceptance. This checkpoint is not a claim that every HOLY-6 acceptance criterion has passed.
