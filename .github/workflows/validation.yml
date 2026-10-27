@@ -57,3 +57,29 @@ jobs:
             artifacts/unit.xml
             artifacts/*.tgz
           if-no-files-found: ignore
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the actual workspace deployment image
+        run: docker build -t holy-sheet-qualification:${{ github.sha }} .
+      - name: Verify standalone and embedded routes load from the image
+        run: |
+          name="holy-sheet-image-${GITHUB_RUN_ID}"
+          cleanup() { docker logs "$name" || true; docker rm -f "$name" || true; }
+          trap cleanup EXIT
+          docker run -d --name "$name" -p 127.0.0.1:3419:3000 \
+            -e HS_LOCAL_PREVIEW=0 -e HS_RICH_EDITOR_ENABLED=1 \
+            -e HS_IDENTITY_ISSUER=https://accounts.aplyd.org \
+            -e HS_IDENTITY_JWKS_URL=https://accounts.aplyd.org/jwks \
+            holy-sheet-qualification:${{ github.sha }}
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3419/embed/picker > /tmp/holy-sheet-picker.html; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3419/ > /tmp/holy-sheet-home.html
+          curl -fsS http://127.0.0.1:3419/embed/pages/00000000-0000-4000-8000-000000000001 > /tmp/holy-sheet-embed.html
+          test "$(curl -s -o /tmp/holy-sheet-denied.json -w '%{http_code}' http://127.0.0.1:3419/api/pages)" = 401
+          if docker logs "$name" 2>&1 | rg 'MODULE_NOT_FOUND|Cannot find module'; then exit 1; fi
