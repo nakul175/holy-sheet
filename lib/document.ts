@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { mediaIdPattern,type Block } from './types';
+import { blockTypes,mediaIdPattern,type Block } from './types';
 import { richSchema } from "./rich-schema";
 
 export type RichNode = { type: string; text?: string; attrs?: Record<string, unknown>; marks?: { type: string; attrs?: Record<string, unknown> }[]; content?: RichNode[] };
@@ -105,12 +105,30 @@ export function ensureIds(doc: RichNode, fresh = false): RichNode {
   return walk(doc);
 }
 export function fromLegacy(blocks: Block[]): RichNode {
-  const nodes: RichNode[] = blocks.map(b => {
+  const used = new Set<string>(), positions = new Set<number>();
+  const sourcePage = blocks[0]?.pageId;
+  const review = (message:string):never => { throw new DocumentError(`Legacy migration needs review: ${message}. Source content was not changed.`, 'legacy_review_required'); };
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object' || Object.keys(block).some(key=>!['id','pageId','parentBlockId','type','text','checked','position'].includes(key))) review('unsupported source fields');
+    if (typeof block.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(block.id) || used.has(block.id)) review('invalid or duplicate source IDs');
+    if (typeof block.pageId !== 'string' || !block.pageId || block.pageId !== sourcePage) review('blocks must belong to one page');
+    if (block.parentBlockId !== null) review('nested blocks require an explicit mapping');
+    if (!blockTypes.includes(block.type) || typeof block.text !== 'string' || (block.checked !== undefined && typeof block.checked !== 'boolean')) review('unsupported block content');
+    if (block.type !== 'checklist' && block.checked === true) review('checked state on a non-checklist block');
+    if (!Number.isSafeInteger(block.position) || block.position < 0 || positions.has(block.position)) review('invalid or ambiguous positions');
+    used.add(block.id); positions.add(block.position);
+  }
+  const helper = (prefix:string,id:string) => {
+    const base = `${prefix}-${id}`.slice(0,90); let candidate=base,index=0;
+    while(used.has(candidate)) candidate=`${base}-${++index}`;
+    used.add(candidate); return candidate;
+  };
+  const nodes: RichNode[] = [...blocks].sort((a,b)=>a.position-b.position).map(b => {
     const text: RichNode[] = b.text ? [{type:"text",text:b.text}] : [];
-    if(["bullet","number","checklist"].includes(b.type)) return {type:b.type === "checklist" ? "taskList" : b.type === "number" ? "orderedList" : "bulletList",attrs:{id:`list-${b.id}`},content:[{type:b.type === "checklist" ? "taskItem" : "listItem",attrs:{id:b.id,...(b.type === "checklist" ? {checked:!!b.checked}:{})},content:[{type:"paragraph",attrs:{id:`text-${b.id}`},content:text}]}]};
+    if(["bullet","number","checklist"].includes(b.type)) return {type:b.type === "checklist" ? "taskList" : b.type === "number" ? "orderedList" : "bulletList",attrs:{id:helper("list",b.id)},content:[{type:b.type === "checklist" ? "taskItem" : "listItem",attrs:{id:b.id,...(b.type === "checklist" ? {checked:!!b.checked}:{})},content:[{type:"paragraph",attrs:{id:helper("text",b.id)},content:text}]}]};
     return {type:b.type === "heading" ? "heading" : "paragraph",attrs:{id:b.id,...(b.type === "heading" ? {level:2}:{})},content:text};
   });
-  return {type:"doc",content:nodes.length ? nodes : [{type:"paragraph",attrs:{id:crypto.randomUUID()}}]};
+  return validateDocument({type:"doc",content:nodes.length ? nodes : [{type:"paragraph",attrs:{id:crypto.randomUUID()}}]});
 }
 function skeleton(n: RichNode): unknown { return n.type === "text" || n.type === "hardBreak" ? null : [n.type,n.attrs?.id,(n.content ?? []).filter(c=>!["text","hardBreak"].includes(c.type)).map(skeleton)]; }
 export function mergeDocuments(base: RichNode, latest: RichNode, local: RichNode): RichNode | null {
