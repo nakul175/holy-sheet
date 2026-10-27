@@ -1,6 +1,6 @@
 {
   "name": "@aplyd/holy-sheet-editor",
-  "version": "0.1.0-holy-next50.1",
+  "version": "0.1.0-holy-next50.2",
   "description": "HS-owned document editor and origin-isolated host transport",
   "type": "module",
   "files": [
