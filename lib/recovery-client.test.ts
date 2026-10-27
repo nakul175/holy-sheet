@@ -2,8 +2,26 @@ import { beforeEach,afterEach,describe,it,expect,vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { importDraftKey,storeDraft,recoveryDrafts,decryptDraft,discardDraft,storeUploadCheckpoint,uploadRecoveryRecords,decryptUploadCheckpoint,discardUploadCheckpoint,type DraftProtection } from './recovery-client';
 let protection:DraftProtection;
-beforeEach(async()=>{vi.stubGlobal('indexedDB',new IDBFactory());protection={id:crypto.randomUUID(),key:await importDraftKey(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64')),expiresAt:new Date(Date.now()+3600000).toISOString()};});afterEach(()=>vi.unstubAllGlobals());
+beforeEach(async()=>{vi.stubGlobal('indexedDB',new IDBFactory());protection={id:crypto.randomUUID(),key:await importDraftKey(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64')),expiresAt:new Date(Date.now()+3600000).toISOString()};});afterEach(()=>{vi.restoreAllMocks();vi.useRealTimers();vi.unstubAllGlobals();});
 describe('encrypted recovery persistence',()=>{
+ it.each(['not-a-date','',new Date(0).toISOString()])('refuses unusable text and upload recovery expiry %s before promising a checkpoint',async expiresAt=>{
+  const invalid={...protection,expiresAt};
+  await expect(storeDraft(invalid,'actor-a','page-a',{title:'Must remain unsaved',document:{type:'doc',content:[{type:'paragraph'}]},baseVersion:1})).rejects.toThrow(/expired/i);
+  await expect(storeUploadCheckpoint(invalid,'actor-a','page-a',{name:'unsaved.txt'})).rejects.toThrow(/expired/i);
+ });
+ it('does not replace the previous text checkpoint if its lease expires during encryption',async()=>{
+  const now=Date.now(),payload={title:'Previous checkpoint',document:{type:'doc',content:[{type:'paragraph'}]},baseVersion:1};
+  await storeDraft(protection,'actor-a','page-a',payload);
+  const original=(await recoveryDrafts('actor-a','page-a'))[0];
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(now);
+  const encrypt=crypto.subtle.encrypt.bind(crypto.subtle);
+  vi.spyOn(crypto.subtle,'encrypt').mockImplementationOnce(async(...args)=>{const result=await encrypt(...args);vi.setSystemTime(Date.parse(protection.expiresAt)+1);return result;});
+  await expect(storeDraft(protection,'actor-a','page-a',{...payload,title:'Expired replacement'})).rejects.toThrow(/expired/i);
+  vi.setSystemTime(now);
+  const preserved=(await recoveryDrafts('actor-a','page-a'))[0];
+  expect(Buffer.from(preserved.ciphertext)).toEqual(Buffer.from(original.ciphertext));
+  expect((await decryptDraft(preserved,protection.key)).title).toBe('Previous checkpoint');
+ });
  it('stores upload details without plaintext content or a persisted encryption key',async()=>{const payload={name:'Sensitive-plan.txt',caption:'Private description',phase:'ready',uploadId:crypto.randomUUID()};await storeUploadCheckpoint(protection,'actor-a','page-a',payload);const records=await uploadRecoveryRecords('actor-a','page-a');expect(records).toHaveLength(1);expect(Object.keys(records[0]).sort()).toEqual(['actorId','ciphertext','expiresAt','id','iv','pageId','updatedAt']);expect(Buffer.from(records[0].ciphertext).toString('utf8')).not.toContain('Sensitive-plan');expect(await decryptUploadCheckpoint(records[0],protection.key)).toEqual(payload);await expect(crypto.subtle.exportKey('raw',protection.key)).rejects.toThrow();});
  it('isolates accounts and pages and detects binding/ciphertext changes',async()=>{await storeUploadCheckpoint(protection,'actor-a','page-a',{name:'secret.txt'});const record=(await uploadRecoveryRecords('actor-a','page-a'))[0];expect(await uploadRecoveryRecords('actor-b','page-a')).toHaveLength(0);expect(await uploadRecoveryRecords('actor-a','page-b')).toHaveLength(0);for(const patch of [{actorId:'actor-b'},{pageId:'page-b'},{id:crypto.randomUUID()}])await expect(decryptUploadCheckpoint({...record,...patch},protection.key)).rejects.toThrow();const bytes=new Uint8Array(record.ciphertext.slice(0));bytes[0]^=1;await expect(decryptUploadCheckpoint({...record,ciphertext:bytes.buffer},protection.key)).rejects.toThrow();});
  it('keeps pending upload records when an unrelated text draft is acknowledged',async()=>{const text={...protection,id:crypto.randomUUID()};await storeDraft(text,'actor-a','page-a',{title:'Text draft',document:{type:'doc',content:[{type:'paragraph'}]},baseVersion:1});await storeUploadCheckpoint(protection,'actor-a','page-a',{phase:'reserved',name:'pending.txt'});await discardDraft(text.id);expect(await recoveryDrafts('actor-a','page-a')).toHaveLength(0);expect(await uploadRecoveryRecords('actor-a','page-a')).toHaveLength(1);await discardUploadCheckpoint(protection.id);expect(await uploadRecoveryRecords('actor-a','page-a')).toHaveLength(0);});

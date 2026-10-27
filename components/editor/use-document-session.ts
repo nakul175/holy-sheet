@@ -18,11 +18,12 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
   const blocked=useRef(false),accessReady=useRef(true),permissionEpoch=useRef(0);
   const [observedActor,setObservedActor]=useState(""),[accessUnverified,setAccessUnverified]=useState(false);
   const restoredFrom=useRef<string|null>(null);
+  const discardRequest=useRef(0);
   const setCurrent=(next:DocumentPage)=>{current.current=next;setPage(next);};
   const establish=useCallback(async(p:DocumentPage)=>{if(!canEdit(p.role))return;try{const epoch=permissionEpoch.current,id=crypto.randomUUID();const response=await requestJson<{id:string;key:string;expiresAt:string}>(`/api/v1/pages/${pageId}/drafts`,post({id}));if(!alive.current||epoch!==permissionEpoch.current)return;const key=await importDraftKey(response.key);if(!alive.current||epoch!==permissionEpoch.current)return;protection.current={id,key,expiresAt:response.expiresAt};setRecoveryError("");}catch{setRecoveryError("Recovery unavailable — keep this tab open until your changes are saved.");}},[pageId]);
   useEffect(()=>{alive.current=true;let cancelled=false;const epoch=permissionEpoch.current;void (async()=>{try{const d=await requestJson<{page:DocumentPage;actorId:string}>(`/api/v1/pages/${pageId}/document`);if(cancelled||epoch!==permissionEpoch.current)return;actor.current=d.actorId;setObservedActor(d.actorId);window.dispatchEvent(new CustomEvent("holy-sheet:identity",{detail:{userId:d.actorId}}));setCurrent(d.page);setStatus(!canEdit(d.page.role)?"readonly":"saved");await establish(d.page);try{const old=await recoveryDrafts(d.actorId,pageId);if(!cancelled&&epoch===permissionEpoch.current&&current.current&&canEdit(current.current.role))setCandidates(old);}catch{setRecoveryError("Recovery storage is unavailable in this browser.");}}catch(e){if(!cancelled){setError(e instanceof Error?e.message:"Page unavailable");setAuthRequired(e instanceof ApiError&&e.status===401);setStatus("error");}}})();return()=>{cancelled=true;alive.current=false;protection.current=null;for(const timer of [saveTimer,maxTimer,retryTimer,draftTimer])if(timer.current)clearTimeout(timer.current);};},[pageId,establish]);
 
-  const checkpoint=useCallback(async()=>{const p=current.current,k=protection.current;if(!p||!k||!dirty.current)return;try{if(Date.parse(k.expiresAt)<=Date.now())throw new Error('Recovery lease expired');await storeDraft(k,actor.current,pageId,{title:p.title,document:p.document,baseVersion:p.version});}catch{setRecoveryError("Recovery storage failed — your changes still need a confirmed save.");}},[pageId]);
+  const checkpoint=useCallback(async()=>{const p=current.current,k=protection.current;if(!p||!k||!dirty.current)return;try{if(Date.parse(k.expiresAt)<=Date.now())throw new Error('Recovery lease expired');await storeDraft(k,actor.current,pageId,{title:p.title,document:p.document,baseVersion:p.version});setRecoveryError("");}catch{setRecoveryError("Recovery storage failed — your changes still need a confirmed save.");}},[pageId]);
   useEffect(()=>{
     if(!observedActor)return;
     let stopped=false,reloading=false;
@@ -68,7 +69,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
     });
     return()=>{stopped=true;stop();};
   },[pageId,observedActor,checkpoint,establish]);
-  useEffect(()=>{let stopped=false;const renew=async()=>{const p=current.current,k=protection.current;if(!p||!k||!canEdit(p.role)||!dirty.current||!navigator.onLine)return;try{const ids=new Set<string>();const visit=(n:RichNode)=>{if((n.type==='image'||n.type==='file')&&typeof n.attrs?.attachmentId==='string')ids.add(n.attrs.attachmentId);n.content?.forEach(visit);};visit(p.document);const result=await requestJson<{expiresAt:string}>(`/api/v1/pages/${pageId}/drafts`,post({id:k.id,renew:true,attachmentIds:[...ids],baseVersion:p.version}));if(!stopped&&protection.current===k){k.expiresAt=result.expiresAt;await checkpoint();setRecoveryError('');}}catch{if(!stopped)setRecoveryError('Recovery protection could not be renewed. Keep this tab open until your changes are saved.');}};const timer=setInterval(()=>void renew(),60_000);window.addEventListener('online',renew);return()=>{stopped=true;clearInterval(timer);window.removeEventListener('online',renew);};},[pageId,checkpoint]);
+  useEffect(()=>{let stopped=false;const renew=async()=>{const p=current.current,k=protection.current;if(!p||!k||!canEdit(p.role)||!dirty.current||!navigator.onLine)return;try{const ids=new Set<string>();const visit=(n:RichNode)=>{if((n.type==='image'||n.type==='file')&&typeof n.attrs?.attachmentId==='string')ids.add(n.attrs.attachmentId);n.content?.forEach(visit);};visit(p.document);const result=await requestJson<{expiresAt:string}>(`/api/v1/pages/${pageId}/drafts`,post({id:k.id,renew:true,attachmentIds:[...ids],baseVersion:p.version}));if(!stopped&&protection.current===k){k.expiresAt=result.expiresAt;await checkpoint();}}catch{if(!stopped)setRecoveryError('Recovery protection could not be renewed. Keep this tab open until your changes are saved.');}};const timer=setInterval(()=>void renew(),60_000);window.addEventListener('online',renew);return()=>{stopped=true;clearInterval(timer);window.removeEventListener('online',renew);};},[pageId,checkpoint]);
   const save=useCallback(async()=>{
     const p=current.current;if(!p||!dirty.current||saving.current||blocked.current||!accessReady.current||!canEdit(p.role))return;
     if(!navigator.onLine){setStatus("offline");void checkpoint();return;}
@@ -110,7 +111,29 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
 
   async function restore(candidate:RecoveryRecord){if(!accessReady.current||!current.current||!canEdit(current.current.role))return;const epoch=permissionEpoch.current;try{const data=await requestJson<{key:string}>(`/api/v1/pages/${pageId}/drafts`,post({id:candidate.id,existingOnly:true}));const draft=await decryptDraft(candidate,await importDraftKey(data.key));if(!alive.current||epoch!==permissionEpoch.current||!accessReady.current||!current.current||!canEdit(current.current.role))return;restoredFrom.current=candidate.id;setCurrent({...current.current,title:draft.title,document:draft.document,version:draft.baseVersion});generation.current++;dirty.current=true;pending.current=null;setCandidates([]);setStatus("unsaved");void saveFunction.current();}catch(e){setRecoveryError(e instanceof Error?e.message:"Draft cannot be unlocked");}}
   async function discard(candidate:RecoveryRecord){await discardDraft(candidate.id);setCandidates(c=>c.filter(x=>x.id!==candidate.id));}
-  async function keepLatest(){if(!latest||!current.current||!accessReady.current)return;dirty.current=false;pending.current=null;blocked.current=false;setCurrent(latest);setLatest(null);setStatus(!canEdit(latest.role)?"readonly":"saved");if(protection.current)await discardDraft(protection.current.id);}
+  async function keepLatest(){
+    if(!latest||!current.current||!accessReady.current)return;
+    const epoch=permissionEpoch.current,edit=generation.current,request=++discardRequest.current;
+    try{
+      const fresh=await requestJson<{page:DocumentPage;actorId:string}>(`/api/v1/pages/${pageId}/document`);
+      if(!alive.current||epoch!==permissionEpoch.current||request!==discardRequest.current||!accessReady.current)return;
+      if(fresh.actorId!==actor.current)throw new ApiError('Your account changed. Sign in again before opening this page.',401,'identity_changed');
+      if(edit!==generation.current){setError('Your local draft changed while checking the server. Review it before discarding.');return;}
+      const discardIds=new Set([protection.current?.id,restoredFrom.current].filter((id):id is string=>!!id));
+      dirty.current=false;pending.current=null;blocked.current=false;restoredFrom.current=null;
+      for(const timer of [saveTimer,maxTimer,retryTimer,draftTimer]){if(timer.current)clearTimeout(timer.current);timer.current=null;}
+      setCurrent(fresh.page);setLatest(null);setStatus(!canEdit(fresh.page.role)?'readonly':'saved');setError('');
+      for(const id of discardIds)await discardDraft(id).catch(()=>setRecoveryError('The discarded recovery checkpoint could not be removed from this device.'));
+      onSaved?.();
+    }catch(e){
+      if(!alive.current||epoch!==permissionEpoch.current||request!==discardRequest.current)return;
+      setError(e instanceof Error?e.message:'Could not reload the server document. Your local changes are retained.');
+      if(e instanceof ApiError&&[401,404].includes(e.status)){
+        void checkpoint();permissionEpoch.current++;accessReady.current=false;blocked.current=true;protection.current=null;pending.current=null;current.current=null;
+        setPage(null);setLatest(null);setCandidates([]);setAuthRequired(e.status===401);setStatus('readonly');
+      }
+    }
+  }
   function keepBoth(){if(!latest||!current.current||!accessReady.current||!canEdit(current.current.role))return;const recovered=ensureIds(current.current.document,true);const heading:RichNode={type:"heading",attrs:{id:crypto.randomUUID(),level:2},content:[{type:"text",text:"Recovered draft"}]};setCurrent({...latest,document:{type:"doc",content:[...(latest.document.content??[]),heading,...(recovered.content??[])]}});generation.current++;pending.current=null;dirty.current=true;blocked.current=false;setLatest(null);setStatus("unsaved");void saveFunction.current();}
   function acceptExternal(next:DocumentPage){if(!current.current||!accessReady.current)return;if(dirty.current||saving.current||pending.current){blocked.current=true;setLatest(next);setStatus('conflict');return;}setCurrent(next);setStatus(canEdit(next.role)?'saved':'readonly');setError('');onSaved?.();}
   return {page,status,error,accessUnverified,authRequired,recoveryError,candidates,latest,change,save,restore,discard,keepLatest,keepBoth,acceptExternal,dirty:()=>dirty.current,checkpoint,actorId:actor.current};
