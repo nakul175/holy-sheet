@@ -35,5 +35,6 @@ export async function maintainStorage(r:Repository,erase:(key:string)=>Promise<v
   await r.db.query("DELETE FROM hs_operations WHERE created_at<now()-interval '30 days'");
   await r.db.query("DELETE FROM hs_revisions v WHERE superseded_at<=clock_timestamp()-interval '90 days' AND NOT EXISTS(SELECT 1 FROM hs_pages p WHERE p.id=v.page_id AND p.version=v.version) AND NOT EXISTS(SELECT 1 FROM hs_drafts d WHERE d.page_id=v.page_id AND d.base_version=v.version AND d.expires_at>now())");
   await r.db.query('DELETE FROM hs_restore_previews WHERE expires_at<=clock_timestamp()');
+  await r.db.query('DELETE FROM hs_search_snapshots WHERE id IN (SELECT id FROM hs_search_snapshots WHERE expires_at<=clock_timestamp() ORDER BY expires_at LIMIT 100)');
   return {considered:candidates.length,removed,failed};
 }
