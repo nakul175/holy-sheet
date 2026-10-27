@@ -71,7 +71,7 @@ export class Repository {
       const requestHash=createHash('sha256').update(stableStringify({title,spaceId,parentId:parentId??null})).digest('hex');
       if(operationId){
         // Serialize this actor's create intents across locations and concurrent retries.
-        await tx.query('SELECT id FROM hs_users WHERE id=$1 FOR UPDATE',[actor.id]);
+        await tx.query('SELECT id FROM hs_users WHERE id=$1 FOR NO KEY UPDATE',[actor.id]);
         const prior=await tx.query<{page_id:string;request_hash:string}>('SELECT page_id,request_hash FROM hs_page_creations WHERE actor_id=$1 AND operation_id=$2',[actor.id,operationId]);
         if(prior.rows.length){
           if(prior.rows[0].request_hash!==requestHash)throw new DocumentError('Creation attempt was reused with different fields','operation_mismatch',409);
