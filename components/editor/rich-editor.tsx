@@ -20,6 +20,7 @@ import { ensureIds, highlights, idTypes, languages, palette, plainText, safeUrl,
 import { Callout, FileBlock, FindExtension, PageLink, TableOfContents, findKey } from "./extensions";
 import { requestJson } from "./use-document-session";
 import UploadDialog from "./upload-dialog";
+import { Dialog } from './dialog';
 import TransformDialog from './transform-dialog';
 import { applyBlockTransform,planBlockTransform,transformShortcut,type TransformTarget,type TransformPlan } from './block-transforms';
 import { PasteReviewDialog,PlainPasteDialog } from './paste-dialog';
@@ -56,11 +57,7 @@ export { normalizeRichDocument } from "../../lib/editor-document";
 export { sanitizePaste } from "../../lib/editor-paste";
 
 
-export function Dialog({title,onClose,children}:{title:string;onClose:()=>void;children:ReactNode}){
-  const ref=useRef<HTMLDivElement>(null),previous=useRef<Element|null>(null);
-  useEffect(()=>{previous.current=document.activeElement;ref.current?.querySelector<HTMLElement>("input,button,select,textarea")?.focus();return()=>{(previous.current as HTMLElement|null)?.focus?.();};},[]);
-  return <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}><div ref={ref} className="modal editor-dialog" role="dialog" aria-modal="true" aria-label={title} onKeyDown={e=>{if(e.key==="Escape"){e.preventDefault();onClose();}if(e.key==="Tab"){const items=Array.from(ref.current?.querySelectorAll<HTMLElement>("button:not(:disabled),input,select,textarea,a[href]")??[]);if(!items.length)return;if(e.shiftKey&&document.activeElement===items[0]){e.preventDefault();items.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===items.at(-1)){e.preventDefault();items[0].focus();}}}}><div className="dialog-heading"><h2>{title}</h2><button aria-label="Close dialog" onClick={onClose}>×</button></div>{children}</div></div>;
-}
+export { Dialog } from './dialog';
 
 function blockRange(editor:Editor){
   const {$from}=editor.state.selection;let depth=$from.depth;
