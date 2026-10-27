@@ -1,6 +1,6 @@
 # HOLY-3 staging preparation
 
-This repository contains staging configuration; no service has been deployed to the requested staging domain. The production feature flag defaults to off. Local qualification includes PGlite regression tests, six real PostgreSQL concurrency/integration tests and five real ClamAV checks. These do not qualify suite identity, private cloud object storage or actual SHO integration.
+Staging infrastructure is now live at the requested domain, with independently verified HTTPS/HSTS and 17 unauthenticated boundary checks. The operator-reported revision predates latest main, and constrained revision update/reporting is still needed. Latest service inspection shows the app and healthy PostgreSQL, but no running scanner; its logs end with “Failed to start clamd.” Do not assume scanner readiness or restart it without reviewing the shared host's capacity and exit state. The production feature flag remains off. Local qualification includes 309 application tests, ten real PostgreSQL checks and six real ClamAV checks; these do not qualify staging suite identity, private cloud objects or actual SHO integration. See LOCAL-QUALIFICATION.md for exact source/image evidence.
 
 ## Configuration and prerequisites
 
@@ -16,7 +16,7 @@ PostgreSQL, ClamAV and Node are pinned to immutable image digests. The qualified
 
 ## Deployment after prerequisites are satisfied
 
-The following commands are documentation only; they have not been run:
+The following are generic operator commands, not an assertion that each command has been run on staging. Use the host's constrained deployment wrapper when applicable; do not print interpolated configuration/secrets into chat or public logs:
 
 ```sh
 docker compose --env-file .env.staging -f compose.staging.json config --quiet
