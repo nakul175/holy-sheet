@@ -48,5 +48,6 @@ export async function maintainStorage(r:Repository,erase:(key:string)=>Promise<v
   await r.db.query("UPDATE hs_export_jobs SET state='expired' WHERE id IN (SELECT id FROM hs_export_jobs WHERE state='ready' AND expires_at<=clock_timestamp() ORDER BY expires_at LIMIT 100)");
   await r.db.query("DELETE FROM hs_export_policy_operations WHERE created_at<clock_timestamp()-interval '30 days'");
   await r.db.query("DELETE FROM hs_export_jobs WHERE created_at<clock_timestamp()-interval '30 days'");
+  await r.db.query('DELETE FROM hs_data_query_cursors WHERE expires_at<=clock_timestamp()');
   return {considered:candidates.length,removed,failed};
 }

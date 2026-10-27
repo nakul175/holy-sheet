@@ -73,6 +73,7 @@ jobs:
             artifacts/unit.xml
             artifacts/*.tgz
             artifacts/postgres-restore.json
+            artifacts/shared-record-query.json
             output/pdf/*
           if-no-files-found: ignore
 
