@@ -28,7 +28,7 @@ export const saveInput = z.object({ operationId: z.string().uuid(), baseVersion:
 const allowedAttrs = new Set(["id", "level", "start", "checked", "language", "colspan", "rowspan", "colwidth", "align", "theme", "icon", "alt", "title", "caption", "width", "attachmentId", "src", "pageId", "open"]);
 
 export function validateDocument(input: unknown): RichNode {
-  if (Buffer.byteLength(JSON.stringify(input) ?? "", "utf8") > 25_000_000) throw new DocumentError("Document exceeds the 25 MB safety limit. Split the page; your draft is retained.", "payload_too_large", 413);
+  if (new TextEncoder().encode(JSON.stringify(input) ?? "").byteLength > 25_000_000) throw new DocumentError("Document exceeds the 25 MB safety limit. Split the page; your draft is retained.", "payload_too_large", 413);
   const ids = new Set<string>(); let count = 0;
   function visit(value: unknown, depth: number, parent?: string, listDepth = 0, inTable=false): RichNode {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new DocumentError("Invalid block");

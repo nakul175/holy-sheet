@@ -1,0 +1,10 @@
+"use client";
+import { useState } from 'react';
+import type { Editor } from '@tiptap/core';
+import { Dialog,normalizeRichDocument } from './rich-editor';
+import { applyBlockTransform,planBlockTransform,transformTargets,transformLabels,type TransformTarget,type TransformPlan } from './block-transforms';
+export default function TransformDialog({editor,onClose}:{editor:Editor;onClose:()=>void}){
+ const [target,setTarget]=useState<TransformTarget>('paragraph'),[plan,setPlan]=useState<TransformPlan|null>(null),[error,setError]=useState('');
+ function review(value:TransformTarget){setTarget(value);setError('');setPlan(null);try{setPlan(planBlockTransform(editor,value,normalizeRichDocument));}catch(e){setError(e instanceof Error?e.message:'This transform is unavailable. No content changed.');}}
+ return <Dialog title="Transform block" onClose={onClose}><p>Choose text in one block. Review the result before changing it.</p><label>Turn into<select value={target} onChange={e=>review(e.target.value as TransformTarget)}>{transformTargets.map(value=><option key={value} value={value}>{transformLabels[value]}</option>)}</select></label><button onClick={()=>review(target)}>Review transform</button>{error&&<p role="alert">{error}</p>}{plan&&<section aria-label="Transform preview"><h3>{transformLabels[plan.target]}</h3><pre className="transform-text-preview">{plan.text.slice(0,2000)||'(Empty text block)'}</pre>{plan.text.length>2000&&<p>Preview shows the first 2,000 characters. All text will be retained.</p>}{plan.warnings.map(w=><p className="document-warning" key={w}>{w}</p>)}<p>{plan.noop?'This block already has this type. Its content and checked state stay intact.':'Text, compatible marks, links and this block’s stable ID will be kept. This is one Undo step.'}</p></section>}<div className="actions"><button onClick={onClose}>Cancel</button><button className="primary" disabled={!plan} onClick={()=>{try{applyBlockTransform(editor,plan!,normalizeRichDocument);onClose();}catch(e){setError(e instanceof Error?e.message:'The transform was not applied.');setPlan(null);}}}>Confirm transform</button></div></Dialog>;
+}
