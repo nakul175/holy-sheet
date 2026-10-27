@@ -37,10 +37,12 @@ for(const [name,path] of [
   ['Export current snapshot','/api/v1/pages/welcome/exports?format=pdf'],['Private export job','/api/v1/exports/11111111-1111-4111-8111-111111111111'],['Export policy','/api/v1/workspaces/ws-aplyd/export-policy'],['Document import','/api/v1/imports/11111111-1111-4111-8111-111111111111'],['Session','/auth/session'],['Pages','/api/pages'],['Spaces','/api/spaces'],['Global search','/api/search?q=orchid'],
   ['Document','/api/v1/pages/welcome/document'],['Page access','/api/v1/pages/welcome/access'],
   ['Sharing audit','/api/v1/pages/welcome/sharing/audit'],['History','/api/v1/pages/welcome/history'],
-  ['Workspace membership','/api/v1/workspaces/ws-aplyd/members'],['Personal navigation','/api/v1/personal-navigation'],['Templates','/api/v1/templates?workspaceId=ws-aplyd'],
+  ['Trash','/api/v1/workspaces/ws-aplyd/trash'],['Workspace membership','/api/v1/workspaces/ws-aplyd/members'],['Personal navigation','/api/v1/personal-navigation'],['Templates','/api/v1/templates?workspaceId=ws-aplyd'],
   ['Media','/api/media/11111111-1111-4111-8111-111111111111'],['Upload recovery','/api/uploads/11111111-1111-4111-8111-111111111111'],
 ])await check(`${name} requires verified identity`,path,401);
 await check('Private export download requires identity','/api/v1/exports/11111111-1111-4111-8111-111111111111/download',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
 await check('Import preparation requires identity','/api/v1/imports',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/octet-stream'},body:'synthetic'});
+await check('Trash mutation requires identity','/api/v1/pages/welcome/trash',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Recovery mutation rejects foreign origin','/api/v1/workspaces/ws-aplyd/trash',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
 await check('Page move requires identity','/api/v1/pages/welcome/location',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
 await check('Page move rejects foreign origin','/api/v1/pages/welcome/location',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
