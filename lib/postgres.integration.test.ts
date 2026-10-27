@@ -26,6 +26,19 @@ describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
     finally{await db.query('UPDATE hs_members SET active=true WHERE user_id=$1',[localActor.id]);}
   });
 
+  it('serializes concurrent last-admin changes and stale native access previews',async()=>{
+    const {previewMemberChange,changeWorkspaceMember}=await import('./workspace-administration');
+    const workspaceId=crypto.randomUUID(),a={id:crypto.randomUUID()},b={id:crypto.randomUUID()};
+    await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$2)',[workspaceId,'Isolated native access PG']);
+    for(const actor of [a,b]){await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);await db.query("INSERT INTO hs_members(workspace_id,user_id,role) VALUES($1,$2,'admin')",[workspaceId,actor.id]);}
+    const changes=await Promise.all([a,b].map(async actor=>{const fields={subjectId:actor.id,role:'member' as const,active:true},p=await previewMemberChange(r,actor,workspaceId,fields);return {actor,input:{...fields,operationId:crypto.randomUUID(),expectedVersion:p.version,previewDigest:p.digest}};}));
+    const results=await Promise.allSettled(changes.map(c=>changeWorkspaceMember(r,c.actor,workspaceId,c.input)));
+    expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);
+    expect((await db.query("SELECT user_id FROM hs_members WHERE workspace_id=$1 AND role='admin' AND active=true",[workspaceId])).rows).toHaveLength(1);
+    const survivor=(await db.query<{user_id:string}>("SELECT user_id FROM hs_members WHERE workspace_id=$1 AND role='admin'",[workspaceId])).rows[0].user_id;
+    await expect(previewMemberChange(r,{id:survivor},workspaceId,{subjectId:survivor,role:'member',active:true})).rejects.toMatchObject({code:'last_admin'});
+  });
+
   it('applies native admin content access and revocation on PostgreSQL',async()=>{
     const actor={id:crypto.randomUUID()};
     await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);
