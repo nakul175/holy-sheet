@@ -23,6 +23,26 @@ describe('private template and starter foundation',()=>{
  it('rejects stale publication previews and archive URLs while existing pages retain their copy',async()=>{const id=await personal();await publish(id);const pageId=String((await instantiate(id)).pageId);await publish(id);await expect(instantiate(id,1)).rejects.toMatchObject({code:'template_conflict'});await command({kind:'archive',id,expectedDraftVersion:1});await expect(instantiate(id,2)).rejects.toMatchObject({status:404});expect(plainText((await r.get(pageId,owner)).document)).toContain('careful plan');});
  it('deduplicates lost-response page creation retries and binds operation payload',async()=>{const input={kind:'instantiate' as const,operationId:crypto.randomUUID(),id:'starter-sop',revision:1,spaceId:'space-product',title:'One SOP'};const a=await changeTemplate(r,owner,workspace,input),b=await changeTemplate(r,owner,workspace,input);expect(b.pageId).toBe(a.pageId);expect(b.replayed).toBe(true);await expect(changeTemplate(r,owner,workspace,{...input,title:'Different'})).rejects.toMatchObject({code:'operation_mismatch'});expect((await db.query('SELECT id FROM hs_audit WHERE correlation_id=$1',[input.operationId])).rows).toHaveLength(1);});
  it('requires source Owner and exact current saved revision before copying a page',async()=>{const p=await r.create(owner,'Private source','space-product');await db.query("INSERT INTO hs_grants(page_id,subject,role) VALUES($1,$2,'editor')",[p.id,other.id]);const input={kind:'save' as const,operationId:crypto.randomUUID(),name:'Page snapshot',description:'',sourcePageId:p.id,sourcePageVersion:p.version};await expect(changeTemplate(r,other,workspace,input)).rejects.toMatchObject({code:'owner_required'});await expect(changeTemplate(r,owner,workspace,{...input,sourcePageVersion:8})).rejects.toMatchObject({code:'template_conflict'});const result=await changeTemplate(r,owner,workspace,input);expect((await readTemplate(r,owner,workspace,String(result.id),true)).document).toEqual(p.document);expect((await r.get(p.id,owner)).version).toBe(1);});
+ it('duplicates a starter into an independent private unpublished draft and reconciles retries',async()=>{
+  const source=await readTemplate(r,owner,workspace,'starter-sop'),input={kind:'duplicate' as const,operationId:crypto.randomUUID(),id:source.id,revision:1,name:'My SOP copy'};
+  const first=await changeTemplate(r,owner,workspace,input),again=await changeTemplate(r,owner,workspace,input);
+  expect(again.id).toBe(first.id);expect(again.replayed).toBe(true);
+  const copy=await readTemplate(r,owner,workspace,String(first.id),true);
+  expect(copy.scope).toBe('personal');expect(copy.publishedVersion).toBe(0);expect(plainText(copy.document)).toBe(plainText(source.document));expect(copy.document.content![0].attrs!.id).not.toBe(source.document.content![0].attrs!.id);
+  expect(await readTemplate(r,owner,workspace,source.id)).toEqual(source);
+  await expect(readTemplate(r,other,workspace,copy.id,true)).rejects.toMatchObject({status:404});
+  expect((await db.query('SELECT id FROM hs_audit WHERE correlation_id=$1',[input.operationId])).rows).toHaveLength(1);
+  await expect(changeTemplate(r,owner,workspace,{...input,name:'Different'})).rejects.toMatchObject({code:'operation_mismatch'});
+ });
+ it('requires readable current published source and a unique bounded copy name',async()=>{
+  const id=await personal('Copy source');await publish(id);
+  await expect(changeTemplate(r,other,workspace,{kind:'duplicate',operationId:crypto.randomUUID(),id,revision:1,name:'Not allowed'})).rejects.toMatchObject({status:404});
+  await expect(command({kind:'duplicate',id,revision:9,name:'Wrong revision'})).rejects.toMatchObject({code:'template_conflict'});
+  await expect(command({kind:'duplicate',id,revision:1,name:' copy SOURCE '})).rejects.toMatchObject({code:'template_name_conflict'});
+  await expect(command({kind:'duplicate',id,revision:1,name:' '})).rejects.toMatchObject({code:'invalid_template_name'});
+  await command({kind:'archive',id,expectedDraftVersion:1});
+  await expect(command({kind:'duplicate',id,revision:1,name:'Archived copy'})).rejects.toMatchObject({status:404});
+ });
  it('fails closed for file reuse until asset policy is approved',async()=>{await expect(changeTemplate(r,owner,workspace,{kind:'save',operationId:crypto.randomUUID(),name:'Files not approved',description:'',document:ensureIds({type:'doc',content:[{type:'file',attrs:{attachmentId:crypto.randomUUID(),title:'Private file'}}]})})).rejects.toMatchObject({code:'template_asset_policy'});expect((await listTemplates(r,owner,workspace)).attachmentReuseAvailable).toBe(false);});
  it('denies revoked membership for library, preview and previously successful operation retries',async()=>{const id=await personal();await publish(id);await db.query("UPDATE hs_members SET active=false WHERE user_id=$1",[owner.id]);try{await expect(listTemplates(r,owner,workspace)).rejects.toMatchObject({status:404});await expect(readTemplate(r,owner,workspace,id)).rejects.toMatchObject({status:404});await expect(instantiate(id)).rejects.toMatchObject({status:404});}finally{await db.query('UPDATE hs_members SET active=true WHERE user_id=$1',[owner.id]);}});
 });
