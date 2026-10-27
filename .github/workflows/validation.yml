@@ -111,3 +111,25 @@ jobs:
           name: holy3-container-${{ env.HS_CANDIDATE_SHA }}
           path: artifacts/
           retention-days: 7
+
+  accessibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:editor
+      - name: Real-browser contrast, narrow layout and keyboard regressions
+        env:
+          PW_CHROMIUM: /usr/bin/google-chrome
+        run: npx playwright test -c playwright.accessibility.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: editor-accessibility-results
+          path: test-results/accessibility/
+          retention-days: 7

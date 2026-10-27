@@ -1,0 +1,39 @@
+import {test,expect} from '@playwright/test';
+import axe,{type AxeResults,type RunOptions} from 'axe-core';
+const origin='http://127.0.0.1:53300';
+for(const width of [1440,390,320])test(`editor WCAG text contrast and usable controls at ${width}px`,async({page,request})=>{
+  await page.setViewportSize({width,height:900});await page.emulateMedia({reducedMotion:'reduce'});
+  const created=await request.post(origin+'/api/pages',{headers:{Origin:origin},data:{title:'Disposable accessibility fixture '+width,spaceId:'space-product'}});
+  expect(created.status()).toBe(200);const id=(await created.json()).page.id;
+  await page.goto('/pages/'+id);
+  const content=page.getByRole('textbox',{name:'Document content',exact:true}),marker='Accessible saved fixture 👋 مرحبا '+width;
+  await content.fill(marker);
+  await expect.poll(async()=>JSON.stringify(await(await request.get(origin+'/api/v1/pages/'+id+'/document')).json())).toContain(marker);
+  await expect(page.getByRole('button',{name:'✓ Saved',exact:true})).toBeVisible();
+  await content.focus();await page.addScriptTag({content:axe.source});
+  const result=await page.evaluate(async()=>{
+    const engine=(window as unknown as {axe:{run:(context:Document,options:RunOptions)=>Promise<AxeResults>}}).axe;
+    return engine.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}});
+  });
+  await test.info().attach('axe-results',{body:JSON.stringify(result.violations,null,2),contentType:'application/json'});
+  expect(result.violations.map(v=>({id:v.id,impact:v.impact,nodes:v.nodes.map(n=>n.target)}))).toEqual([]);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  if(width<760){
+    const undersized=await page.locator('.shell button,.shell summary,.shell select').evaluateAll(elements=>elements.flatMap(element=>{
+      const rect=element.getBoundingClientRect(),closed=element.closest('details:not([open])');
+      if(element.matches(':disabled')||!rect.width||!rect.height||getComputedStyle(element).visibility==='hidden'||(closed&&!closed.querySelector(':scope > summary')?.contains(element)))return [];
+      return rect.width<44||rect.height<44?[{tag:element.tagName,label:element.getAttribute('aria-label')??element.textContent?.trim(),width:rect.width,height:rect.height}]:[];
+    }));
+    expect(undersized).toEqual([]);
+  }
+  await page.getByRole('button',{name:'＋ Insert',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Insert a block',exact:true});
+  await expect(dialog.getByRole('button',{name:'Close dialog',exact:true})).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('textbox',{name:'Search block types',exact:true})).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.getByRole('button',{name:'Close dialog',exact:true})).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('heading',{name:'Insert a block',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'＋ Insert',exact:true})).toBeFocused();
+});
