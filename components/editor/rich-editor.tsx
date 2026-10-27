@@ -33,6 +33,7 @@ import { rehydrateMediaPlacement } from "../../lib/upload-placement-recovery";
 import { leaveBlock, reorderTable, handleTableKeyDown } from './table-actions';
 import { selectionFormat,mixedPaletteValue } from './selection-format';
 import { captureFindSelection,mapFindSelection,restoreFindSelection,selectFindMatch,isPageFindShortcut,focusAfterFind,type FindSelection } from './find-selection';
+import { revealFindMatch,updateFindQuery } from './find-navigation';
 import { DiscussionAnchors,discussionKey } from './discussion-anchors';
 import { applyRemoteDocument } from './history-boundary';
 import { openSectionsForNavigation,restoreTemporarySections,markSectionInteraction,installSectionPreferences,type TemporarySection } from './section-navigation';
@@ -118,7 +119,7 @@ export default function RichEditor({document,editable,onChange,pageId,preference
   useEffect(()=>{if(editor)editor.view.dispatch(editor.state.tr.setMeta(discussionKey,{threads,activeId:activeThreadId}));},[editor,threads,activeThreadId]);
   useEffect(()=>{if(!editor||!navigateThread||!activeThreadId)return;const t=threads.find(t=>t.id===activeThreadId),anchor=t?.anchors.find(a=>a.status==='attached');if(!anchor)return;let pos:number|undefined;editor.state.doc.descendants((n,p)=>{if(n.attrs.id===anchor.blockId)pos=p+1+anchor.start;});if(pos!==undefined){editor.commands.setTextSelection({from:pos,to:pos+anchor.end-anchor.start});const target=editor.view.dom.querySelector(`[data-id="${CSS.escape(anchor.blockId)}"]`);openSectionsForNavigation(target,preferenceKey,discussionOpen.current);target?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});editor.view.focus();}},[editor,navigateThread]);
   useEffect(()=>{const json=stableStringify(document);if(editor&&json!==lastEmitted.current){restoring.current=true;const reset=applyRemoteDocument(editor,document);lastEmitted.current=json;restoring.current=false;if(reset)setNotice('The page received a saved update. Undo history starts from this version.');}},[editor,document]);
-  useEffect(()=>{if(editor)editor.view.dispatch(editor.state.tr.setMeta(findKey,{query:findQuery,matchCase}));setMatchIndex(0);},[editor,findQuery,matchCase]);
+  useEffect(()=>{if(editor)updateFindQuery(editor,{query:findQuery,matchCase},preferenceKey,temporaryOpen.current,findOpen);setMatchIndex(0);},[editor,findQuery,matchCase,findOpen,preferenceKey]);
   useEffect(()=>{setMatchIndex(i=>Math.min(i,Math.max(0,(state?.find?.matches.length??0)-1)));},[state?.find?.matches.length]);
   useEffect(()=>{if(editor)return installSectionPreferences(editor.view.dom,preferenceKey);},[editor,preferenceKey]);
   useEffect(()=>{const outside=(event:MouseEvent)=>{if(discussionOpen.current.some(e=>e.element.contains(event.target as Node)))return;discussionOpen.current=restoreTemporarySections(discussionOpen.current);};window.document.addEventListener("click",outside);return()=>window.document.removeEventListener("click",outside);},[]);
@@ -152,7 +153,7 @@ export default function RichEditor({document,editable,onChange,pageId,preference
     let destination=parentStart;for(let i=0;i<(direction<0?target:target+1);i++)destination+=parent.child(i).nodeSize;
     const tr=editor.state.tr.delete(from,to);const mapped=tr.mapping.map(destination);tr.insert(mapped,node);tr.setSelection(TextSelection.near(tr.doc.resolve(mapped+1)));editor.view.dispatch(tr);editor.commands.focus();setNotice(`Block moved ${action}.`);
   }
-  function navigateFind(delta:number){const matches=state?.find?.matches??[];if(!editor||!matches.length)return;const next=(matchIndex+delta+matches.length)%matches.length;setMatchIndex(next);const m=matches[next];if(!selectFindMatch(editor,m))return;const node=editor.state.doc.nodeAt(m.from),raw=node?.isAtom&&!node.isText?editor.view.nodeDOM(m.from):editor.view.domAtPos(m.from).node;const dom=raw?.nodeType===1?raw as HTMLElement:raw?.parentElement;openSectionsForNavigation(dom??null,preferenceKey,temporaryOpen.current);dom?.scrollIntoView({block:"center"});}
+  function navigateFind(delta:number){const matches=state?.find?.matches??[];if(!editor||!matches.length)return;const next=(matchIndex+delta+matches.length)%matches.length;setMatchIndex(next);const m=matches[next];if(!selectFindMatch(editor,m))return;revealFindMatch(editor,m,preferenceKey,temporaryOpen.current);}
   function closeFind(){setFindOpen(false);setFindQuery("");if(editor&&savedFindSelection.current){restoreFindSelection(editor,savedFindSelection.current);savedFindSelection.current=null;focusAfterFind(editor);}temporaryOpen.current=restoreTemporarySections(temporaryOpen.current);}
   if(!editor)return <div className="editor-skeleton" aria-label="Loading editor"/>;
   const button=(label:string,children:ReactNode,run:()=>void,pressed:boolean|'mixed'=false,disabled=false)=><button type="button" key={label} aria-label={label} title={pressed==='mixed'?`${label}: mixed formatting`:label} aria-pressed={pressed} disabled={!editable||disabled} onMouseDown={e=>e.preventDefault()} onClick={run}>{children}</button>;
