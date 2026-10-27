@@ -45,3 +45,4 @@ jobs:
         with:
           name: holy3-container-${{ github.sha }}
           path: artifacts/
+          retention-days: 7
