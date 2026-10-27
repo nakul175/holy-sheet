@@ -13,11 +13,19 @@ for(const width of [1440,390,320])test(`editor WCAG text contrast and usable con
   await content.focus();await page.addScriptTag({content:axe.source});
   const result=await page.evaluate(async()=>{
     const engine=(window as unknown as {axe:{run:(context:Document,options:RunOptions)=>Promise<AxeResults>}}).axe;
-    return engine.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}});
+    return engine.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}});
   });
   await test.info().attach('axe-results',{body:JSON.stringify(result.violations,null,2),contentType:'application/json'});
   expect(result.violations.map(v=>({id:v.id,impact:v.impact,nodes:v.nodes.map(n=>n.target)}))).toEqual([]);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  if(width<760){
+    const undersized=await page.locator('.shell button,.shell summary,.shell select').evaluateAll(elements=>elements.flatMap(element=>{
+      const rect=element.getBoundingClientRect(),closed=element.closest('details:not([open])');
+      if(element.matches(':disabled')||!rect.width||!rect.height||getComputedStyle(element).visibility==='hidden'||(closed&&!closed.querySelector(':scope > summary')?.contains(element)))return [];
+      return rect.width<44||rect.height<44?[{tag:element.tagName,label:element.getAttribute('aria-label')??element.textContent?.trim(),width:rect.width,height:rect.height}]:[];
+    }));
+    expect(undersized).toEqual([]);
+  }
   await page.getByRole('button',{name:'＋ Insert',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'Insert a block',exact:true});
   await expect(dialog.getByRole('button',{name:'Close dialog',exact:true})).toBeFocused();
