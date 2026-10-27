@@ -1,0 +1,11 @@
+# HOLY-3 personal section state checkpoint
+
+Sections now initialize expanded when no personal preference exists, including sections inserted after editor mount or assigned an ID later. Explicit closed preferences are honored per user/page preference key. A scoped DOM observer initializes only new section identities/content views, so ordinary edits and temporary navigation do not reset personal state. Replacing a content node view preserves its current temporary open state. Cleanup disconnects observation and pending preference writes.
+
+Only deliberate trusted toggle clicks write a preference; ordinary content clicks no longer count as an explicit expansion choice. Actual document editing still marks section interaction through the existing update handler. Toggle visibility, accessible label and aria-expanded remain synchronized. Read-only focus no longer falsely counts as editing when restoring temporary navigation expansion.
+
+Validation: eleven focused DOM/editor cases passed, including real Tiptap schema search through hidden content, JSON/Undo preservation, one-step Undo of a newly inserted section, per-user isolation, late insertion/identity, content-node replacement and observer cleanup. Combined local regression: 318 passed, with sixteen opt-in service cases skipped in that default run. Typecheck and production build passed. No server path changed; integrated service/staging acceptance is not inferred from these client checks.
+
+Native local browser rehearsal on a separate synthetic page verified new-section expansion; manual collapse/expand with correct accessible state; saved collapse after reload; hidden-text find returning one match; temporary reveal; and restoration after closing find from an outside caret. Saved document version stayed 4 across navigation/toggles. Evidence: surrounding workspace outputs/holy-sheet/overnight-20261026/HOLY-3-section-find-revealed.png and HOLY-3-section-find-restored.png. The temporary development hot-reload plugin-key mismatch was cleared by reloading the saved fixture before the final rehearsal; it is not represented as a production find defect.
+
+Full screen-reader, mobile/touch, browser matrix and production performance qualification remain open. This checkpoint does not mark AC9/23/24, the story or any BugOff case fully accepted.

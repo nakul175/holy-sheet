@@ -32,7 +32,7 @@ import { rehydrateMediaPlacement } from "../../lib/upload-placement-recovery";
 import { leaveBlock, reorderTable, selectedTable } from './table-actions';
 import { DiscussionAnchors,discussionKey } from './discussion-anchors';
 import { applyRemoteDocument } from './history-boundary';
-import { openSectionsForNavigation,restoreTemporarySections,markSectionInteraction,setSectionOpen,type TemporarySection } from './section-navigation';
+import { openSectionsForNavigation,restoreTemporarySections,markSectionInteraction,installSectionPreferences,type TemporarySection } from './section-navigation';
 import type { ThreadView } from '../../lib/discussion-types';
 import type { AnchorInput } from '../../lib/comment-anchors';
 
@@ -120,7 +120,7 @@ export default function RichEditor({document,editable,onChange,pageId,preference
   useEffect(()=>{const json=stableStringify(document);if(editor&&json!==lastEmitted.current){restoring.current=true;const reset=applyRemoteDocument(editor,document);lastEmitted.current=json;restoring.current=false;if(reset)setNotice('The page received a saved update. Undo history starts from this version.');}},[editor,document]);
   useEffect(()=>{if(editor)editor.view.dispatch(editor.state.tr.setMeta(findKey,{query:findQuery,matchCase}));setMatchIndex(0);},[editor,findQuery,matchCase]);
   useEffect(()=>{setMatchIndex(i=>Math.min(i,Math.max(0,(state?.find?.matches.length??0)-1)));},[state?.find?.matches.length]);
-  useEffect(()=>{if(!editor)return;const click=(e:Event)=>{const target=e.target as HTMLElement;if(e.isTrusted)markSectionInteraction(target);const details=target.closest<HTMLElement>("[data-type='details']");if(e.isTrusted&&details&&target.closest("button")===details.querySelector(":scope > button"))queueMicrotask(()=>{try{localStorage.setItem(`hs-collapse:${preferenceKey}:${details.getAttribute('data-id')}`,details.classList.contains("is-open")?"open":"closed");}catch{}});};editor.view.dom.addEventListener("click",click);const restore=()=>{editor.view.dom.querySelectorAll<HTMLElement>("[data-type='details']").forEach(d=>{try{const value=localStorage.getItem(`hs-collapse:${preferenceKey}:${d.getAttribute('data-id')}`);if(value==="open"&&!d.classList.contains("is-open"))setSectionOpen(d,true);}catch{}});};restore();return()=>editor.view.dom.removeEventListener("click",click);},[editor,preferenceKey]);
+  useEffect(()=>{if(editor)return installSectionPreferences(editor.view.dom,preferenceKey);},[editor,preferenceKey]);
   useEffect(()=>{const outside=(event:MouseEvent)=>{if(discussionOpen.current.some(e=>e.element.contains(event.target as Node)))return;discussionOpen.current=restoreTemporarySections(discussionOpen.current);};window.document.addEventListener("click",outside);return()=>window.document.removeEventListener("click",outside);},[]);
   const filtered=catalogue.filter(c=>(mediaEnabled||!['image','file'].includes(c.type))&&(c.name+" "+c.description).toLowerCase().includes(query.toLowerCase()));
   function closeInsert(){if(slash.current&&query)editor?.chain().focus().insertContent('/'+query).run();else if(slash.current)editor?.chain().focus().insertContent('/').run();slash.current=false;setInsertOpen(false);}
