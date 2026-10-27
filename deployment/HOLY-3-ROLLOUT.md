@@ -1,9 +1,12 @@
 # HOLY-3 controlled staging rollout
 
-This is preparation, not a completed deployment or product acceptance. The merged
-editor/package/recovery batch is main `dbc5066`. The prepared candidate also
-incorporates merged picker PR32 at `9aa0556`, including one additive migration
-relative to staging `99a6327`; Compose service definitions remain unchanged.
+This is preparation, not a deployment performed by this task or product acceptance.
+Initial planning observed staging `99a6327`; a subsequent status read observed an
+independent rollout to `188524d`, previous `99a6327`. That source includes the
+editor/recovery and picker batches, including migration011. This operations
+candidate adds no further migration files or Compose service changes relative to
+the now-observed deployed source. The migration review below records the earlier
+baseline delta; refresh the actual migration/deployment receipt before any switch.
 Record the final reviewed release SHA, image ID and previous deployment in a
 private operator receipt. Do not deploy an unreviewed branch or moving branch name.
 
