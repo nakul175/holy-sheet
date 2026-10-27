@@ -26,6 +26,17 @@ describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
     finally{await db.query('UPDATE hs_members SET active=true WHERE user_id=$1',[localActor.id]);}
   });
 
+  it('serializes concurrent reviewed page moves without overwriting a later tree',async()=>{
+    const {previewPageLocation,movePageTree}=await import('./page-organisation');
+    const actor={id:crypto.randomUUID()},workspace=crypto.randomUUID(),space=crypto.randomUUID();
+    await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$2)',[workspace,'Isolated page moves']);await db.query("INSERT INTO hs_members(workspace_id,user_id,role) VALUES($1,$2,'admin')",[workspace,actor.id]);await db.query('INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)',[space,workspace,'Moves']);
+    const page=await r.create(actor,'Moving root',space),a=await r.create(actor,'Parent A',space),b=await r.create(actor,'Parent B',space);
+    const inputs=await Promise.all([a,b].map(async parent=>{const input={spaceId:space,parentId:parent.id,index:0},p=await previewPageLocation(r,actor,page.id,input);return {...input,operationId:crypto.randomUUID(),expectedTreeVersion:p.treeVersion,previewDigest:p.digest,confirmExpanded:true};}));
+    const results=await Promise.allSettled(inputs.map(input=>movePageTree(r,actor,page.id,input)));
+    expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);const failure=results.find(x=>x.status==='rejected') as PromiseRejectedResult;expect(failure.reason).toMatchObject({code:'move_conflict'});
+    const first=results.findIndex(x=>x.status==='fulfilled');expect((await r.get(page.id,actor)).parentPageId).toBe(inputs[first].parentId);expect((await movePageTree(r,actor,page.id,inputs[first])).replayed).toBe(true);
+  });
+
   it('serializes concurrent last-admin changes and stale native access previews',async()=>{
     const {previewMemberChange,changeWorkspaceMember}=await import('./workspace-administration');
     const workspaceId=crypto.randomUUID(),a={id:crypto.randomUUID()},b={id:crypto.randomUUID()};

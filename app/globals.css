@@ -343,3 +343,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .workspace-access button { min-height:44px; padding:8px 12px; }
 .workspace-access dl { display:grid; grid-template-columns:auto 1fr; gap:8px 12px; }
 .workspace-access dd { margin:0; }
+
+.page-location-dialog { max-height:70dvh; overflow:auto; overflow-wrap:anywhere; }
+.page-location-dialog form { display:grid; gap:16px; }
+.page-location-dialog label:not(.check) { display:grid; gap:7px; }
+.page-location-dialog input,.page-location-dialog select { min-height:44px; min-width:0; max-width:100%; }
+.page-location-dialog button { min-height:44px; }
+.page-location-dialog dl { display:grid; grid-template-columns:auto 1fr; gap:8px 12px; }
+.page-location-dialog dd { margin:0; }
