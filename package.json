@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:editor": "node scripts/build-editor-package.mjs",
+    "pretest": "npm run build:editor",
+    "pretypecheck": "npm run build:editor",
+    "prebuild": "npm run build:editor"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1156.0",
@@ -35,7 +39,8 @@
     "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@aplyd/holy-sheet-editor": "file:packages/editor"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
@@ -48,6 +53,10 @@
     "fake-indexeddb": "6.2.6",
     "tsx": "^4.23.15",
     "typescript": "^5",
-    "vitest": "^5.0.5"
-  }
+    "vitest": "^5.0.5",
+    "esbuild": "0.28.2"
+  },
+  "workspaces": [
+    "packages/editor"
+  ]
 }

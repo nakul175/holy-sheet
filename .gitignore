@@ -7,4 +7,6 @@ node_modules/
 playwright-report/
 test-results/
 artifacts/
+packages/editor/dist/
+packages/editor/*.tgz
 .env.staging

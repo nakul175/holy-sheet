@@ -23,12 +23,15 @@ it('never mounts or fetches document content for a different authenticated accou
 it.each([401,503])('keeps the document unmounted when session check returns %s',async status=>{
   fetcher.mockResolvedValue(new Response('{}',{status}));await render();expect(mounted).not.toHaveBeenCalled();
 });
+it.each([{authenticated:false,userId:'actor-a'},{authenticated:true},{authenticated:true,userId:''}])('does not accept a malformed successful session response',async identity=>{
+  fetcher.mockResolvedValue(Response.json(identity));await render();expect(mounted).not.toHaveBeenCalled();expect(host.textContent).toContain('Document access could not be checked');
+});
 it('refuses missing or ambiguous framed context without making an identity request',async()=>{
   location.hash='#hs-user=actor-a&hs-user=actor-b';await render();expect(fetcher).not.toHaveBeenCalled();expect(mounted).not.toHaveBeenCalled();
   expect(host.textContent).toContain('Open this document from your task');
 });
-it('preserves top-level embed-route use without pretending it is a host identity handoff',async()=>{
-  Object.defineProperty(window,'parent',{configurable:true,value:window});location.hash='';await render();expect(mounted).toHaveBeenCalledOnce();expect(fetcher).not.toHaveBeenCalled();
+it('verifies top-level embed-route identity without pretending it is a host identity handoff',async()=>{
+  Object.defineProperty(window,'parent',{configurable:true,value:window});location.hash='';fetcher.mockResolvedValue(Response.json({authenticated:true,userId:'actor-a'}));await render();expect(mounted).toHaveBeenCalledOnce();expect(fetcher).toHaveBeenCalledWith('/auth/session',expect.objectContaining({cache:'no-store'}));
 });
 it('rejects unsafe/oversize hints and treats hints as restrictions even at top level',()=>{
   expect(embedContext('#hs-user=%0Aactor',true)).toEqual({kind:'missing'});
