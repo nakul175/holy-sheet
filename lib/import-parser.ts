@@ -2,12 +2,11 @@ import {spawn} from 'node:child_process';
 import path from 'node:path';
 import {DocumentError,ensureIds,validateDocument} from './document';
 import type {ImportConversion,ImportFormat} from './import-conversion';
-let busy=false;
+import {claimDocumentWorker} from './document-worker-gate';
 export async function parseImport(bytes:Buffer,format:ImportFormat):Promise<ImportConversion>{
- if(busy)throw new DocumentError('The document parser is busy. Keep this file selected and retry.','import_busy',503);
  if(!bytes.length||bytes.length>20*1024*1024)throw new DocumentError('Choose one non-empty file of at most 20 MiB.','import_size',413);
  if(!['txt','md','docx'].includes(format))throw new DocumentError('Choose .docx, .md or .txt.','import_format');
- busy=true;
+ const release=claimDocumentWorker();
  try{return await new Promise((resolve,reject)=>{
   const worker=path.join(process.cwd(),'scripts/dist/import-document-worker.cjs');
   // No application environment, credentials, filesystem writes, child processes,
@@ -27,5 +26,5 @@ export async function parseImport(bytes:Buffer,format:ImportFormat):Promise<Impo
    result.document=validateDocument(ensureIds(result.document,true));finish(undefined,result);
   }catch(error){finish(error instanceof DocumentError?error:new DocumentError('The source could not be converted safely. Split it or choose a supported document.','import_conversion',422));}});
   child.stdin.end(bytes);
- });}finally{busy=false;}
+ });}finally{release();}
 }

@@ -361,7 +361,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .trash-list span,.trash-list small { color:var(--muted); }
 .mobile-workspace-tools { display:none; position:relative; }
 .mobile-workspace-tools summary { min-height:44px; padding:12px; cursor:pointer; }
-.mobile-workspace-tools>div { position:absolute; right:0; top:100%; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px; z-index:15; width:180px; max-width:calc(100vw - 40px); box-shadow:0 8px 24px #0002; }
+.mobile-workspace-tools>div { position:absolute; right:0; top:100%; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px; z-index:5; width:180px; max-width:calc(100vw - 40px); box-shadow:0 8px 24px #0002; }
 .mobile-workspace-tools>div button { display:block; width:100%; text-align:left; }
 @media(max-width:900px){.mobile-workspace-tools{display:block;flex-basis:100%;min-width:0;}}
 
@@ -372,3 +372,5 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 }
 
 .import-dialog{display:grid;gap:1rem;min-width:0}.import-dialog>label{display:grid;gap:.4rem}.import-dialog input:not([type=checkbox]),.import-dialog select{max-width:100%;min-width:0;width:100%}.import-preview{display:grid;gap:1rem;min-width:0}.import-preview .rich-editor{max-height:45vh;overflow:auto}.import-dialog .check{display:flex;gap:.65rem;align-items:flex-start}.import-dialog .check input{flex:none;margin-top:.25rem}.import-dialog .actions{flex-wrap:wrap}.import-dialog p,.import-dialog li{overflow-wrap:anywhere}
+
+.export-dialog,.export-policy{display:grid;gap:1rem;min-width:0}.export-dialog>label{display:grid;gap:.4rem}.export-dialog select{max-width:100%;min-width:0}.export-preview{min-width:0}.export-preview .rich-prose{max-height:40vh;overflow:auto}.export-dialog .check,.export-policy .check{display:flex;gap:.65rem;align-items:flex-start}.export-dialog .check input,.export-policy .check input{flex:none;margin-top:.25rem}.export-dialog .actions,.export-draft-choice{display:flex;flex-wrap:wrap;gap:.75rem}.export-draft-choice p{flex-basis:100%}.export-dialog p,.export-dialog li,.export-policy p{overflow-wrap:anywhere}.export-dialog a{color:#2453a6;text-decoration:underline}
