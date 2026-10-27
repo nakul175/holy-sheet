@@ -19,14 +19,21 @@ export function sameOrigin(request: Request) {
   if(process.env.NODE_ENV==='production'&&!process.env.HS_ORIGIN)throw new DocumentError("Application origin is not configured","origin_unavailable",503);
   if(request.headers.get("origin") !== expected) throw new DocumentError("Request origin is not allowed", "origin_denied", 403);
 }
+export function identityTokenFromRequest(request:Request,requireProtectedCookie=false){
+  const bearer=request.headers.get('authorization')?.match(/^Bearer (.+)$/)?.[1];if(bearer)return bearer;
+  const cookies=(request.headers.get('cookie')??'').split(';').map(value=>value.trim());
+  const values=(name:string)=>cookies.filter(value=>value.startsWith(name+'=')).map(value=>value.slice(name.length+1));
+  const protectedValues=values('__Host-hs_session'),legacy=values('hs_session');
+  if(protectedValues.length>1||legacy.length>1||(protectedValues.length&&legacy.length&&protectedValues[0]!==legacy[0]))return;
+  if(requireProtectedCookie&&!protectedValues.length)return;
+  return protectedValues[0]??legacy[0];
+}
 export async function authenticate(request: Request): Promise<Actor> {
   if(localPreview(request)) return localActor;
   const issuer=process.env.HS_IDENTITY_ISSUER, jwks=process.env.HS_IDENTITY_JWKS_URL;
   if(!issuer || !jwks) throw new DocumentError("Suite identity is not configured", "identity_unavailable", 503);
   if(!jwks.startsWith("https://")) throw new DocumentError("Secure identity configuration required", "identity_unavailable",503);
-  const bearer=request.headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1];
-  const cookie=request.headers.get("cookie")?.split(";").map(c=>c.trim()).find(c=>c.startsWith("hs_session="))?.slice(11);
-  const token=bearer ?? cookie;
+  const token=identityTokenFromRequest(request,process.env.HS_OIDC_ENABLED==='1');
   if(!token) throw new DocumentError("Sign in to open this page", "authentication_required",401);
   try {
     let keyset=keys.get(jwks);if(!keyset){keyset=createRemoteJWKSet(new URL(jwks));keys.set(jwks,keyset);}

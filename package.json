@@ -31,6 +31,7 @@
     "jsdom": "30.1.3",
     "lowlight": "3.3.0",
     "next": "16.4.2",
+    "openid-client": "6.8.8",
     "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
