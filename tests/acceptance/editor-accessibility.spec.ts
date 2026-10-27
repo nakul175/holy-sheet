@@ -19,7 +19,12 @@ for(const width of [1440,390,320])test(`editor WCAG text contrast and usable con
   expect(result.violations.map(v=>({id:v.id,impact:v.impact,nodes:v.nodes.map(n=>n.target)}))).toEqual([]);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   await page.getByRole('button',{name:'＋ Insert',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Insert a block',exact:true});
+  await expect(dialog.getByRole('button',{name:'Close dialog',exact:true})).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(page.getByRole('textbox',{name:'Search block types',exact:true})).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.getByRole('button',{name:'Close dialog',exact:true})).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('heading',{name:'Insert a block',exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'＋ Insert',exact:true})).toBeFocused();
