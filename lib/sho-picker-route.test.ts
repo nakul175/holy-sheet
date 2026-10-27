@@ -1,0 +1,14 @@
+import {beforeAll,afterAll,it,expect,vi} from 'vitest';
+import {createDatabase,type Database} from './database';
+import {Repository} from './repository';
+import {localActor} from './auth';
+let db:Database,r:Repository;
+vi.mock('./repository',async()=>({...await vi.importActual('./repository'),repository:async()=>r}));
+import {GET,POST} from '../app/api/v1/integrations/sho/picker/route';
+const req=(body?:unknown,subject=localActor.id)=>new Request('http://localhost:3000/api/v1/integrations/sho/picker',{method:body?'POST':'GET',headers:{origin:'http://localhost:3000','content-type':'application/json','x-hs-actor':subject},body:body?JSON.stringify(body):undefined});
+beforeAll(async()=>{db=await createDatabase(':memory:');r=new Repository(db);await r.seedLocal();});afterAll(async()=>db.close());
+it('refuses an account mismatch before exposing any picker metadata',async()=>{const response=await GET(req(undefined,'other'));expect(response.status).toBe(403);expect(await response.text()).not.toContain('My pages');expect(response.headers.get('cache-control')).toContain('no-store');});
+it('lists only allowed page metadata without document bodies or grant data',async()=>{const page=await r.create(localActor,'Picker visible','space-product');const response=await GET(req());expect(response.status).toBe(200);const result=await response.json();expect(result.pages.find((p:{id:string})=>p.id===page.id)).toEqual({id:page.id,title:page.title,spaceId:page.spaceId,workspaceId:page.workspaceId});expect(result.spaces[0].workspaceName).toBe('Aplyd');});
+it('keeps creations private and returns the same page on retry',async()=>{const body={action:'create',title:'Picker creation',spaceId:'space-product',operationId:crypto.randomUUID()};const first=await (await POST(req(body))).json(),again=await (await POST(req(body))).json();expect(first.page.id).toBe(again.page.id);expect((await r.get(first.page.id,localActor)).visibility).toBe('private');expect((await db.query('SELECT * FROM hs_grants WHERE page_id=$1',[first.page.id])).rows).toHaveLength(0);});
+it('rejects inaccessible existing pages, invalid create fields and cross-origin mutation',async()=>{expect((await POST(req({action:'select',pageId:crypto.randomUUID()}))).status).toBe(404);expect((await POST(req({action:'create',title:'X',spaceId:'space-product'}))).status).toBe(422);const bad=req({action:'space',name:'X',workspaceId:'ws-aplyd'});bad.headers.set('origin','https://wrong.invalid');expect((await POST(bad)).status).toBe(403);});
+it('allows a space only in an active member workspace',async()=>{expect((await POST(req({action:'space',name:'New selected space',workspaceId:'ws-aplyd'}))).status).toBe(200);expect((await POST(req({action:'space',name:'No access',workspaceId:'other'}))).status).toBe(404);});
