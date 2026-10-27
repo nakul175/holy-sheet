@@ -80,6 +80,9 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
     try{
       const result=await requestJson<{page:DocumentPage;acknowledgedOperationId:string}>(`/api/v1/pages/${pageId}/operations`,post(operation));
       if(!alive.current||epoch!==permissionEpoch.current)return;
+      // A newer external snapshot may have entered review while this save was in flight.
+      // Its conflict and checkpoint must outlive an older acknowledgement.
+      if(blocked.current)return;
       if(result.page.schemaVersion!==schemaVersion)throw new ApiError('The saved page uses a different document version. Your draft is retained.',409,'schema_version');
       if(result.acknowledgedOperationId!==operation.operationId)throw new Error("Save acknowledgement mismatch");
       pending.current=null;attempts.current=0;succeeded=true;

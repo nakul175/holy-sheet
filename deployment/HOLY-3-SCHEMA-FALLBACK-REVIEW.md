@@ -11,7 +11,8 @@ the old rich editor or allocate/unlock/renew draft protection for that document.
 Editing, saving and recovery restoration also check compatibility. An access-check
 outage/recovery cannot reactivate that writer. A current-version local conflict
 draft remains retained, but Keep both cannot merge it with a different schema;
-explicit Load latest can enter the read-only preview instead.
+explicit Load latest can enter the read-only preview instead. An older in-flight
+save acknowledgement cannot clear a newer external conflict or its checkpoint.
 
 The preview extracts text without schema normalization or active HTML rendering.
 It tolerates unfamiliar child shapes and states that some formatting/blocks may

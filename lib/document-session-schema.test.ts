@@ -8,7 +8,7 @@ import type { DocumentPage } from './repository';
 
 const mocks = vi.hoisted(() => ({ receive: undefined as undefined | ((value: unknown) => void), unavailable: undefined as undefined | (() => void) }));
 vi.mock('./access-monitor', () => ({ monitorAccess: (_check: unknown, receive: typeof mocks.receive, unavailable: typeof mocks.unavailable) => { mocks.receive = receive; mocks.unavailable = unavailable; return () => {}; } }));
-vi.mock('./recovery-client', () => ({ importDraftKey: async () => ({}), recoveryDrafts: async () => [], storeDraft: vi.fn(), discardDraft: vi.fn(), decryptDraft: vi.fn() }));
+vi.mock('./recovery-client', () => ({ importDraftKey: async () => ({}), recoveryDrafts: async () => [], storeDraft: vi.fn(async () => {}), discardDraft: vi.fn(async () => {}), decryptDraft: vi.fn() }));
 const page: DocumentPage = { id: 'schema-page', title: 'Future document', role: 'owner', version: 4, schemaVersion: schemaVersion + 1, workspaceId: 'qa', workspaceName: 'QA', spaceId: 'qa', spaceName: 'QA', parentPageId: null, visibility: 'private', updatedAt: '2026-10-27T00:00:00Z', blocks: [], document: { type: 'doc', content: [{ type: 'futureWidget', attrs: { id: 'future', futureOption: 'preserve me' }, content: [{ type: 'text', text: 'Future widget text' }] }] } };
 let root: Root, host: HTMLElement, session: ReturnType<typeof useDocumentSession>, remote: DocumentPage, fetcher: ReturnType<typeof vi.fn>;
 function Probe() { session = useDocumentSession('schema-page'); return null; }
@@ -72,4 +72,18 @@ it('enters read-only mode when a clean external refresh advances the document sc
   expect(session.page).toEqual(page); expect(session.status).toBe('readonly');
   await act(async () => { session.change({ title: 'Forbidden after refresh' }); await session.save(); });
   expect(session.page?.title).toBe(page.title); expect(session.dirty()).toBe(false);
+});
+
+it('retains the conflict if an old save acknowledgement arrives after a future-schema refresh', async () => {
+  remote = { ...page, schemaVersion, document: { type: 'doc', content: [{ type: 'paragraph', attrs: { id: 'p' } }] } };
+  await act(async () => root.render(createElement(Probe)));
+  let finish!: (response: Response) => void, operationId = '';
+  fetcher.mockImplementationOnce((_url: string, init: RequestInit) => { operationId = JSON.parse(String(init.body)).operationId; return new Promise<Response>(resolve => { finish = resolve; }); });
+  let saving!: Promise<void>;
+  await act(async () => { session.change({ title: 'Local in-flight save' }); saving = session.save(); });
+  expect(operationId).toMatch(/^[a-f0-9-]{36}$/); expect(session.status).toBe('saving');
+  await act(async () => session.acceptExternal(page));
+  await act(async () => { finish(Response.json({ page: { ...remote, title: 'Local in-flight save' }, acknowledgedOperationId: operationId })); await saving; });
+  expect(session.status,session.error).toBe('conflict'); expect(session.latest).toEqual(page);
+  expect(session.dirty()).toBe(true); expect(session.page?.title).toBe('Local in-flight save');
 });
