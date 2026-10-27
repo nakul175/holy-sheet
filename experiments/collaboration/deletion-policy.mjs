@@ -1,0 +1,35 @@
+// Isolated protocol experiment, NOT an app authority or a complete rich editor.
+// All manifests and baseline views must originate from a trusted server snapshot.
+import {createHash} from 'node:crypto';
+import {LoroDoc,LoroText} from 'loro-crdt';
+const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
+const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;};
+const valid=(condition,message)=>{if(!condition)throw Error(message);};
+export class PrototypeDeletionPolicy {
+ #state;#manifest;#deleted;#operations;#views=new WeakSet();
+ constructor(state){
+  valid(uuid.test(state.pageId)&&uuid.test(state.epoch),'Invalid page or epoch');valid(Array.isArray(state.bindings)&&state.bindings.length<=10000,'Manifest limit');const bindings=state.bindings.map(b=>({...b})),deleted=[...(state.deleted??[])],operations=(state.operations??[]).map(o=>({...o,nodeIds:[...o.nodeIds]}));
+  this.#manifest=new Map();const blockIds=new Set();for(const b of bindings){valid(typeof b.nodeId==='string'&&/^\d+@\d+$/.test(b.nodeId)&&uuid.test(b.blockId)&&['paragraph','blockquote'].includes(b.type),'Unsupported immutable binding');valid(!this.#manifest.has(b.nodeId)&&!blockIds.has(b.blockId),'Duplicate immutable block identity');this.#manifest.set(b.nodeId,b);blockIds.add(b.blockId);}
+  this.#deleted=new Set(deleted);for(const id of deleted)valid(this.#manifest.has(id),'Unknown tombstone');valid(operations.length<=10000,'Delete operation limit');this.#operations=new Map();for(const o of operations){valid(uuid.test(o.id)&&uuid.test(o.rootBlockId)&&/^[a-f0-9]{64}$/.test(o.baselineDigest)&&o.nodeIds.every(id=>this.#deleted.has(id))&&!this.#operations.has(o.id),'Invalid persisted delete operation');this.#operations.set(o.id,o);}
+  this.#state=freeze({pageId:state.pageId,epoch:state.epoch,bindings:bindings.sort((a,b)=>a.nodeId.localeCompare(b.nodeId)),deleted:[...this.#deleted].sort(),operations:operations.sort((a,b)=>a.id.localeCompare(b.id))});
+ }
+ snapshot(){return this.#state;}
+ project(doc){
+  valid(Object.keys(doc.toJSON()).every(k=>k==='blocks'),'Unrecognised CRDT root');const tree=doc.getTree('blocks'),raw=tree.getNodes();valid(raw.length<=10000,'Tree node limit');let characters=0;const known=new Map();
+  for(const n of raw){const binding=this.#manifest.get(n.id);valid(binding,'Unregistered tree node');valid(n.data.get('blockId')===binding.blockId&&n.data.get('type')===binding.type,'Immutable block metadata changed');const p=n.parent();valid(!p||this.#manifest.get(p.id)?.type==='blockquote','Unsupported parent shape');const t=n.data.get('text');valid(t===undefined||t instanceof LoroText,'Unsupported text container');valid(binding.type==='paragraph'||!t||t.toString()==='','Blockquote own text is unsupported');const delta=t?.toDelta()??[];valid(delta.length<=5000,'Text segment limit');for(const part of delta){valid(typeof part.insert==='string'&&Object.keys(part).every(k=>['insert','attributes'].includes(k)),'Unsupported text delta');characters+=part.insert.length;valid(characters<=1_000_000,'Text size limit');for(const [k,v] of Object.entries(part.attributes??{}))valid(['bold','italic'].includes(k)&&(typeof v==='boolean'||v===null),'Unsupported text mark');}known.set(n.id,{binding,delta});}
+  const nodes=[],visited=new Set();const visit=(n,parentId,depth,hidden)=>{valid(depth<=32&&!visited.has(n.id),'Invalid parent cycle/depth');visited.add(n.id);const value=known.get(n.id);valid(value,'Unknown live tree node');const excluded=hidden||this.#deleted.has(n.id);if(!excluded)nodes.push({nodeId:n.id,blockId:value.binding.blockId,type:value.binding.type,parentId,text:structuredClone(value.delta)});for(const child of n.children()??[])visit(child,value.binding.blockId,depth+1,excluded);};for(const n of tree.roots())visit(n,null,0,false);valid(visited.size===raw.length,'Unreachable live tree node');const view=freeze({pageId:this.#state.pageId,epoch:this.#state.epoch,nodes});this.#views.add(view);return view;
+ }
+ /** Proposal only: persist this candidate policy together with its document before
+  * acknowledging. The existing policy remains unchanged on persistence failure. */
+ proposeDelete(view,rootBlockId,operationId){
+  valid(uuid.test(operationId)&&uuid.test(rootBlockId),'Invalid delete intent');valid(view.pageId===this.#state.pageId&&view.epoch===this.#state.epoch,'Wrong delete page/epoch');const baselineDigest=digest(view),old=this.#operations.get(operationId);if(old){valid(old.rootBlockId===rootBlockId&&old.baselineDigest===baselineDigest,'Delete intent reused');return {policy:this,replayed:true};}valid(this.#views.has(view),'Delete requires a server-produced immutable baseline');const root=view.nodes.find(n=>n.blockId===rootBlockId);valid(root,'Delete root unavailable');const descendants=new Set([rootBlockId]);let changed=true;while(changed){changed=false;for(const n of view.nodes)if(n.parentId&&descendants.has(n.parentId)&&!descendants.has(n.blockId)){descendants.add(n.blockId);changed=true;}}
+  const nodeIds=view.nodes.filter(n=>descendants.has(n.blockId)).map(n=>n.nodeId).sort(),deleted=new Set([...this.#deleted,...nodeIds]),operation={id:operationId,rootBlockId,baselineDigest,nodeIds};return {policy:new PrototypeDeletionPolicy({...this.#state,deleted:[...deleted],operations:[...this.#state.operations,operation]}),replayed:false};
+ }
+}
+/** A byte/shape experiment, not authentication, transport or persistence. Only a
+ * separately authorised server may supply the expected page/epoch and manifest. */
+export function candidateImport(base,policy,envelope){valid(envelope&&Object.keys(envelope).sort().join(',')==='bytes,epoch,pageId','Unsupported update envelope');valid(envelope.pageId===policy.snapshot().pageId&&envelope.epoch===policy.snapshot().epoch,'Wrong update page/epoch');valid(envelope.bytes instanceof Uint8Array&&envelope.bytes.byteLength>0&&envelope.bytes.byteLength<=262144,'Update byte limit');const doc=new LoroDoc();doc.configTextStyle({bold:{expand:'after'},italic:{expand:'after'}});doc.import(base.export({mode:'snapshot'}));doc.import(envelope.bytes);const view=policy.project(doc);return {doc,view};}
+/** Joins already server-approved journals, never client-supplied deletion claims.
+ * A persistence implementation must atomically join with its current policy. */
+export function mergeTrustedDeletionPolicies(left,right){const a=left.snapshot(),b=right.snapshot();valid(a.pageId===b.pageId&&a.epoch===b.epoch&&digest(a.bindings)===digest(b.bindings),'Cannot join different page/epoch/manifests');const operations=new Map(a.operations.map(o=>[o.id,o]));for(const o of b.operations){const prior=operations.get(o.id);valid(!prior||digest(prior)===digest(o),'Delete operation collision');operations.set(o.id,o);}return new PrototypeDeletionPolicy({...a,deleted:[...new Set([...a.deleted,...b.deleted])],operations:[...operations.values()]});}
