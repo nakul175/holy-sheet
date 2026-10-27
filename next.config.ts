@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = { output:"standalone", serverExternalPackages: ["@electric-sql/pglite", "jsdom"], poweredByHeader: false,
-  async headers(){return [{source:'/pages/:path*',headers:[{key:'Content-Security-Policy',value:"frame-ancestors 'none'"}]},{source:'/embed/:path*',headers:[{key:'Content-Security-Policy',value:"frame-ancestors 'self' https://sheethappensofficer.aplyd.org"}]}];},
+  async headers(){return [{source:'/pages/:path*',headers:[{key:'Content-Security-Policy',value:"frame-ancestors 'none'"}]},{source:'/embed/:path*',headers:[{key:'Content-Security-Policy',value:"frame-ancestors 'self' https://sheethappensofficer.aplyd.org https://sho-qa.aplyd.org"}]}];},
 };
 export default nextConfig;

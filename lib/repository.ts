@@ -66,8 +66,19 @@ export class Repository {
     const id=crypto.randomUUID();
     return this.db.transaction(async tx=>{await tx.query('SELECT w.id FROM hs_workspaces w JOIN hs_members m ON m.workspace_id=w.id AND m.user_id=$2 AND m.active=true WHERE w.id=$1 FOR UPDATE OF w',[workspaceId,actor.id]);const m=await tx.query("SELECT user_id FROM hs_members WHERE workspace_id=$1 AND user_id=$2 AND active=true FOR UPDATE",[workspaceId,actor.id]);if(!m.rows.length)throw new DocumentError("Workspace unavailable","not_found",404);await tx.query("INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)",[id,workspaceId,name.trim()]);return {id,workspaceId,name:name.trim()};});
   }
-  async create(actor:Actor,title:string,spaceId:string,parentId?:string|null) {
+  async create(actor:Actor,title:string,spaceId:string,parentId?:string|null,operationId?:string) {
     return this.db.transaction(async tx=>{
+      const requestHash=createHash('sha256').update(stableStringify({title,spaceId,parentId:parentId??null})).digest('hex');
+      if(operationId){
+        // Serialize this actor's create intents across locations and concurrent retries.
+        await tx.query('SELECT id FROM hs_users WHERE id=$1 FOR NO KEY UPDATE',[actor.id]);
+        const prior=await tx.query<{page_id:string|null;request_hash:string}>('SELECT page_id,request_hash FROM hs_page_creations WHERE actor_id=$1 AND operation_id=$2',[actor.id,operationId]);
+        if(prior.rows.length){
+          if(prior.rows[0].request_hash!==requestHash)throw new DocumentError('Creation attempt was reused with different fields','operation_mismatch',409);
+          if(!prior.rows[0].page_id)throw new DocumentError('Page is restricted or unavailable','not_found',404);
+          return this.get(prior.rows[0].page_id,actor,tx);
+        }
+      }
       await tx.query('SELECT w.id FROM hs_workspaces w JOIN hs_spaces s ON s.workspace_id=w.id JOIN hs_members m ON m.workspace_id=w.id AND m.user_id=$2 AND m.active=true WHERE s.id=$1 FOR UPDATE OF w',[spaceId,actor.id]);
       const {rows}=await tx.query<{workspace_id:string}>("SELECT s.workspace_id FROM hs_spaces s JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$2 AND m.active=true WHERE s.id=$1 FOR UPDATE OF m",[spaceId,actor.id]);
       if(!rows.length)throw new DocumentError("Space unavailable","not_found",404);
@@ -76,6 +87,7 @@ export class Repository {
       if(actualTitle.length>240)throw new DocumentError("Title is too long");
       await tx.query("INSERT INTO hs_pages(id,workspace_id,space_id,parent_id,owner_id,title) VALUES($1,$2,$3,$4,$5,$6)",[id,rows[0].workspace_id,spaceId,parentId??null,actor.id,actualTitle]);
       await this.writeDocument(tx,id,fromLegacy([]),1,actualTitle,actor.id,'api');
+      if(operationId)await tx.query('INSERT INTO hs_page_creations(actor_id,operation_id,page_id,request_hash) VALUES($1,$2,$3,$4)',[actor.id,operationId,id,requestHash]);
       return this.get(id,actor,tx);
     });
   }
