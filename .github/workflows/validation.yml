@@ -43,6 +43,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test -- --reporter=default --reporter=junit --outputFile.junit=artifacts/unit.xml
+      - name: Rehearse synthetic PostgreSQL backup and restore
+        run: |
+          docker exec ${{ job.services.postgres.id }} pg_dump --username holy_sheet_acceptance --dbname holy_sheet_acceptance --format custom > /tmp/holy-sheet-acceptance.dump
+          docker exec ${{ job.services.postgres.id }} createdb --username holy_sheet_acceptance holy_sheet_restore_acceptance
+          docker exec -i ${{ job.services.postgres.id }} pg_restore --username holy_sheet_acceptance --dbname holy_sheet_restore_acceptance --no-owner --no-privileges < /tmp/holy-sheet-acceptance.dump
+          node --import tsx scripts/verify-postgres-restore.mts > artifacts/postgres-restore.json
       - run: npm run typecheck
       - run: npm run build
         env:
@@ -56,4 +62,5 @@ jobs:
           path: |
             artifacts/unit.xml
             artifacts/*.tgz
+            artifacts/postgres-restore.json
           if-no-files-found: ignore

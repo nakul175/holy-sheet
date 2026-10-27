@@ -25,6 +25,10 @@ private operator receipt. Do not deploy an unreviewed branch or moving branch na
   checks read-only/non-root deployment boundaries with editor 0 and 1, and retains
   the exact image archive, checksum and image ID. These are anonymous checks,
   not authenticated edit, scanner, performance or SHO acceptance.
+- Application CI also dumps/restores its disposable PostgreSQL database and
+  verifies all HS table counts/digests plus reopened synthetic document views.
+  This qualifies SQL restoration only; cloud objects and separately protected
+  recovery-key restoration still need their own evidence.
 
 ## Switch and immediate checks
 
