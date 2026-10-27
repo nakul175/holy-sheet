@@ -72,3 +72,7 @@ export async function movePageTree(r:Repository,actor:Actor,pageId:string,input:
   return {...ack,replayed:false};
  });
 }
+
+// Server-only hierarchy helpers shared with the recoverable Trash workflow.
+export {subtree as pageSubtree,effective as hierarchyRole};
+export type {Node as HierarchyNode,Member as HierarchyMember,Grant as HierarchyGrant};

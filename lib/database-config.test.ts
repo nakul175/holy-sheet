@@ -1,0 +1,2 @@
+import {it,expect,vi} from 'vitest';import {createDatabase} from './database';
+it('does not allow the isolated preview directory to replace a production database',async()=>{vi.stubEnv('NODE_ENV','production');vi.stubEnv('DATABASE_URL',undefined);vi.stubEnv('HS_LOCAL_PREVIEW','1');vi.stubEnv('HS_LOCAL_DATABASE_DIR','.holy-sheet/browser-acceptance');try{await expect(createDatabase()).rejects.toThrow('DATABASE_URL is required in production');}finally{vi.unstubAllEnvs();}});
