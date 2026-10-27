@@ -35,3 +35,21 @@ describe('HOLY-4 inherited sharing',()=>{
     const f=await fixture();await grant(f.child.id,viewer.id,'viewer');await expect(changeSharing(r,owner,f.child.id,{operationId:crypto.randomUUID(),expectedVersion:1,recipientId:viewer.id,role:'editor'})).rejects.toMatchObject({code:'sharing_conflict'});expect((await r.get(f.child.id,viewer)).role).toBe('viewer');
   });
 });
+
+describe('HOLY-4 access boundaries',()=>{
+  it('applies ancestor grants past100 levels and still terminates on malformed cycles',async()=>{
+    const f=await fixture();await grant(f.child.id,viewer.id,'viewer');let parent=f.child.id;
+    for(let i=0;i<110;i++){const id=crypto.randomUUID();await db.query("INSERT INTO hs_pages(id,workspace_id,space_id,parent_id,owner_id,title) VALUES($1,'ws-aplyd','space-product',$2,$3,'Deep page')",[id,parent,owner.id]);parent=id;}
+    expect((await r.get(parent,viewer)).role).toBe('viewer');
+    await db.query('UPDATE hs_pages SET parent_id=$2 WHERE id=$1',[f.root.id,parent]);
+    expect((await r.get(parent,viewer)).role).toBe('viewer');
+    await grant(f.child.id,viewer.id,null);await expect(r.get(parent,viewer)).rejects.toMatchObject({status:404});
+  });
+  it('shows the workspace-wide source and retains its effective access after a direct removal',async()=>{
+    const f=await fixture();await db.query("UPDATE hs_pages SET visibility='space' WHERE id=$1",[f.child.id]);await db.query("INSERT INTO hs_grants(page_id,subject,role) VALUES($1,'space','editor')",[f.child.id]);await grant(f.grandchild.id,viewer.id,'viewer');
+    const state=await sharingState(r,owner,f.grandchild.id);expect(state.inherited).toEqual(expect.arrayContaining([expect.objectContaining({sourceId:f.child.id,recipientId:'space',recipientName:'Active workspace members',role:'editor'})]));
+    expect((await grant(f.grandchild.id,viewer.id,null)).effectiveRole).toBe('editor');
+    await db.query("UPDATE hs_members SET active=false WHERE user_id=$1",[viewer.id]);await expect(r.get(f.grandchild.id,viewer)).rejects.toMatchObject({status:404});
+    await db.query("UPDATE hs_members SET active=true WHERE user_id=$1",[viewer.id]);
+  });
+});

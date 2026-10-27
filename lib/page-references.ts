@@ -8,9 +8,9 @@ export async function referenceLabel(r:Repository,actor:Actor,sourceId:string,ta
 export async function backlinks(r:Repository,actor:Actor,targetId:string,after?:string){
  const target=await r.access(r.db,targetId,actor);
  const {rows}=await r.db.query<{id:string;title:string;occurrences:number;spaceName:string}>(`WITH RECURSIVE reachable AS (
-  SELECT p.id,p.workspace_id,0 AS depth FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
+  SELECT p.id,p.workspace_id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
   WHERE p.deleted_at IS NULL AND p.workspace_id=$2 AND (p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
-  UNION SELECT c.id,c.workspace_id,a.depth+1 FROM hs_pages c JOIN reachable a ON c.parent_id=a.id AND c.workspace_id=a.workspace_id WHERE c.deleted_at IS NULL AND a.depth<99
+  UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN reachable a ON c.parent_id=a.id AND c.workspace_id=a.workspace_id WHERE c.deleted_at IS NULL
  ), permitted AS (SELECT DISTINCT id,workspace_id FROM reachable) SELECT p.id,p.title,count(*)::integer AS occurrences,s.name AS "spaceName"
  FROM hs_blocks b JOIN hs_pages p ON p.id=b.page_id JOIN permitted a ON a.id=p.id JOIN hs_spaces s ON s.id=p.space_id
  WHERE b.type='pageLink' AND b.node->'attrs'->>'pageId'=$3 AND p.deleted_at IS NULL AND ($4::text IS NULL OR p.id>$4)
