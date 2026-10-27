@@ -1,0 +1,11 @@
+# HOLY-3 table keyboard checkpoint
+
+Escape from a table now focuses the persistent document Find control and announces that the grid was left. This changes focus only and also works with read-only content. A visible Leave table control provides the same action. Editors can use Cmd/Ctrl+Enter or Continue below table to move into following text, creating one paragraph only when necessary. Existing following content stays intact. Final-cell Tab at 100 rows uses the same exit and announces the limit; ordinary Tab/Shift+Tab and composition input retain their existing behavior.
+
+Reorder and block-continuation helpers now refuse mutation in read-only mode. Structural row/column moves and newly inserted continuation paragraphs establish explicit history boundaries, so Undo does not merge those actions with preceding/following typing. Adjacent row and column commands undo individually while preserving all row/cell/content IDs.
+
+Evidence: nine focused actual-editor cases passed, including Meta/Ctrl, Escape/read-only focus without mutation, 100-row final-cell exit, normal/modifier/IME exclusions, existing following content and isolated structural Undo. Combined local regression: 325 passed; sixteen opt-in service cases skipped in that default run. Typecheck and production build passed. No server path changed.
+
+Native local browser rehearsal verified Escape focusing document Find, Cmd+Enter and text entry outside the table, separate Undo of text/continuation, row-down and column-right with individual Undo, and actual final-cell Tab appending a row below the limit. Synthetic changes were undone to restore the original document. The 100-row edge has automated editor coverage, not a claimed native browser rehearsal. Screenshots: surrounding workspace outputs/holy-sheet/overnight-20261026/HOLY-3-table-keyboard-continuation.png, HOLY-3-table-reordered.png and HOLY-3-table-keyboard-restored.png.
+
+Drag-based row/column reorder controls, touch/software keyboard, full supported-browser/screen-reader and production performance qualification remain open. This checkpoint does not complete AC10/18/22, HOLY-3 or the BugOff catalogue. Integrated staging/suite/SHO qualification remains separate.
