@@ -361,7 +361,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .trash-list span,.trash-list small { color:var(--muted); }
 .mobile-workspace-tools { display:none; position:relative; }
 .mobile-workspace-tools summary { min-height:44px; padding:12px; cursor:pointer; }
-.mobile-workspace-tools>div { position:absolute; right:0; top:100%; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px; z-index:15; width:180px; max-width:calc(100vw - 40px); box-shadow:0 8px 24px #0002; }
+.mobile-workspace-tools>div { position:absolute; right:0; top:100%; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px; z-index:5; width:180px; max-width:calc(100vw - 40px); box-shadow:0 8px 24px #0002; }
 .mobile-workspace-tools>div button { display:block; width:100%; text-align:left; }
 @media(max-width:900px){.mobile-workspace-tools{display:block;flex-basis:100%;min-width:0;}}
 
