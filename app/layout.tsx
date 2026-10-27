@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import SessionBoundary from '../components/session-boundary';
 
 export const metadata: Metadata = {
   title: "Holy Sheet",
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}</body></html>;
+  return <html lang="en"><body><SessionBoundary>{children}</SessionBoundary></body></html>;
 }

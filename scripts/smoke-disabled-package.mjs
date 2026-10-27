@@ -4,6 +4,9 @@ assert.ok(['http://127.0.0.1:53104','https://staging.holysheet.aplyd.org'].inclu
 const checks=[];
 async function check(name,path,status,options={}){const start=performance.now();const response=await fetch(origin+path,{redirect:'manual',...options});assert.equal(response.status,status,`${name}: expected ${status}, received ${response.status}`);if(path.startsWith('/api/')&&path!='/api/internal/maintenance')assert.match(response.headers.get('cache-control')??'',/no-store/);const body=await response.text();assert.ok(!body.includes('Search token: orchid'),'Private fixture content leaked');checks.push({name,status,durationMs:Math.round(performance.now()-start)});}
 await check('Public landing shell','/',200);
+await check('Unconfigured sign-in bridge fails closed','/auth/sign-in',503);
+await check('Unconfigured callback fails closed','/auth/callback?code=synthetic&state=synthetic',503);
+await check('Session status requires identity','/auth/session',401);
 await check('Document data requires identity','/api/v1/pages/welcome/document',401);
 await check('Page listing requires identity','/api/pages',401);
 await check('Search requires identity','/api/search?q=orchid',401);

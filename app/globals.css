@@ -256,6 +256,10 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .workspace-home label { display:grid; gap:8px; font-size:13px; color:var(--muted); }
 .workspace-home input,.workspace-home select { width:100%; min-height:44px; border:1px solid var(--line); border-radius:9px; padding:10px; background:white; }
 .workspace-home button { min-height:44px; border:0; border-radius:9px; padding:12px; background:var(--ink); color:white; }
+.sign-in-link { display:inline-flex; align-items:center; min-height:44px; margin-top:12px; padding:10px 16px; border-radius:9px; background:var(--ink); color:white; text-decoration:none; }
+.session-controls { display:inline-flex; align-items:center; gap:8px; }
+.session-controls small { max-width:240px; }
+.workspace-home > .session-controls { float:right; }
 .discussion-entry { display:flex; gap:8px; margin-bottom:16px; }
 .discussion-entry button,.discussion-panel button { min-height:44px; padding:8px 12px; border:1px solid var(--line); border-radius:8px; background:white; font-size:12px; }
 .discussion-panel[hidden] { display:none; }
