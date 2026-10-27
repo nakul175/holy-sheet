@@ -20,6 +20,8 @@ import { ensureIds, highlights, idTypes, languages, palette, plainText, safeUrl,
 import { Callout, FileBlock, FindExtension, PageLink, TableOfContents, findKey } from "./extensions";
 import { requestJson } from "./use-document-session";
 import UploadDialog from "./upload-dialog";
+import TransformDialog from './transform-dialog';
+import { normalizeRichDocument,rgbToHex } from "../../lib/editor-document";
 import { captureMediaPlacement,applyReadyMedia,mediaTypeForFile,type MediaPlacement } from "./media-placement";
 import type { RecoveredUpload } from "../../lib/upload-recovery-types";
 import { rehydrateMediaPlacement } from "../../lib/upload-placement-recovery";
@@ -44,24 +46,7 @@ const catalogue:Insert[]=[
   {name:"Code",description:"Code with syntax highlighting",type:"codeBlock"},{name:"Table",description:"Rows, columns and checklists",type:"table"},{name:"Collapsible section",description:"A title with nested content",type:"details"},
   {name:"Table of contents",description:"Navigate the page headings",type:"tableOfContents"},{name:"Page link",description:"Reference a Holy Sheet page",type:"pageLink"},{name:"Image",description:"PNG, JPEG, WebP or GIF · up to 10 MB",type:"image"},{name:"File",description:"Documents and text · up to 25 MB",type:"file"},
 ];
-function rgbToHex(value:string){const m=/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/.exec(value);return m?'#'+m.slice(1).map(v=>Number(v).toString(16).padStart(2,'0')).join(''):value.toLowerCase();}
-export function normalizeRichDocument(document:RichNode):RichNode {
-  function walk(n:RichNode):RichNode {
-    const attrs={...n.attrs};
-    // Alignment is not part of the HS table schema; Tiptap supplies it as a nullable default.
-    if(["tableCell","tableHeader"].includes(n.type))delete attrs.align;
-    if(n.type==="codeBlock")attrs.language=languages.includes(String(attrs.language))?attrs.language:"plaintext";
-    if(n.type==="image"){delete attrs.height;attrs.src=`/api/media/${attrs.attachmentId}`;}
-    const marks=(n.marks??[]).flatMap(m=>{
-      if(m.type==="link"&&!safeUrl(String(m.attrs?.href)))return [];
-      if(m.type==="textStyle"&&m.attrs?.color){const color=rgbToHex(String(m.attrs.color));return palette.includes(color)?[{type:m.type,attrs:{color}}]:[];}
-      if(m.type==="highlight"&&m.attrs?.color){const color=rgbToHex(String(m.attrs.color));return highlights.includes(color)?[{type:m.type,attrs:{color}}]:[];}
-      return [m];
-    });
-    return {...n,...(n.attrs?{attrs}:{}),...(n.marks?{marks}:{}),...(n.content?{content:n.content.map(walk)}:{})};
-  }
-  return ensureIds(walk(document));
-}
+export { normalizeRichDocument } from "../../lib/editor-document";
 
 export function sanitizePaste(html:string):string {
   const clean=DOMPurify.sanitize(html,{FORBID_TAGS:["script","style","iframe","object","embed","svg","math","form","input","button","textarea","link","meta","template"],FORBID_ATTR:["srcset","src","id"],ALLOW_DATA_ATTR:false});
@@ -89,8 +74,9 @@ function blockRange(editor:Editor){
 
 export default function RichEditor({document,editable,onChange,pageId,preferenceKey,onComment,commentsReady=true,threads=noThreads,activeThreadId=null,onOpenThread,navigateThread=0,mediaEnabled=true,recoveryActorId,resumeUpload,onRecoveryClosed}:{document:RichNode;editable:boolean;onChange:(doc:RichNode)=>void;pageId:string;preferenceKey:string;onComment?:(anchors:AnchorInput[],quote:string)=>void;commentsReady?:boolean;threads?:ThreadView[];activeThreadId?:string|null;onOpenThread?:(id:string)=>void;navigateThread?:number;mediaEnabled?:boolean;recoveryActorId?:string;resumeUpload?:RecoveredUpload|null;onRecoveryClosed?:()=>void}){
   const [insertOpen,setInsertOpen]=useState(false),[query,setQuery]=useState(""),[active,setActive]=useState(0),[notice,setNotice]=useState(""),[linkOpen,setLinkOpen]=useState(false),[pageOpen,setPageOpen]=useState(false),[media,setMedia]=useState<"image"|"file"|null>(null),[findOpen,setFindOpen]=useState(false),[findQuery,setFindQuery]=useState(""),[matchCase,setMatchCase]=useState(false),[matchIndex,setMatchIndex]=useState(0);
+  const [transformOpen,setTransformOpen]=useState(false);
   const [mediaFile,setMediaFile]=useState<File|null>(null),[mediaTarget,setMediaTarget]=useState<MediaPlacement|null>(null),[mediaRecovered,setMediaRecovered]=useState<RecoveredUpload|null>(null);
-  useEffect(()=>{const logout=()=>closeMedia();window.addEventListener('holy-sheet:logout',logout);return()=>window.removeEventListener('holy-sheet:logout',logout);},[]);
+  useEffect(()=>{const logout=()=>{closeMedia();setTransformOpen(false);};window.addEventListener('holy-sheet:logout',logout);return()=>window.removeEventListener('holy-sheet:logout',logout);},[]);
   const slash=useRef(false),insertAt=useRef<number|null>(null),onChangeRef=useRef(onChange),lastEmitted=useRef(stableStringify(document)),restoring=useRef(false),savedFindSelection=useRef<{from:number;to:number}|null>(null),temporaryOpen=useRef<TemporarySection[]>([]),discussionOpen=useRef<TemporarySection[]>([]);
   onChangeRef.current=onChange;
   const editor=useEditor({immediatelyRender:false,editable,content:document,extensions:[
@@ -175,7 +161,7 @@ export default function RichEditor({document,editable,onChange,pageId,preference
       <button onClick={addBlock} disabled={!editable}>＋ Insert</button>
       {onComment&&<button disabled={!commentsReady} onClick={commentSelection} title={!commentsReady?'Wait for the document save before anchoring a comment':undefined}>Comment on selection</button>}
       {button("Undo","↶",()=>editor.chain().focus().undo().run(),false,!state?.undo)}{button("Redo","↷",()=>editor.chain().focus().redo().run(),false,!state?.redo)}
-      <details className="block-actions"><summary aria-label="Block actions">⋮ Block</summary><div role="group" aria-label="Block actions"><button disabled={!editable} onClick={()=>act('up')}>Move up</button><button disabled={!editable} onClick={()=>act('down')}>Move down</button><button disabled={!editable} onClick={()=>act('duplicate')}>Duplicate block</button><button disabled={!editable} onClick={()=>act('delete')}>Delete block and contents</button><button disabled={!editable} onClick={()=>editor.chain().focus().sinkListItem(editor.isActive('taskItem')?'taskItem':'listItem').run()}>Indent list item</button><button disabled={!editable} onClick={()=>editor.chain().focus().liftListItem(editor.isActive('taskItem')?'taskItem':'listItem').run()}>Outdent list item</button><button disabled={!editable} onClick={()=>{insertAt.current=editor.state.selection.from;setInsertOpen(true);setQuery("");}}>Turn into…</button></div></details>
+      <details className="block-actions"><summary aria-label="Block actions">⋮ Block</summary><div role="group" aria-label="Block actions"><button disabled={!editable} onClick={()=>act('up')}>Move up</button><button disabled={!editable} onClick={()=>act('down')}>Move down</button><button disabled={!editable} onClick={()=>act('duplicate')}>Duplicate block</button><button disabled={!editable} onClick={()=>act('delete')}>Delete block and contents</button><button disabled={!editable} onClick={()=>editor.chain().focus().sinkListItem(editor.isActive('taskItem')?'taskItem':'listItem').run()}>Indent list item</button><button disabled={!editable} onClick={()=>editor.chain().focus().liftListItem(editor.isActive('taskItem')?'taskItem':'listItem').run()}>Outdent list item</button><button disabled={!editable} onClick={()=>setTransformOpen(true)}>Turn into…</button></div></details>
       <button className="find-button" onClick={()=>{savedFindSelection.current={from:editor.state.selection.from,to:editor.state.selection.to};setFindOpen(true);}}>⌕ Find</button>
     </div>
     <div className="persistent-format">{toolbar()}</div>
@@ -192,6 +178,7 @@ export default function RichEditor({document,editable,onChange,pageId,preference
     {editable&&<button className="add-block" onClick={addBlock}>＋ Add block <span>or type / on an empty line</span></button>}
     {notice&&<div className="editor-notice" role="status">{notice}<button aria-label="Dismiss notice" onClick={()=>setNotice("")}>×</button></div>}
     {insertOpen&&<Dialog title="Insert a block" onClose={closeInsert}><input className="command-input" aria-label="Search block types" placeholder="Search blocks…" value={query} onChange={e=>{setQuery(e.target.value);setActive(0);}} onKeyDown={e=>{if(e.key==='ArrowDown'){e.preventDefault();setActive(i=>Math.min(filtered.length-1,i+1));}if(e.key==='ArrowUp'){e.preventDefault();setActive(i=>Math.max(0,i-1));}if(e.key==='Enter'&&filtered[active]){e.preventDefault();insert(filtered[active]);}}}/><div className="insert-results" role="listbox" aria-label="Block types">{filtered.map((item,i)=><button key={item.name} role="option" aria-selected={i===active} onMouseEnter={()=>setActive(i)} onClick={()=>insert(item)}><strong>{item.name}</strong><small>{item.description}</small></button>)}{!filtered.length&&<p>No matching block types. Try another name.</p>}</div></Dialog>}
+    {transformOpen&&<TransformDialog editor={editor} onClose={()=>setTransformOpen(false)}/>}
     {linkOpen&&<LinkDialog editor={editor} onClose={()=>setLinkOpen(false)}/>}
     {pageOpen&&<PageDialog sourcePageId={pageId} onClose={()=>setPageOpen(false)} onSelect={id=>{editor.chain().focus().insertContent({type:'pageLink',attrs:{id:crypto.randomUUID(),pageId:id}}).run();setPageOpen(false);}}/>}
     {media&&mediaTarget&&<UploadDialog key={mediaRecovered?.recordId??mediaTarget.insertId??`${media}:${mediaTarget.blockId}`} pageId={pageId} actorId={recoveryActorId} type={media} initialFile={mediaFile} target={mediaTarget} recovered={mediaRecovered} writable={editable} onClose={closeMedia} onReady={(id,alt,caption,name)=>{applyReadyMedia(editor,mediaTarget,{id,alt,caption,name});closeMedia();}}/>}
