@@ -27,6 +27,7 @@ export type Page = {
   title: string;
   visibility: "private" | "space";
   version: number;
+  position?: number;
   updatedAt: string;
   blocks: Block[];
 };
