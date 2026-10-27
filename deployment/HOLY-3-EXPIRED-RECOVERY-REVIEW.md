@@ -1,0 +1,9 @@
+# Explicit expired recovery cleanup
+
+Pending uploads now offer confirmed removal of up to 25 expired records from the current account/page on this device. The helper never requests a decryption key, changes a server lease or deletes source/saved file bytes. It acquires each record's Web Lock, rereads current account/page metadata and expiry, and preserves records renewed or opened by another tab. Text drafts use their separate store and remain intact. Results report removed/skipped counts; the panel clears cached details on refresh/logout and retains own expired-device cleanup even when an unrelated key/page refresh fails.
+
+Existing explicit operator maintenance now removes at most 50 expired server recovery keys. Each deletion takes the workspace lock used by document/upload/key operations and rechecks expiry at deletion. Valid keys remain protected; expired-key removal nulls the optional upload recovery binding through its existing foreign key without deleting upload rows or files. No recurring cleanup or schedule is created.
+
+Evidence: four client-helper tests cover exact actor/page/text-store isolation, lock contention, renewal during lock acquisition and the 25-record bound. Two automated DOM tests cover confirmation/cancel, exact cleanup scope, unavailable key refresh and logout clearing. Two server tests cover expired-only key removal, foreign-key preservation, valid protection and the 50-key bound. Combined candidate: 291 local tests, ten real PostgreSQL checks, six real ClamAV checks, typecheck/build passed. These tests do not constitute a seven-day real-browser/mobile expiry rehearsal or full AC15/BugOff acceptance.
+
+Production remains disabled and staging integration is still unqualified. The earlier immutable e311efd package evidence predates this cleanup change; it must not be relabelled as a package build of this branch.
