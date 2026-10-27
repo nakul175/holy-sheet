@@ -11,6 +11,10 @@ not sent to the HTTP server. A hint is not an authentication assertion or a
 content grant, and changing it can only change which verified HS account the
 view will accept.
 
+The initial identity check times out after five seconds and presents Check again.
+Timeouts and failed checks never mount document content; a successful explicit
+retry must verify the same expected account before opening it.
+
 When framed, HS refuses missing/ambiguous context and checks `/auth/session`
 before mounting the editor or its document/recovery requests. A different HS
 account cannot briefly render its content inside the task. Normal HS JWT,

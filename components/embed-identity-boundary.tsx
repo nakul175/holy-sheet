@@ -9,7 +9,7 @@ export default function EmbedIdentityBoundary({pageId,children}:{pageId:string;c
     const context=embedContext(location.hash,window.parent!==window);let cancelled=false;
     if(context.kind==='standalone'){setPhase('ready');return;}
     if(context.kind==='missing'){setPhase('missing');return;}
-    setPhase('checking');const controller=new AbortController();
+    setPhase('checking');const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
     void(async()=>{try{
       const response=await fetch('/auth/session',{cache:'no-store',signal:controller.signal});
       if(cancelled)return;
@@ -18,8 +18,8 @@ export default function EmbedIdentityBoundary({pageId,children}:{pageId:string;c
       const identity=await response.json();if(cancelled)return;
       if(identity.authenticated!==true||typeof identity.userId!=='string'){setPhase('unavailable');return;}
       setPhase(identity.userId===context.userId?'ready':'mismatch');
-    }catch{if(!cancelled)setPhase('unavailable');}})();
-    return()=>{cancelled=true;controller.abort();};
+    }catch{if(!cancelled)setPhase('unavailable');}finally{clearTimeout(timeout);}})();
+    return()=>{cancelled=true;clearTimeout(timeout);controller.abort();};
   },[pageId,retry]);
   if(phase==='ready')return children;
   return <main className="workspace-home"><section aria-live="polite">
