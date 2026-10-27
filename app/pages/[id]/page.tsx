@@ -1,5 +1,5 @@
-import HolySheetApp from "../../../components/holy-sheet-app";
+import DocumentSurface from "../../../components/document-surface";
 
 export default async function PageScreen({ params }: { params: Promise<{ id: string }> }) {
-  return <HolySheetApp key={(await params).id} initialPageId={(await params).id} />;
+  const {id}=await params;return <DocumentSurface key={id} pageId={id}/>;
 }

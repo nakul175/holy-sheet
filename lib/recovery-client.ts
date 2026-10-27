@@ -5,18 +5,29 @@ export type DraftProtection = {id:string;key:CryptoKey;expiresAt:string};
 function openStore(){return new Promise<IDBDatabase>((resolve,reject)=>{const req=indexedDB.open('holy-sheet-recovery',2);let failed=false;req.onupgradeneeded=()=>{for(const name of ['drafts','uploads']){const store=req.result.objectStoreNames.contains(name)?req.transaction!.objectStore(name):req.result.createObjectStore(name,{keyPath:'id'});if(!store.indexNames.contains('actorPage'))store.createIndex('actorPage',['actorId','pageId']);}};req.onblocked=()=>{failed=true;reject(new Error('Recovery storage upgrade is blocked by another open tab.'));};req.onsuccess=()=>{if(failed){req.result.close();return;}req.result.onversionchange=()=>req.result.close();resolve(req.result);};req.onerror=()=>{failed=true;reject(req.error);};});}
 async function transaction<T>(mode:IDBTransactionMode,run:(store:IDBObjectStore)=>IDBRequest<T>,storeName='drafts'){const db=await openStore();try{return await new Promise<T>((resolve,reject)=>{const tx=db.transaction(storeName,mode);const request=run(tx.objectStore(storeName));let result:T;request.onsuccess=()=>{result=request.result;};request.onerror=()=>reject(request.error);tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error??new Error('Recovery transaction aborted'));});}finally{db.close();}}
 export async function importDraftKey(base64:string){const bytes=Uint8Array.from(atob(base64),c=>c.charCodeAt(0));return crypto.subtle.importKey("raw",bytes,{name:"AES-GCM"},false,["encrypt","decrypt"]);}
-export async function storeDraft(protection:DraftProtection,actorId:string,pageId:string,payload:DraftPayload){const iv=crypto.getRandomValues(new Uint8Array(12)),aad=new TextEncoder().encode(`${actorId}:${pageId}:${protection.id}`);const ciphertext=await crypto.subtle.encrypt({name:"AES-GCM",iv,additionalData:aad},protection.key,new TextEncoder().encode(JSON.stringify(payload)));const record:RecoveryRecord={id:protection.id,actorId,pageId,expiresAt:protection.expiresAt,updatedAt:new Date().toISOString(),iv,ciphertext};await transaction("readwrite",s=>s.put(record));}
+function requireActiveProtection(protection:DraftProtection,kind:'Draft'|'Upload'){
+  const expiry=Date.parse(protection.expiresAt);
+  if(!Number.isFinite(expiry)||expiry<=Date.now())throw new Error(`${kind} recovery protection expired`);
+}
+export async function storeDraft(protection:DraftProtection,actorId:string,pageId:string,payload:DraftPayload){
+  requireActiveProtection(protection,'Draft');
+  const iv=crypto.getRandomValues(new Uint8Array(12)),aad=new TextEncoder().encode(`${actorId}:${pageId}:${protection.id}`);
+  const ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:aad},protection.key,new TextEncoder().encode(JSON.stringify(payload)));
+  requireActiveProtection(protection,'Draft');
+  const record:RecoveryRecord={id:protection.id,actorId,pageId,expiresAt:protection.expiresAt,updatedAt:new Date().toISOString(),iv,ciphertext};
+  await transaction('readwrite',s=>{requireActiveProtection(protection,'Draft');return s.put(record);});
+}
 export async function recoveryDrafts(actorId:string,pageId:string){const rows=await transaction<RecoveryRecord[]>("readonly",s=>s.index("actorPage").getAll([actorId,pageId]));return rows.filter(r=>r.actorId===actorId&&r.pageId===pageId&&new Date(r.expiresAt).getTime()>Date.now()).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));}
 export async function decryptDraft(record:RecoveryRecord,key:CryptoKey):Promise<DraftPayload>{const raw=await crypto.subtle.decrypt({name:"AES-GCM",iv:new Uint8Array(record.iv),additionalData:new TextEncoder().encode(`${record.actorId}:${record.pageId}:${record.id}`)},key,record.ciphertext);return JSON.parse(new TextDecoder().decode(raw));}
 export async function discardDraft(id:string){await transaction("readwrite",s=>s.delete(id));}
 
 export async function storeUploadCheckpoint(protection:DraftProtection,actorId:string,pageId:string,payload:unknown){
-  if(Date.parse(protection.expiresAt)<=Date.now())throw new Error('Upload recovery protection expired');
+  requireActiveProtection(protection,'Upload');
   const iv=crypto.getRandomValues(new Uint8Array(12)),aad=new TextEncoder().encode(JSON.stringify([actorId,pageId,protection.id,'upload-v1']));
   const ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:aad},protection.key,new TextEncoder().encode(JSON.stringify(payload)));
-  if(Date.parse(protection.expiresAt)<=Date.now())throw new Error('Upload recovery protection expired');
+  requireActiveProtection(protection,'Upload');
   const record:RecoveryRecord={id:protection.id,actorId,pageId,expiresAt:protection.expiresAt,updatedAt:new Date().toISOString(),iv,ciphertext};
-  await transaction('readwrite',s=>s.put(record),'uploads');return record;
+  await transaction('readwrite',s=>{requireActiveProtection(protection,'Upload');return s.put(record);},'uploads');return record;
 }
 export async function uploadRecoveryRecords(actorId:string,pageId:string){return transaction<RecoveryRecord[]>('readonly',s=>s.index('actorPage').getAll([actorId,pageId]),'uploads');}
 export async function decryptUploadCheckpoint<T>(record:RecoveryRecord,key:CryptoKey):Promise<T>{const raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(record.iv),additionalData:new TextEncoder().encode(JSON.stringify([record.actorId,record.pageId,record.id,'upload-v1']))},key,record.ciphertext);return JSON.parse(new TextDecoder().decode(raw)) as T;}

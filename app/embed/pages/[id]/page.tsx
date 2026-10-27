@@ -1,2 +1,2 @@
-import HolySheetApp from "../../../../components/holy-sheet-app";
-export default async function EmbeddedDocument({params}:{params:Promise<{id:string}>}){return <HolySheetApp key={(await params).id} initialPageId={(await params).id} embedded/>;}
+import DocumentSurface from '../../../../components/document-surface';
+export default async function EmbeddedDocument({params}:{params:Promise<{id:string}>}){const {id}=await params;return <DocumentSurface key={id} pageId={id} embedded/>;}

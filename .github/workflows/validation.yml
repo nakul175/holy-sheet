@@ -47,9 +47,13 @@ jobs:
       - run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+      - name: Pack the tested shared editor
+        run: npm pack --workspace packages/editor --pack-destination artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: unit-results
-          path: artifacts/unit.xml
+          path: |
+            artifacts/unit.xml
+            artifacts/*.tgz
           if-no-files-found: ignore
