@@ -32,7 +32,7 @@ export class Repository {
     const {rows}=await tx.query<StoredPage>(`WITH RECURSIVE ancestors AS (
       SELECT id,parent_id,workspace_id,visibility,owner_id,ARRAY[id] AS path FROM hs_pages WHERE id=$1 AND deleted_at IS NULL
       UNION ALL SELECT p.id,p.parent_id,p.workspace_id,p.visibility,p.owner_id,a.path||p.id FROM hs_pages p JOIN ancestors a ON p.id=a.parent_id AND p.workspace_id=a.workspace_id
-      WHERE p.deleted_at IS NULL AND NOT p.id=ANY(a.path) AND cardinality(a.path)<100
+      WHERE p.deleted_at IS NULL AND NOT p.id=ANY(a.path)
     ) SELECT p.*,w.name AS workspace_name,s.name AS space_name,parent.title AS parent_title,
       CASE WHEN p.owner_id=$2 THEN 'owner' WHEN EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.role='editor') THEN 'editor'
       WHEN EXISTS(SELECT 1 FROM ancestors a JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE g.role='commenter') THEN 'commenter' ELSE 'viewer' END AS role

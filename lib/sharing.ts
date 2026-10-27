@@ -16,9 +16,10 @@ export async function sharingState(r:Repository,actor:Actor,pageId:string,tx:Sql
   const direct=await tx.query<SharingState['direct'][number]>(`SELECT u.id,u.name,g.role,COALESCE(m.active,false) AS active FROM hs_grants g JOIN hs_users u ON u.id=g.subject LEFT JOIN hs_members m ON m.user_id=u.id AND m.workspace_id=$2 WHERE g.page_id=$1 ORDER BY u.name,u.id`,[pageId,page.workspace_id]);
   const inherited=await tx.query<{sourceId:string;sourceTitle:string;recipientId:string;recipientName:string;role:Role}>(`WITH RECURSIVE ancestors AS (
     SELECT id,parent_id,workspace_id,title,owner_id,visibility,ARRAY[id] AS path FROM hs_pages WHERE id=$1
-    UNION ALL SELECT p.id,p.parent_id,p.workspace_id,p.title,p.owner_id,p.visibility,a.path||p.id FROM hs_pages p JOIN ancestors a ON p.id=a.parent_id AND p.workspace_id=a.workspace_id WHERE p.deleted_at IS NULL AND NOT p.id=ANY(a.path) AND cardinality(a.path)<100
+    UNION ALL SELECT p.id,p.parent_id,p.workspace_id,p.title,p.owner_id,p.visibility,a.path||p.id FROM hs_pages p JOIN ancestors a ON p.id=a.parent_id AND p.workspace_id=a.workspace_id WHERE p.deleted_at IS NULL AND NOT p.id=ANY(a.path)
   ) SELECT a.id AS "sourceId",a.title AS "sourceTitle",u.id AS "recipientId",u.name AS "recipientName",g.role FROM ancestors a JOIN hs_grants g ON g.page_id=a.id JOIN hs_users u ON u.id=g.subject WHERE a.id!=$1
-  UNION ALL SELECT a.id,a.title,u.id,u.name,'editor' FROM ancestors a JOIN hs_users u ON u.id=a.owner_id WHERE a.id!=$1`,[pageId]);
+  UNION ALL SELECT a.id,a.title,u.id,u.name,'editor' FROM ancestors a JOIN hs_users u ON u.id=a.owner_id WHERE a.id!=$1
+  UNION ALL SELECT a.id,a.title,'space','Active workspace members',g.role FROM ancestors a JOIN hs_grants g ON g.page_id=a.id AND g.subject='space' WHERE a.visibility='space'`,[pageId]);
   const readable=new Set<string>();for(const id of new Set(inherited.rows.map(x=>x.sourceId))){try{await r.access(tx,id,actor);readable.add(id);}catch(e){if(!(e instanceof DocumentError&&e.status===404))throw e;}}
   return {version:page.acl_version,members:members.rows,direct:direct.rows,inherited:inherited.rows.map(x=>({...x,sourceTitle:readable.has(x.sourceId)?x.sourceTitle:'Restricted ancestor',sourceReadable:readable.has(x.sourceId)}))};
 }
