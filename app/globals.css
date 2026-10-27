@@ -311,5 +311,10 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .template-preview { border-top:1px solid var(--line); padding:20px 0; }
 .template-preview>label { display:grid; gap:8px; margin:14px 0; }
 .template-preview .rich-editor { padding:16px 0; }
+.pending-uploads { border:1px solid #e7ddbb; background:#fffdf5; border-radius:12px; padding:16px; margin:18px 0; font-size:12px; line-height:1.6; }
+.pending-uploads h3 { margin:0 0 10px; font-size:13px; }
+.pending-uploads>div { border-top:1px solid #eee5cb; padding-top:12px; margin-top:12px; }
+.pending-uploads button { margin:4px 6px 4px 0; border:1px solid var(--line); background:white; border-radius:7px; padding:8px 12px; min-height:36px; }
+.upload-recovery-status { color:var(--muted); font-size:12px; line-height:1.6; }
 @media(min-width:1250px) { .discussions-open .document { margin-right:390px; } }
 @media(max-width:900px) { .discussion-panel { width:100%; padding:20px; } }

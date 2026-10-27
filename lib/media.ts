@@ -10,7 +10,7 @@ import type { Repository } from "./repository";
 import { canEdit } from './types';
 import { mediaIdPattern,usableMedia } from './media-authorization';
 
-export type MediaRow = {id:string;page_id:string;uploader_id:string;name:string;mime:string;size:string|number;object_key:string;state:string;replaced_id:string|null;created_at:string;sha256:string|null};
+export type MediaRow = {id:string;page_id:string;uploader_id:string;name:string;mime:string;size:string|number;object_key:string;state:string;replaced_id:string|null;created_at:string;sha256:string|null;reservation_expires_at:string;recovery_draft_id:string|null};
 export const mediaPolicy = {images:["png","jpg","jpeg","webp","gif"],files:["pdf","docx","xlsx","pptx","csv","txt","md","markdown"],imageBytes:10_000_000,fileBytes:25_000_000,pageBytes:100_000_000,pageObjects:100};
 const mimeTypes:Record<string,string>={png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",webp:"image/webp",gif:"image/gif",pdf:"application/pdf",docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",pptx:"application/vnd.openxmlformats-officedocument.presentationml.presentation",csv:"text/csv",txt:"text/plain",md:"text/markdown",markdown:"text/markdown"};
 const extension=(name:string)=>name.split(".").at(-1)?.toLowerCase()??"";
@@ -62,21 +62,22 @@ export async function scanBytes(bytes:Uint8Array):Promise<void>{
 }
 export function mediaReferences(document:Parameters<typeof documentBlocks>[0]){return new Set(documentBlocks(document).filter(b=>["image","file"].includes(b.type)).map(b=>String(b.node.attrs?.attachmentId)));}
 
-export async function reserveMedia(r:Repository,actor:Actor,pageId:string,input:{operationId:string;name:string;size:number;replacedId?:string}){
+export async function reserveMedia(r:Repository,actor:Actor,pageId:string,input:{operationId:string;name:string;size:number;replacedId?:string;recoveryDraftId?:string}){
   const {mime}=validateMediaMetadata(input.name,input.size);
   return r.db.transaction(async tx=>{
     await r.access(tx,pageId,actor,true,true);
-    const {rows}=await tx.query<MediaRow&{operation_id:string}>("SELECT * FROM hs_media WHERE page_id=$1 FOR UPDATE",[pageId]);
+    const {rows}=await tx.query<MediaRow&{operation_id:string;reservation_active:boolean}>("SELECT *,reservation_expires_at>clock_timestamp() AS reservation_active FROM hs_media WHERE page_id=$1 FOR UPDATE",[pageId]);
     const existing=rows.find(m=>m.operation_id===input.operationId);
-    if(existing){if(existing.uploader_id!==actor.id||existing.name!==input.name||Number(existing.size)!==input.size||existing.replaced_id!==(input.replacedId??null))throw new DocumentError("Upload operation ID was reused","operation_mismatch",409);return {id:existing.id,state:existing.state};}
+    if(existing){if(existing.uploader_id!==actor.id||existing.name!==input.name||Number(existing.size)!==input.size||existing.replaced_id!==(input.replacedId??null)||existing.recovery_draft_id!==(input.recoveryDraftId??null))throw new DocumentError("Upload operation ID was reused","operation_mismatch",409);return {id:existing.id,state:existing.state};}
+    if(input.recoveryDraftId){const recovery=await tx.query('SELECT id FROM hs_drafts WHERE id=$1 AND page_id=$2 AND user_id=$3 AND expires_at>clock_timestamp() FOR UPDATE',[input.recoveryDraftId,pageId,actor.id]);if(!recovery.rows.length)throw new DocumentError('Upload recovery protection is unavailable','draft_expired',409);}
     const current=await r.get(pageId,actor,tx), refs=mediaReferences(current.document);
     const active=rows.filter(m=>refs.has(m.id));
-    const pending=rows.filter(m=>!refs.has(m.id)&&!["rejected","deleted","purged","purging","cancelled"].includes(m.state)&&Date.now()-new Date(m.created_at).getTime()<30*60_000);
+    const pending=rows.filter(m=>!refs.has(m.id)&&!["rejected","deleted","purged","purging","cancelled"].includes(m.state)&&m.reservation_active);
     let creditCount=0,creditBytes=0;
     if(input.replacedId){const old=active.find(m=>m.id===input.replacedId);const referenceCount=documentBlocks(current.document).filter(b=>b.node.attrs?.attachmentId===input.replacedId).length;
       if(!old||referenceCount<1||pending.some(m=>m.replaced_id===input.replacedId))throw new DocumentError("Replacement changed elsewhere; review the page","conflict",409);if(referenceCount===1){creditCount=1;creditBytes=Number(old.size);}}
     if(active.length+pending.length+1-creditCount>100||[...active,...pending].reduce((sum,m)=>sum+Number(m.size),0)+input.size-creditBytes>100_000_000)throw new DocumentError("Page upload allowance exceeded. Remove active media or choose a smaller file.","quota_exceeded",422);
-    const id=randomUUID();await tx.query("INSERT INTO hs_media(id,page_id,uploader_id,operation_id,name,mime,size,object_key,state,replaced_id) VALUES($1::uuid,$2,$3,$4,$5,$6,$7,$1::text,'reserved',$8)",[id,pageId,actor.id,input.operationId,input.name,mime,input.size,input.replacedId??null]);
+    const id=randomUUID();await tx.query("INSERT INTO hs_media(id,page_id,uploader_id,operation_id,name,mime,size,object_key,state,replaced_id,recovery_draft_id) VALUES($1::uuid,$2,$3,$4,$5,$6,$7,$1::text,'reserved',$8,$9)",[id,pageId,actor.id,input.operationId,input.name,mime,input.size,input.replacedId??null,input.recoveryDraftId??null]);
     return {id,state:"reserved"};
   });
 }
@@ -92,28 +93,39 @@ export async function finishMedia(r:Repository,actor:Actor,id:string,bytes:Uint8
   const media=await mediaAccess(r,actor,id,true);
   if(['cancelled','purging','purged'].includes(media.state))throw new DocumentError('Upload was cancelled','upload_cancelled',409);
   const hash=createHash("sha256").update(bytes).digest("hex");
-  if(media.state==="ready"){if(media.sha256!==hash)throw new DocumentError("Upload contents differ from the acknowledged file","operation_mismatch",409);return {id,state:"ready"};}
+  if(media.state==="ready"){await mediaAccess(r,actor,id);if(media.sha256!==hash)throw new DocumentError("Upload contents differ from the acknowledged file","operation_mismatch",409);return {id,state:"ready"};}
   if(Number(media.size)!==bytes.length)throw new DocumentError("Upload length differs from reserved size");
-  if(Date.now()-new Date(media.created_at).getTime()>30*60_000)throw new DocumentError("Upload reservation expired; select the file again","upload_expired",409);
   const mime=await validateMediaBytes(media.name,bytes);
   const alreadyReady=await r.db.transaction(async tx=>{
     await r.access(tx,media.page_id,actor,true,true);
-    const {rows}=await tx.query<MediaRow>("SELECT * FROM hs_media WHERE id=$1 FOR UPDATE",[id]);const current=rows[0];
+    const {rows}=await tx.query<MediaRow&{reservation_active:boolean}>("SELECT *,reservation_expires_at>clock_timestamp() AS reservation_active FROM hs_media WHERE id=$1 FOR UPDATE",[id]);const current=rows[0];
     if(current.sha256 && current.sha256!==hash)throw new DocumentError("Upload operation contents differ","operation_mismatch",409);
-    if(current.state==="ready")return true;
+    if(current.state==="ready"){const page=await r.get(media.page_id,actor,tx);if(!await usableMedia(tx,media.page_id,actor.id,id,mediaReferences(page.document).has(id)))throw new DocumentError('Upload recovery expired; select the file again','upload_expired',409);return true;}
     if(current.state==="rejected")throw new DocumentError("Rejected uploads cannot be activated","unsafe_file",422);
     if(['cancelled','purging','purged'].includes(current.state))throw new DocumentError('Upload was cancelled','upload_cancelled',409);
-    await tx.query("UPDATE hs_media SET state='processing',sha256=$2 WHERE id=$1",[id,hash]);return false;
+    if(!current.reservation_active)throw new DocumentError("Upload reservation expired; select the file again","upload_expired",409);
+    await tx.query("UPDATE hs_media SET state='processing',sha256=$2,reservation_expires_at=clock_timestamp()+interval '30 minutes' WHERE id=$1",[id,hash]);return false;
   });
   if(alreadyReady)return {id,state:"ready"};
   await putObject(media.object_key,bytes,mime);
   try{await scanBytes(bytes);}catch(e){if(e instanceof DocumentError&&e.code==="unsafe_file"){await r.db.query("UPDATE hs_media SET state='rejected' WHERE id=$1",[id]);try{await deleteObject(media.object_key);}catch{/* The rejected tombstone remains unavailable; bounded maintenance retries deletion. */}}throw e;}
-  return r.db.transaction(async tx=>{await r.access(tx,media.page_id,actor,true,true);const ready=await tx.query("UPDATE hs_media SET state='ready',scanned_at=now() WHERE id=$1 AND state='processing' RETURNING id",[id]);if(!ready.rows.length)throw new DocumentError("Upload was cancelled","upload_cancelled",409);return {id,state:"ready"};});
+  return r.db.transaction(async tx=>{await r.access(tx,media.page_id,actor,true,true);const ready=await tx.query<{id:string;recovery_draft_id:string|null}>("UPDATE hs_media SET state='ready',scanned_at=clock_timestamp() WHERE id=$1 AND state='processing' RETURNING id,recovery_draft_id",[id]);if(!ready.rows.length)throw new DocumentError('Upload was cancelled','upload_cancelled',409);
+    const recoveryId=ready.rows[0].recovery_draft_id;if(recoveryId){const lease=await tx.query<{attachment_ids:string[]}>('SELECT attachment_ids FROM hs_drafts WHERE id=$1 AND page_id=$2 AND user_id=$3 AND expires_at>clock_timestamp() FOR UPDATE',[recoveryId,media.page_id,actor.id]);if(lease.rows.length)await tx.query('UPDATE hs_drafts SET attachment_ids=$2,updated_at=clock_timestamp() WHERE id=$1',[recoveryId,JSON.stringify([...new Set([...lease.rows[0].attachment_ids,id])])]);}
+    return {id,state:'ready'};
+  });
 }
 export async function startMedia(r:Repository,actor:Actor,id:string){
   const m=await mediaAccess(r,actor,id,true);
-  return r.db.transaction(async tx=>{await r.access(tx,m.page_id,actor,true,true);const {rows}=await tx.query<MediaRow>("SELECT * FROM hs_media WHERE page_id=$1 FOR UPDATE",[m.page_id]);const current=rows.find(row=>row.id===id)!;if(['cancelled','rejected','purging','purged'].includes(current.state))throw new DocumentError("Select the file again to start a new upload","upload_expired",409);if(rows.filter(row=>row.id!==id&&['uploading','processing'].includes(row.state)&&Date.now()-new Date(row.created_at).getTime()<30*60_000).length>=3)throw new DocumentError("Three uploads are already active. Retry when one finishes.","upload_concurrency",429);if(current.state!=='ready')await tx.query("UPDATE hs_media SET state='uploading' WHERE id=$1",[id]);});
+  return r.db.transaction(async tx=>{await r.access(tx,m.page_id,actor,true,true);const {rows}=await tx.query<MediaRow&{reservation_active:boolean}>("SELECT *,reservation_expires_at>clock_timestamp() AS reservation_active FROM hs_media WHERE page_id=$1 FOR UPDATE",[m.page_id]);const current=rows.find(row=>row.id===id)!;
+    if(['cancelled','rejected','purging','purged'].includes(current.state))throw new DocumentError('Select the file again to start a new upload','upload_expired',409);
+    if(current.state==='ready'){const page=await r.get(m.page_id,actor,tx);if(!await usableMedia(tx,m.page_id,actor.id,id,mediaReferences(page.document).has(id)))throw new DocumentError('Upload recovery expired; select the file again','upload_expired',409);return;}
+    if(!current.reservation_active)throw new DocumentError('Upload reservation expired; select the file again','upload_expired',409);
+    if(rows.filter(row=>row.id!==id&&['uploading','processing'].includes(row.state)&&row.reservation_active).length>=3)throw new DocumentError('Three uploads are already active. Retry when one finishes.','upload_concurrency',429);
+    await tx.query("UPDATE hs_media SET state='uploading',reservation_expires_at=clock_timestamp()+interval '30 minutes' WHERE id=$1",[id]);
+  });
 }
+export async function uploadState(r:Repository,actor:Actor,id:string){const m=await mediaAccess(r,actor,id,true),p=await r.get(m.page_id,actor);return {id:m.id,state:m.state,name:m.name,size:Number(m.size),sha256:m.sha256,reservationExpiresAt:new Date(m.reservation_expires_at).toISOString(),readyAvailable:m.state==='ready'&&await usableMedia(r.db,m.page_id,actor.id,id,mediaReferences(p.document).has(id))};}
+export async function renewUpload(r:Repository,actor:Actor,id:string){const m=await mediaAccess(r,actor,id,true);return r.db.transaction(async tx=>{await r.access(tx,m.page_id,actor,true,true);const result=await tx.query<{reservation_expires_at:string}>("UPDATE hs_media SET reservation_expires_at=clock_timestamp()+interval '30 minutes' WHERE id=$1 AND state IN ('uploading','processing') AND reservation_expires_at>clock_timestamp() RETURNING reservation_expires_at",[id]);if(!result.rows.length)throw new DocumentError('The active upload reservation is unavailable or expired','upload_expired',409);return {reservationExpiresAt:new Date(result.rows[0].reservation_expires_at).toISOString()};});}
 export async function cancelMedia(r:Repository,actor:Actor,id:string){
   const m=await mediaAccess(r,actor,id,true);
   return r.db.transaction(async tx=>{await r.access(tx,m.page_id,actor,true,true);const p=await r.get(m.page_id,actor,tx);if(mediaReferences(p.document).has(id))throw new DocumentError("This attachment is already part of the saved page","conflict",409);const history=await tx.query("SELECT rm.media_id FROM hs_revision_media rm JOIN hs_revisions v ON v.page_id=rm.page_id AND v.version=rm.version JOIN hs_pages p ON p.id=v.page_id WHERE rm.media_id=$1 AND p.deleted_at IS NULL AND (p.version=v.version OR v.superseded_at>clock_timestamp()-interval '90 days') LIMIT 1",[id]);if(history.rows.length)throw new DocumentError('This attachment is retained in saved page history','history_retained',409);await tx.query("UPDATE hs_media SET state='cancelled',deleted_at=COALESCE(deleted_at,now()) WHERE id=$1 AND state NOT IN ('purged','purging')",[id]);return {id,state:'cancelled'};});

@@ -1,0 +1,7 @@
+import type { Editor } from '@tiptap/core';
+import type { MediaPlacement } from '../components/editor/media-placement';
+import { stableStringify } from './document';
+const compacted=new WeakMap<MediaPlacement,Promise<MediaPlacement>>();
+async function digest(text:string){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text)))].map(n=>n.toString(16).padStart(2,'0')).join('');}
+export function compactMediaPlacement(target:MediaPlacement):Promise<MediaPlacement>{if(target.kind==='replace'||(target.expectedHash&&!target.expected))return Promise.resolve(target);let result=compacted.get(target);if(!result){result=digest(target.expected).then(expectedHash=>({...target,expected:'',expectedHash}));compacted.set(target,result);}return result;}
+export async function rehydrateMediaPlacement(editor:Editor,target:MediaPlacement){if(target.kind!=='after'||!target.expectedHash)return target;let anchor:string|undefined,alreadyPresent=false;editor.state.doc.descendants(node=>{if(node.attrs.id===target.insertId)alreadyPresent=true;if(node.attrs.id===target.blockId)anchor=stableStringify(node.toJSON());});if(alreadyPresent)return {...target,expected:''};if(!anchor||await digest(anchor)!==target.expectedHash)throw Error('The original destination changed. Choose “Add after selected block” to review a new placement, or discard this recovery.');return {...target,expected:anchor};}

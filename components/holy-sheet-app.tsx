@@ -10,6 +10,8 @@ import DiscussionPanel,{type SelectedPassage} from './discussion-panel';
 import NotificationsDialog from './notifications-dialog';
 import HistoryDialog from './history-dialog';
 import TemplatesDialog,{TemplateSource} from './templates-dialog';
+import PendingUploads from './editor/pending-uploads';
+import type { RecoveredUpload } from '../lib/upload-recovery-types';
 import type { ThreadView } from '../lib/discussion-types';
 
 export default function HolySheetApp({initialPageId,embedded=false}:{initialPageId:string;embedded?:boolean}){
@@ -17,6 +19,7 @@ export default function HolySheetApp({initialPageId,embedded=false}:{initialPage
   const loadNavigation=useCallback(async()=>{try{const [a,b]=await Promise.all([requestJson<{pages:Page[]}>("/api/pages"),requestJson<{spaces:Space[]}>("/api/spaces")]);setPages(a.pages);setSpaces(b.spaces);setNavigationError("");}catch{setNavigationError("Navigation could not be refreshed.");}},[]);
   const session=useDocumentSession(initialPageId,loadNavigation),{page,status}=session;
   const title=useRef<HTMLTextAreaElement>(null);
+  const [recoveredUpload,setRecoveredUpload]=useState<RecoveredUpload|null>(null);
   const [historyOpen,setHistoryOpen]=useState(false),[templatesOpen,setTemplatesOpen]=useState(false),[templateSnapshot,setTemplateSnapshot]=useState(false);
   const [discussionOpen,setDiscussionOpen]=useState(false),[notificationsOpen,setNotificationsOpen]=useState(false),[activeDiscussion,setActiveDiscussion]=useState<string|null>(null),[discussionThreads,setDiscussionThreads]=useState<ThreadView[]>([]),[selectedPassage,setSelectedPassage]=useState<SelectedPassage|null>(null),[navigateDiscussion,setNavigateDiscussion]=useState(0);
   const discussionDirty=useRef(false),markDiscussionDirty=useCallback((value:boolean)=>{discussionDirty.current=value;},[]);
@@ -35,7 +38,8 @@ export default function HolySheetApp({initialPageId,embedded=false}:{initialPage
       {session.error&&<p className="document-warning" role="alert">{session.error}</p>}{session.recoveryError&&<p className="document-warning" role="status">{session.recoveryError}</p>}
       {!!session.candidates.length&&<div className="recovery-banner" role="status"><strong>An unsaved draft is available on this device.</strong><span>{new Date(session.candidates[0].updatedAt).toLocaleString()}</span><button onClick={()=>void session.restore(session.candidates[0])}>Restore draft</button><button onClick={()=>{if(confirm('Discard this recovery draft permanently from this device?'))void session.discard(session.candidates[0]);}}>Discard</button></div>}
       <TemplateSource pageId={page.id} version={page.version}/><div className="discussion-entry"><button onClick={()=>setDiscussionOpen(true)}>Discussions{discussionThreads.length?` · ${discussionThreads.length}`:''}</button><button onClick={()=>setNotificationsOpen(true)}>Notifications</button>{canEdit(page.role)&&<button onClick={()=>setHistoryOpen(true)}>History</button>}{page.role==='owner'&&<button disabled={status!=='saved'} onClick={()=>{setTemplateSnapshot(true);setTemplatesOpen(true);}}>Save as template</button>}</div>
-      <RichEditor key={page.id} document={page.document} editable={canEdit(page.role)&&status!=='readonly'} pageId={page.id} preferenceKey={`${session.actorId}:${page.workspaceId}:${page.id}`} onChange={document=>session.change({document})} threads={discussionThreads} activeThreadId={activeDiscussion} onOpenThread={openDiscussion} navigateThread={navigateDiscussion} commentsReady={status==='saved'||status==='readonly'} onComment={canComment(page.role)?(anchors,quote)=>{setSelectedPassage({anchors,quote,baseVersion:page.version});setActiveDiscussion(null);setDiscussionOpen(true);}:undefined}/>
+      <PendingUploads key={`uploads:${page.id}:${session.actorId}`} pageId={page.id} actorId={session.actorId} role={page.role} confirmedVersion={status==='saved'?page.version:null} onResume={setRecoveredUpload}/>
+      <RichEditor key={page.id} recoveryActorId={session.actorId} resumeUpload={recoveredUpload} onRecoveryClosed={()=>setRecoveredUpload(null)} document={page.document} editable={canEdit(page.role)&&status!=='readonly'} pageId={page.id} preferenceKey={`${session.actorId}:${page.workspaceId}:${page.id}`} onChange={document=>session.change({document})} threads={discussionThreads} activeThreadId={activeDiscussion} onOpenThread={openDiscussion} navigateThread={navigateDiscussion} commentsReady={status==='saved'||status==='readonly'} onComment={canComment(page.role)?(anchors,quote)=>{setSelectedPassage({anchors,quote,baseVersion:page.version});setActiveDiscussion(null);setDiscussionOpen(true);}:undefined}/>
       <footer className="page-footer"><span>{!canEdit(page.role)?'View only':'Changes save automatically'}</span><span>{plainText(page.document).trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words</span></footer>
       </article>
     </main>
