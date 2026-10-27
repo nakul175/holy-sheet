@@ -1,8 +1,9 @@
 # HOLY-3 controlled staging rollout
 
 This is preparation, not a completed deployment or product acceptance. The merged
-editor/package/recovery batch is based on main `dbc5066`; it changes no database
-migrations or Compose service definitions relative to staging `99a6327`.
+editor/package/recovery batch is main `dbc5066`. The prepared candidate also
+incorporates merged picker PR32 at `9aa0556`, including one additive migration
+relative to staging `99a6327`; Compose service definitions remain unchanged.
 Record the final reviewed release SHA, image ID and previous deployment in a
 private operator receipt. Do not deploy an unreviewed branch or moving branch name.
 
@@ -19,7 +20,12 @@ private operator receipt. Do not deploy an unreviewed branch or moving branch na
   including image layers/archive, temporary build space and the current backup.
 - Take a fresh database backup and verify its operator receipt. Keep the recovery
   master-key backup separately protected; never return it in logs/chat. No key
-  rotation, provisioning or schema reversal is part of this rollout.
+  rotation or provisioning is part of this rollout. Migration
+  `011_page_creation_intents.sql` creates only the actor/operation creation ledger,
+  with a nullable page reference retaining tombstones after page purge. It does
+  not backfill document data or change memberships/grants. Initialization runs
+  ordered additive migrations under the existing PostgreSQL lock/transaction.
+  Rollback retains this table; do not reverse it or discard its idempotency data.
 - Require successful application CI and the container-qualification job on the
   exact candidate. The latter builds the actual Dockerfile on an isolated runner,
   checks read-only/non-root deployment boundaries with editor 0 and 1, and retains
@@ -43,16 +49,18 @@ Record deployed source/image, flag values and app/database/scanner health. Check
 TLS and suite neighbours. Run:
 
 ```sh
-node scripts/verify-rollout-boundaries.mjs https://staging.holysheet.aplyd.org --oidc --require-framing
+node scripts/verify-rollout-boundaries.mjs https://staging.holysheet.aplyd.org --oidc --require-framing --picker
 ```
 
 The script prints statuses/timings only, never cookies or tokens. It checks public
 shells, protected APIs, forged headers, mutation origins, private-file denial,
 OIDC transaction-cookie flags and the reviewed standalone/embed framing policy.
-The `.com` SHO proposal is cross-site with HS SameSite=Lax cookies; agree a
-same-site HTTPS `aplyd.org` qualification host and exact callback/CSP changes
-before attempting the paired rollout. This document does not authorize those
-infrastructure changes or deployment of historical SHO main.
+Canonical main now allows only the official SHO origin and the separate
+`https://sho-qa.aplyd.org` origin approved with PR32, alongside self. The former
+`.com` proposal is cross-site with HS SameSite=Lax cookies. Confirm the actual
+QA host's identity callback/client and source before paired qualification; this
+document does not create or authorize infrastructure changes or deployment of
+historical SHO main.
 
 ## Authenticated qualification after the switch
 

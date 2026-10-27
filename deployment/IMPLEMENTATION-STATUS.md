@@ -13,6 +13,12 @@ procedure; container qualification is an additional readiness gate. The older
 paragraphs below are historical implementation checkpoints, not current flag or
 deployment assertions.
 
+Merged picker PR32 (`9aa0556`) subsequently adds private creation/selection for
+SHO, retry-safe creation-ledger migration011 and the separate same-site QA framing
+origin. The prepared rollout incorporates that source rather than reverting it;
+refer to the rollout plan and its new container/SQL restore gates. Paired live
+qualification remains open.
+
 Implemented locally: shared rich editor, structured document validation, stable block IDs, SQL-backed documents and revisions, permission-filtered reads/search, optimistic save operations and conservative merges, encrypted local draft recovery with authorized key retrieval, private upload reservations/scanning gateway, protected media downloads, and staging infrastructure scaffolding.
 
 Known work remaining before full acceptance:

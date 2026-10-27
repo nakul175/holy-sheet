@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 const args=process.argv.slice(2),origin=args.find(a=>a.startsWith('http'))??'https://staging.holysheet.aplyd.org';
 assert.ok(['http://127.0.0.1:53104','https://staging.holysheet.aplyd.org'].includes(origin),'Use the isolated container port or approved HS staging origin.');
-const bridge=args.includes('--oidc'),framing=args.includes('--require-framing'),checks=[];
+const bridge=args.includes('--oidc'),framing=args.includes('--require-framing'),picker=args.includes('--picker'),checks=[];
 async function check(name,path,status,options={}){
   const started=performance.now(),response=await fetch(origin+path,{redirect:'manual',signal:AbortSignal.timeout(10000),...options});
   assert.equal(response.status,status,`${name}: expected ${status}, got ${response.status}`);
@@ -14,8 +14,15 @@ await check('Public landing','/',200);
 const documentShell=await check('Standalone public shell','/pages/welcome',200),embedShell=await check('Embedded public shell','/embed/pages/11111111-1111-4111-8111-111111111111',200);
 if(framing){
   assert.match(documentShell.headers.get('content-security-policy')??'',/frame-ancestors 'none'/);
-  assert.equal(embedShell.headers.get('content-security-policy'),"frame-ancestors 'self' https://sheethappensofficer.aplyd.org");
+  assert.equal(embedShell.headers.get('content-security-policy'),"frame-ancestors 'self' https://sheethappensofficer.aplyd.org https://sho-qa.aplyd.org");
   checks.push({name:'Reviewed standalone/embed frame policy',status:'verified'});
+}
+if(picker){
+  const pickerShell=await check('HS-owned picker public shell','/embed/picker',200);
+  if(framing)assert.equal(pickerShell.headers.get('content-security-policy'),embedShell.headers.get('content-security-policy'));
+  await check('Picker metadata requires verified identity','/api/v1/integrations/sho/picker',401);
+  await check('Picker actor hint cannot authenticate','/api/v1/integrations/sho/picker',401,{headers:{'x-hs-actor':'local-owner'}});
+  await check('Picker creation requires verified identity','/api/v1/integrations/sho/picker',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json','x-hs-actor':'local-owner'},body:'{}'});
 }
 const login=await check('Sign-in bridge readiness','/auth/sign-in',bridge?303:503);
 if(bridge){

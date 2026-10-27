@@ -1,6 +1,6 @@
 # HOLY-3 staging preparation
 
-Checkpoint, 27 October 2026: staging remains on `99a6327`, with OIDC/editor enabled and local preview disabled. The constrained status wrapper reports the app running and PostgreSQL/scanner healthy. The merged package/recovery code at main `dbc5066` is not deployed. Read [the controlled rollout plan](HOLY-3-ROLLOUT.md) before switching. Infrastructure and anonymous readiness do not establish full product acceptance; historical local evidence remains in LOCAL-QUALIFICATION.md.
+Checkpoint, 27 October 2026: staging remains on `99a6327`, with OIDC/editor enabled and local preview disabled. The constrained status wrapper reports the app running and PostgreSQL/scanner healthy. The merged package/recovery batch `dbc5066` and subsequent picker batch `9aa0556` are not deployed. The latter adds an actor-scoped creation ledger migration. Read [the controlled rollout plan](HOLY-3-ROLLOUT.md) before switching. Infrastructure and anonymous readiness do not establish full product acceptance; historical local evidence remains in LOCAL-QUALIFICATION.md.
 
 ## Configuration and prerequisites
 

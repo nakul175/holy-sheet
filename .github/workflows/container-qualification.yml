@@ -24,7 +24,7 @@ jobs:
               if curl --fail --silent http://127.0.0.1:53104/ > /dev/null; then break; fi
               sleep 1
             done
-            node scripts/verify-rollout-boundaries.mjs http://127.0.0.1:53104 --require-framing > artifacts/container-boundaries-$editor.json
+            node scripts/verify-rollout-boundaries.mjs http://127.0.0.1:53104 --require-framing --picker > artifacts/container-boundaries-$editor.json
             docker inspect --format '{{.Image}} {{.Config.User}} {{.HostConfig.ReadonlyRootfs}}' hs-container-check > artifacts/container-identity-$editor.txt
             docker logs hs-container-check > artifacts/container-$editor.log 2>&1
             docker rm --force hs-container-check
