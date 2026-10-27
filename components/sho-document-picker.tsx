@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { embedContext } from '../lib/embed-context';
 import styles from './sho-document-picker.module.css';
 import { SignInLink } from './session-boundary';
-const parentOrigin = 'https://sheethappensofficer.aplyd.org';
+const defaultParentOrigin = 'https://sheethappensofficer.aplyd.org';
+const approvedHosts = new Set([defaultParentOrigin,'https://sho-qa.aplyd.org']);
 type Space = {
     id: string;
     name: string;
@@ -19,7 +20,7 @@ type Page = {
 export default function ShoDocumentPicker() {
     const [spaces, setSpaces] = useState<Space[]>([]), [pages, setPages] = useState<Page[]>([]), [space, setSpace] = useState(''), [workspace, setWorkspace] = useState('');
     const [title, setTitle] = useState(''), [name, setName] = useState(''), [query, setQuery] = useState(''), [error, setError] = useState(''), [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [retry, setRetry] = useState(0), [pending, setPending] = useState(false), [setDefault, setSetDefault] = useState(false), [mode, setMode] = useState('create');
-    const identity = useRef(''), channel = useRef(''), intent = useRef<{
+    const parentOrigin = useRef(defaultParentOrigin), identity = useRef(''), channel = useRef(''), intent = useRef<{
         title: string;
         spaceId: string;
         operationId: string;
@@ -41,11 +42,12 @@ export default function ShoDocumentPicker() {
         active.current = true;
         const attempt = ++epoch.current;
         const ctx = embedContext(location.hash, window.parent !== window), params = new URLSearchParams(location.hash.slice(1));
-        const channels = params.getAll('hs-channel');
-        if (ctx.kind !== 'restricted' || channels.length !== 1 || !/^[0-9a-f-]{36}$/i.test(channels[0])) {
+        const channels = params.getAll('hs-channel'),hosts=params.getAll('hs-host');
+        if (hosts.length>1||(hosts.length===1&&!approvedHosts.has(hosts[0]))||ctx.kind !== 'restricted' || channels.length !== 1 || !/^[0-9a-f-]{36}$/i.test(channels[0])) {
             setError('Open this picker from SHO.');
             return;
         }
+        parentOrigin.current=hosts[0]??defaultParentOrigin;
         identity.current = ctx.userId;
         channel.current = channels[0];
         setBusy(false);
@@ -73,7 +75,7 @@ export default function ShoDocumentPicker() {
             if (!active.current || attempt !== epoch.current)
                 return;
             completed = true;
-            window.parent.postMessage({ type: 'hs-document-selected', channel: channel.current, subject: identity.current, pageId: data.page.id, spaceId: data.page.spaceId, created: !pageId, setDefault }, parentOrigin);
+            window.parent.postMessage({ type: 'hs-document-selected', channel: channel.current, subject: identity.current, pageId: data.page.id, spaceId: data.page.spaceId, created: !pageId, setDefault }, parentOrigin.current);
             setError('Page is ready. SHO is saving its link. If that fails, retry the link in SHO.');
         }
         catch (e) {
