@@ -3,7 +3,7 @@ import { createDatabase,type Database } from './database';
 import { Repository } from './repository';
 import { localActor } from './auth';
 import { ensureIds,plainText } from './document';
-import { changeSharing } from './sharing';
+import { changeSharing,sharingAudit } from './sharing';
 import { changeDiscussion,discussions } from './discussions';
 import { previewHistory,restoreHistory,listHistory } from './history';
 import { changeTemplate,readTemplate } from './templates';
@@ -51,7 +51,7 @@ describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
     const edit=paused.save(child.id,editor,{operationId:crypto.randomUUID(),baseVersion:child.version,title:'Committed before revocation',document:child.document});await entered;
     const revoke=changeSharing(r,localActor,parent.id,{operationId:crypto.randomUUID(),expectedVersion:2,recipientId:editor.id,role:null});
     try{let blocked=false;for(let i=0;i<100;i++){const result=await db.query<{count:string}>("SELECT count(*) FROM pg_locks WHERE granted=false");if(Number(result.rows[0].count)>0){blocked=true;break;}await new Promise(resolve=>setTimeout(resolve,10));}expect(blocked).toBe(true);}finally{release();}
-    await Promise.all([edit,revoke]);expect((await r.get(child.id,localActor)).title).toBe('Committed before revocation');await expect(r.get(child.id,editor)).rejects.toMatchObject({status:404});await expect(r.save(child.id,editor,{operationId:crypto.randomUUID(),baseVersion:2,title:'Must not commit',document:child.document})).rejects.toMatchObject({status:404});
+    await Promise.all([edit,revoke]);const audit=await sharingAudit(r,localActor,parent.id);expect(audit).toHaveLength(2);expect(audit).toEqual(expect.arrayContaining([expect.objectContaining({recipientId:editor.id,beforeRole:'editor',afterRole:null,scope:'page-and-descendants'})]));await expect(sharingAudit(r,editor,parent.id)).rejects.toMatchObject({status:404});expect((await r.get(child.id,localActor)).title).toBe('Committed before revocation');await expect(r.get(child.id,editor)).rejects.toMatchObject({status:404});await expect(r.save(child.id,editor,{operationId:crypto.randomUUID(),baseVersion:2,title:'Must not commit',document:child.document})).rejects.toMatchObject({status:404});
   });
   it('deduplicates concurrent discussion retries and notification delivery on PostgreSQL',async()=>{
     const actor={id:crypto.randomUUID()};await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);await db.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-aplyd',$1)",[actor.id]);const p=await r.create(localActor,'PostgreSQL discussions','space-product');await changeSharing(r,localActor,p.id,{operationId:crypto.randomUUID(),expectedVersion:1,recipientId:actor.id,role:'commenter'});

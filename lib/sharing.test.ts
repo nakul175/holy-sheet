@@ -2,7 +2,7 @@ import { beforeAll,afterAll,describe,it,expect } from 'vitest';
 import { createDatabase,type Database } from './database';
 import { Repository } from './repository';
 import { localActor } from './auth';
-import { changeSharing,sharingState } from './sharing';
+import { changeSharing,sharingState,sharingAudit } from './sharing';
 import { draftKey } from './drafts';
 import { reserveMedia } from './media';
 let db:Database,r:Repository;
@@ -52,4 +52,19 @@ describe('HOLY-4 access boundaries',()=>{
     await db.query("UPDATE hs_members SET active=false WHERE user_id=$1",[viewer.id]);await expect(r.get(f.grandchild.id,viewer)).rejects.toMatchObject({status:404});
     await db.query("UPDATE hs_members SET active=true WHERE user_id=$1",[viewer.id]);
   });
+});
+
+describe('owner-only sharing audit',()=>{
+ it('exposes committed actor/recipient/role/time/scope evidence once per idempotent mutation and isolates pages',async()=>{
+  const f=await fixture(),operationId=crypto.randomUUID(),input={operationId,expectedVersion:1,recipientId:editor.id,role:'editor' as const};
+  await changeSharing(r,owner,f.child.id,input);await changeSharing(r,owner,f.child.id,input);
+  const events=await sharingAudit(r,owner,f.child.id);expect(events).toHaveLength(1);expect(events[0]).toMatchObject({pageId:f.child.id,actorId:owner.id,recipientId:editor.id,beforeRole:null,afterRole:'editor',operationId,scope:'page-and-descendants'});expect(Number.isNaN(Date.parse(events[0].createdAt))).toBe(false);
+  expect(await sharingAudit(r,owner,f.sibling.id)).toEqual([]);
+  await expect(sharingAudit(r,editor,f.child.id)).rejects.toMatchObject({code:'owner_required',status:403});
+  await expect(sharingAudit(r,editor,f.grandchild.id)).rejects.toMatchObject({code:'owner_required',status:403});
+  await expect(sharingAudit(r,stranger,f.child.id)).rejects.toMatchObject({status:404});
+  await grant(f.child.id,editor.id,'viewer');await expect(sharingAudit(r,editor,f.child.id)).rejects.toMatchObject({code:'owner_required'});
+  await grant(f.child.id,editor.id,null);expect((await sharingAudit(r,owner,f.child.id)).map(e=>[e.beforeRole,e.afterRole])).toEqual(expect.arrayContaining([[null,'editor'],['editor','viewer'],['viewer',null]]));
+ });
+ it('denies the owner audit when workspace membership is inactive',async()=>{const f=await fixture();await db.query("UPDATE hs_members SET active=false WHERE user_id=$1",[owner.id]);try{await expect(sharingAudit(r,owner,f.child.id)).rejects.toMatchObject({status:404});}finally{await db.query("UPDATE hs_members SET active=true WHERE user_id=$1",[owner.id]);}});
 });
