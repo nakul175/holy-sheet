@@ -13,7 +13,7 @@ import { LazyCodeBlock,largeCode } from "./lazy-code-highlight";
 import Image from "@tiptap/extension-image";
 import { Details, DetailsSummary, DetailsContent } from "@tiptap/extension-details";
 import UniqueID from "@tiptap/extension-unique-id";
-import DOMPurify from "dompurify";
+import { sanitizePaste } from "../../lib/editor-paste";
 import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { ensureIds, highlights, idTypes, languages, palette, plainText, safeUrl, stableStringify, type RichNode } from "../../lib/document";
@@ -21,7 +21,10 @@ import { Callout, FileBlock, FindExtension, PageLink, TableOfContents, findKey }
 import { requestJson } from "./use-document-session";
 import UploadDialog from "./upload-dialog";
 import TransformDialog from './transform-dialog';
-import { normalizeRichDocument,rgbToHex } from "../../lib/editor-document";
+import { PasteReviewDialog,PlainPasteDialog } from './paste-dialog';
+import { parseTablePasteSource,type TablePasteSource } from './table-paste-source';
+import { capturePastePoint,applyTablePaste,type PastePoint } from './table-paste-plan';
+import { normalizeRichDocument } from "../../lib/editor-document";
 import { captureMediaPlacement,applyReadyMedia,mediaTypeForFile,type MediaPlacement } from "./media-placement";
 import type { RecoveredUpload } from "../../lib/upload-recovery-types";
 import { rehydrateMediaPlacement } from "../../lib/upload-placement-recovery";
@@ -48,15 +51,8 @@ const catalogue:Insert[]=[
 ];
 export { normalizeRichDocument } from "../../lib/editor-document";
 
-export function sanitizePaste(html:string):string {
-  const clean=DOMPurify.sanitize(html,{FORBID_TAGS:["script","style","iframe","object","embed","svg","math","form","input","button","textarea","link","meta","template"],FORBID_ATTR:["srcset","src","id"],ALLOW_DATA_ATTR:false});
-  const doc=new DOMParser().parseFromString(clean,"text/html");
-  doc.querySelectorAll("[hidden],[aria-hidden='true']").forEach(e=>e.remove());
-  doc.querySelectorAll("a").forEach(a=>{if(!safeUrl(a.getAttribute("href")??""))a.removeAttribute("href");else{a.setAttribute("target","_blank");a.setAttribute("rel","noopener noreferrer");}});
-  doc.querySelectorAll("img").forEach(img=>{img.replaceWith(doc.createTextNode(`[Image requires upload${img.alt?`: ${img.alt}`:""}]`));});
-  doc.querySelectorAll<HTMLElement>("[style]").forEach(e=>{const color=rgbToHex(e.style.color),bg=rgbToHex(e.style.backgroundColor),bold=e.style.fontWeight,italic=e.style.fontStyle,decoration=e.style.textDecoration;e.removeAttribute("style");if(palette.includes(color))e.style.color=color;if(highlights.includes(bg))e.style.backgroundColor=bg;if(["bold","700","600"].includes(bold))e.style.fontWeight="bold";if(italic==="italic")e.style.fontStyle="italic";if(/^(underline|line-through)$/.test(decoration))e.style.textDecoration=decoration;});
-  return doc.body.innerHTML;
-}
+export { sanitizePaste } from "../../lib/editor-paste";
+
 
 export function Dialog({title,onClose,children}:{title:string;onClose:()=>void;children:ReactNode}){
   const ref=useRef<HTMLDivElement>(null),previous=useRef<Element|null>(null);
@@ -75,8 +71,10 @@ function blockRange(editor:Editor){
 export default function RichEditor({document,editable,onChange,pageId,preferenceKey,onComment,commentsReady=true,threads=noThreads,activeThreadId=null,onOpenThread,navigateThread=0,mediaEnabled=true,recoveryActorId,resumeUpload,onRecoveryClosed}:{document:RichNode;editable:boolean;onChange:(doc:RichNode)=>void;pageId:string;preferenceKey:string;onComment?:(anchors:AnchorInput[],quote:string)=>void;commentsReady?:boolean;threads?:ThreadView[];activeThreadId?:string|null;onOpenThread?:(id:string)=>void;navigateThread?:number;mediaEnabled?:boolean;recoveryActorId?:string;resumeUpload?:RecoveredUpload|null;onRecoveryClosed?:()=>void}){
   const [insertOpen,setInsertOpen]=useState(false),[query,setQuery]=useState(""),[active,setActive]=useState(0),[notice,setNotice]=useState(""),[linkOpen,setLinkOpen]=useState(false),[pageOpen,setPageOpen]=useState(false),[media,setMedia]=useState<"image"|"file"|null>(null),[findOpen,setFindOpen]=useState(false),[findQuery,setFindQuery]=useState(""),[matchCase,setMatchCase]=useState(false),[matchIndex,setMatchIndex]=useState(0);
   const [transformOpen,setTransformOpen]=useState(false);
+  const [pasteReview,setPasteReview]=useState<{source:TablePasteSource;point:PastePoint}|null>(null),[plainPoint,setPlainPoint]=useState<PastePoint|null>(null);
+  const plainPasteUntil=useRef(0);
   const [mediaFile,setMediaFile]=useState<File|null>(null),[mediaTarget,setMediaTarget]=useState<MediaPlacement|null>(null),[mediaRecovered,setMediaRecovered]=useState<RecoveredUpload|null>(null);
-  useEffect(()=>{const logout=()=>{closeMedia();setTransformOpen(false);};window.addEventListener('holy-sheet:logout',logout);return()=>window.removeEventListener('holy-sheet:logout',logout);},[]);
+  useEffect(()=>{const logout=()=>{closeMedia();setTransformOpen(false);setPasteReview(null);setPlainPoint(null);};window.addEventListener('holy-sheet:logout',logout);return()=>window.removeEventListener('holy-sheet:logout',logout);},[]);
   const slash=useRef(false),insertAt=useRef<number|null>(null),onChangeRef=useRef(onChange),lastEmitted=useRef(stableStringify(document)),restoring=useRef(false),savedFindSelection=useRef<{from:number;to:number}|null>(null),temporaryOpen=useRef<TemporarySection[]>([]),discussionOpen=useRef<TemporarySection[]>([]);
   onChangeRef.current=onChange;
   const editor=useEditor({immediatelyRender:false,editable,content:document,extensions:[
@@ -88,6 +86,7 @@ export default function RichEditor({document,editable,onChange,pageId,preference
     handleKeyDown:(view,event)=>{
       if(event.isComposing)return false;
       if(!view.editable){if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='f'){event.preventDefault();savedFindSelection.current={from:view.state.selection.from,to:view.state.selection.to};setFindOpen(true);return true;}return false;}
+      if((event.metaKey||event.ctrlKey)&&event.shiftKey&&event.key.toLowerCase()==='v')plainPasteUntil.current=Date.now()+2000;
       if(event.key==='Tab'&&!event.shiftKey&&editor){const table=selectedTable(editor);if(table&&table.node.childCount===100&&table.row===99&&table.column===table.node.lastChild!.childCount-1){event.preventDefault();leaveBlock(editor,'table');setNotice('Maximum 100 rows reached. Continued below the table.');return true;}}
       if(event.key==='Tab'&&view.state.selection.$from.parent.type.name==='codeBlock'){
         event.preventDefault();const {from,to,$from}=view.state.selection,start=$from.start();const text=$from.parent.textContent;
@@ -104,7 +103,11 @@ export default function RichEditor({document,editable,onChange,pageId,preference
       if((event.metaKey||event.ctrlKey)&&event.key==="\\"){event.preventDefault();clearFormatting(editor);return true;}
       return false;
     },
-    handlePaste:(view,event)=>{if(event.clipboardData?.files.length){event.preventDefault();openFileIntent(Array.from(event.clipboardData.files));return true;}const html=event.clipboardData?.getData("text/html");if(html&&new Blob([html]).size>25_000_000){event.preventDefault();setNotice("This paste is too large. Split it into smaller sections; existing content is unchanged.");return true;}return false;},
+    handlePaste:(view,event)=>{if(!editor||!view.editable)return false;const clipboard=event.clipboardData,text=clipboard?.getData('text/plain')??'',html=clipboard?.getData('text/html')??'';
+      if(plainPasteUntil.current>Date.now()||view.state.selection.$from.parent.type.name==='codeBlock'){plainPasteUntil.current=0;event.preventDefault();try{applyTablePaste(editor,{grids:[],warnings:[],text},capturePastePoint(editor),'plain');}catch(e){setNotice(e instanceof Error?e.message:'Literal paste could not be applied.');}return true;}
+      if(clipboard?.files.length){event.preventDefault();openFileIntent(Array.from(clipboard.files));return true;}
+      if(/<table[\s>]/i.test(html)||text.includes('\t')){event.preventDefault();try{const point=capturePastePoint(editor),source=parseTablePasteSource(editor,html,text);setPasteReview({source,point});}catch(e){setNotice(e instanceof Error?e.message:'Paste could not be prepared; existing content is unchanged.');}return true;}
+      if(html&&new Blob([html]).size>25_000_000){event.preventDefault();setPasteReview({point:capturePastePoint(editor),source:{grids:[],text,warnings:['The rich source is too large. Review literal text or split the source first.']}});return true;}return false;},
     handleDrop:(view,event)=>{if(event.dataTransfer?.files.length){event.preventDefault();openFileIntent(Array.from(event.dataTransfer.files),view.posAtCoords({left:event.clientX,top:event.clientY})?.pos);return true;}return false;},
   },onUpdate:({editor:e,transaction})=>{if(restoring.current||!e.isEditable)return;if(transaction.docChanged)markSectionInteraction(e.view.domAtPos(e.state.selection.from).node);const value=normalizeRichDocument(e.getJSON() as RichNode);lastEmitted.current=stableStringify(value);onChangeRef.current(value);}});
   useEffect(()=>{if(!editor||!resumeUpload)return;let active=true,handed=false;void(async()=>{try{const target=resumeUpload.newPlacement?captureMediaPlacement(editor,resumeUpload.payload.type):await rehydrateMediaPlacement(editor,resumeUpload.payload.target);if(!active){await resumeUpload.release?.();return;}setMediaTarget(target);setMediaFile(null);setMediaRecovered(resumeUpload);setMedia(resumeUpload.payload.type);handed=true;}catch(e){if(active){setNotice(e instanceof Error?e.message:'The upload placement needs review.');onRecoveryClosed?.();}await resumeUpload.release?.();}})();return()=>{active=false;if(!handed)void resumeUpload.release?.();};},[editor,resumeUpload]);
@@ -162,6 +165,7 @@ export default function RichEditor({document,editable,onChange,pageId,preference
       {onComment&&<button disabled={!commentsReady} onClick={commentSelection} title={!commentsReady?'Wait for the document save before anchoring a comment':undefined}>Comment on selection</button>}
       {button("Undo","↶",()=>editor.chain().focus().undo().run(),false,!state?.undo)}{button("Redo","↷",()=>editor.chain().focus().redo().run(),false,!state?.redo)}
       <details className="block-actions"><summary aria-label="Block actions">⋮ Block</summary><div role="group" aria-label="Block actions"><button disabled={!editable} onClick={()=>act('up')}>Move up</button><button disabled={!editable} onClick={()=>act('down')}>Move down</button><button disabled={!editable} onClick={()=>act('duplicate')}>Duplicate block</button><button disabled={!editable} onClick={()=>act('delete')}>Delete block and contents</button><button disabled={!editable} onClick={()=>editor.chain().focus().sinkListItem(editor.isActive('taskItem')?'taskItem':'listItem').run()}>Indent list item</button><button disabled={!editable} onClick={()=>editor.chain().focus().liftListItem(editor.isActive('taskItem')?'taskItem':'listItem').run()}>Outdent list item</button><button disabled={!editable} onClick={()=>setTransformOpen(true)}>Turn into…</button></div></details>
+      <button disabled={!editable} onClick={()=>setPlainPoint(capturePastePoint(editor))}>Paste literal text</button>
       <button className="find-button" onClick={()=>{savedFindSelection.current={from:editor.state.selection.from,to:editor.state.selection.to};setFindOpen(true);}}>⌕ Find</button>
     </div>
     <div className="persistent-format">{toolbar()}</div>
@@ -178,6 +182,8 @@ export default function RichEditor({document,editable,onChange,pageId,preference
     {editable&&<button className="add-block" onClick={addBlock}>＋ Add block <span>or type / on an empty line</span></button>}
     {notice&&<div className="editor-notice" role="status">{notice}<button aria-label="Dismiss notice" onClick={()=>setNotice("")}>×</button></div>}
     {insertOpen&&<Dialog title="Insert a block" onClose={closeInsert}><input className="command-input" aria-label="Search block types" placeholder="Search blocks…" value={query} onChange={e=>{setQuery(e.target.value);setActive(0);}} onKeyDown={e=>{if(e.key==='ArrowDown'){e.preventDefault();setActive(i=>Math.min(filtered.length-1,i+1));}if(e.key==='ArrowUp'){e.preventDefault();setActive(i=>Math.max(0,i-1));}if(e.key==='Enter'&&filtered[active]){e.preventDefault();insert(filtered[active]);}}}/><div className="insert-results" role="listbox" aria-label="Block types">{filtered.map((item,i)=><button key={item.name} role="option" aria-selected={i===active} onMouseEnter={()=>setActive(i)} onClick={()=>insert(item)}><strong>{item.name}</strong><small>{item.description}</small></button>)}{!filtered.length&&<p>No matching block types. Try another name.</p>}</div></Dialog>}
+    {pasteReview&&<PasteReviewDialog editor={editor} source={pasteReview.source} point={pasteReview.point} onClose={()=>setPasteReview(null)}/>}
+    {plainPoint&&<PlainPasteDialog editor={editor} point={plainPoint} onClose={()=>setPlainPoint(null)}/>}
     {transformOpen&&<TransformDialog editor={editor} onClose={()=>setTransformOpen(false)}/>}
     {linkOpen&&<LinkDialog editor={editor} onClose={()=>setLinkOpen(false)}/>}
     {pageOpen&&<PageDialog sourcePageId={pageId} onClose={()=>setPageOpen(false)} onSelect={id=>{editor.chain().focus().insertContent({type:'pageLink',attrs:{id:crypto.randomUUID(),pageId:id}}).run();setPageOpen(false);}}/>}
