@@ -335,3 +335,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .transform-review-button{margin-top:12px;padding:10px 12px;background:#fff;border:1px solid #e4e4e1;border-radius:8px;color:#333}
 
 @media(pointer:coarse) { .shell button,.shell summary,.shell select { min-width:44px; min-height:44px; } }
+
+.workspace-access { max-height:70dvh; overflow:auto; overflow-wrap:anywhere; }
+.workspace-access ul { list-style:none; padding:0; }
+.workspace-access li { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:14px 0; border-bottom:1px solid var(--line); }
+.workspace-access li span { display:block; color:var(--muted); font-size:13px; margin-top:4px; }
+.workspace-access button { min-height:44px; padding:8px 12px; }
+.workspace-access dl { display:grid; grid-template-columns:auto 1fr; gap:8px 12px; }
+.workspace-access dd { margin:0; }

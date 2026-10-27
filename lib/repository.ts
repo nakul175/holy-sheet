@@ -34,12 +34,12 @@ export class Repository {
       UNION ALL SELECT p.id,p.parent_id,p.workspace_id,p.visibility,p.owner_id,a.path||p.id FROM hs_pages p JOIN ancestors a ON p.id=a.parent_id AND p.workspace_id=a.workspace_id
       WHERE p.deleted_at IS NULL AND NOT p.id=ANY(a.path)
     ) SELECT p.*,w.name AS workspace_name,s.name AS space_name,parent.title AS parent_title,
-      CASE WHEN p.owner_id=$2 THEN 'owner' WHEN EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.role='editor') THEN 'editor'
+      CASE WHEN p.owner_id=$2 THEN 'owner' WHEN m.role='admin' THEN 'editor' WHEN EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.role='editor') THEN 'editor'
       WHEN EXISTS(SELECT 1 FROM ancestors a JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE g.role='commenter') THEN 'commenter' ELSE 'viewer' END AS role
       FROM hs_pages p JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
       JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$2 AND m.active=true
-      LEFT JOIN hs_pages parent ON parent.id=p.parent_id AND parent.owner_id=$2
-      WHERE p.id=$1 AND p.deleted_at IS NULL AND EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.subject IS NOT NULL) ${lock ? "FOR UPDATE OF p,m" : ""}`,[id,actor.id]);
+      LEFT JOIN hs_pages parent ON parent.id=p.parent_id AND parent.deleted_at IS NULL AND parent.workspace_id=p.workspace_id AND (parent.owner_id=$2 OR m.role='admin')
+      WHERE p.id=$1 AND p.deleted_at IS NULL AND (m.role='admin' OR EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.subject IS NOT NULL)) ${lock ? "FOR UPDATE OF p,m" : ""}`,[id,actor.id]);
     if(!rows.length) throw new DocumentError("Page is restricted or unavailable","not_found",404);
     if(edit && !canEdit(rows[0].role)) throw new DocumentError("This page is read only","read_only",403);
     return rows[0];
@@ -53,7 +53,7 @@ export class Repository {
   async list(actor:Actor) {
     const {rows}=await this.db.query<{id:string}>(`WITH RECURSIVE permitted AS (
       SELECT p.id,p.workspace_id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
-      WHERE p.deleted_at IS NULL AND (p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
+      WHERE p.deleted_at IS NULL AND (m.role='admin' OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
       UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN permitted p ON c.parent_id=p.id AND c.workspace_id=p.workspace_id WHERE c.deleted_at IS NULL
     ) SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.id ORDER BY p.updated_at DESC,p.id`,[actor.id]);
     const pages=await Promise.all(rows.map(async row=>{try{return await this.get(row.id,actor);}catch(e){if(e instanceof DocumentError&&e.status===404)return null;throw e;}}));return pages.filter((p):p is DocumentPage=>p!==null);

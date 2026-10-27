@@ -1,0 +1,13 @@
+// @vitest-environment jsdom
+import {act,createElement,type ReactNode} from 'react';
+import {createRoot} from 'react-dom/client';
+import {it,expect,vi} from 'vitest';
+const mocks=vi.hoisted(()=>({request:vi.fn()}));
+vi.mock('../components/editor/use-document-session',async()=>({...await vi.importActual('../components/editor/use-document-session'),requestJson:mocks.request}));
+vi.mock('../components/editor/rich-editor',()=>({Dialog:({children}:{children:ReactNode})=>createElement('div',{role:'dialog'},children)}));
+vi.mock('../components/discussion-panel',()=>({CommentText:({body}:{body:string})=>createElement('p',null,body)}));
+import NotificationsDialog from '../components/notifications-dialog';
+import {ApiError} from '../components/editor/use-document-session';
+const event={id:'n',pageId:'p',pageTitle:'QA page',threadId:'t',body:'QA reply',authorName:'QA author',createdAt:'2026-10-27T18:00:00Z',readAt:null};
+it('refreshes visible notifications within four seconds and stops requests on close',async()=>{vi.useFakeTimers();Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});mocks.request.mockResolvedValueOnce({notifications:[]}).mockResolvedValueOnce({notifications:[event]});const host=document.createElement('div');document.body.append(host);const root=createRoot(host);try{await act(async()=>root.render(createElement(NotificationsDialog,{onClose:vi.fn(),onOpen:vi.fn()})));expect(host.textContent).not.toContain('QA reply');await act(async()=>vi.advanceTimersByTimeAsync(4000));expect(host.textContent).toContain('QA reply');await act(async()=>root.unmount());await act(async()=>vi.advanceTimersByTimeAsync(8000));expect(mocks.request).toHaveBeenCalledTimes(2);}finally{host.remove();vi.useRealTimers();vi.clearAllMocks();}});
+it('does not repaint stale notification text after a newer access denial',async()=>{vi.useFakeTimers();Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});let resolve!:(value:unknown)=>void;const slow=new Promise(r=>{resolve=r;});mocks.request.mockReturnValueOnce(slow).mockRejectedValueOnce(new ApiError('Access revoked',401,'authentication_required'));const host=document.createElement('div');document.body.append(host);const root=createRoot(host);try{await act(async()=>root.render(createElement(NotificationsDialog,{onClose:vi.fn(),onOpen:vi.fn()})));await act(async()=>vi.advanceTimersByTimeAsync(4000));expect(host.textContent).toContain('Access revoked');await act(async()=>resolve({notifications:[event]}));expect(host.textContent).not.toContain('QA reply');expect(host.textContent).toContain('Access revoked');}finally{await act(async()=>root.unmount());host.remove();vi.useRealTimers();vi.clearAllMocks();}});

@@ -26,6 +26,33 @@ describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
     finally{await db.query('UPDATE hs_members SET active=true WHERE user_id=$1',[localActor.id]);}
   });
 
+  it('serializes concurrent last-admin changes and stale native access previews',async()=>{
+    const {previewMemberChange,changeWorkspaceMember}=await import('./workspace-administration');
+    const workspaceId=crypto.randomUUID(),a={id:crypto.randomUUID()},b={id:crypto.randomUUID()};
+    await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$2)',[workspaceId,'Isolated native access PG']);
+    for(const actor of [a,b]){await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);await db.query("INSERT INTO hs_members(workspace_id,user_id,role) VALUES($1,$2,'admin')",[workspaceId,actor.id]);}
+    const changes=await Promise.all([a,b].map(async actor=>{const fields={subjectId:actor.id,role:'member' as const,active:true},p=await previewMemberChange(r,actor,workspaceId,fields);return {actor,input:{...fields,operationId:crypto.randomUUID(),expectedVersion:p.version,previewDigest:p.digest}};}));
+    const results=await Promise.allSettled(changes.map(c=>changeWorkspaceMember(r,c.actor,workspaceId,c.input)));
+    expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);
+    expect((await db.query("SELECT user_id FROM hs_members WHERE workspace_id=$1 AND role='admin' AND active=true",[workspaceId])).rows).toHaveLength(1);
+    const survivor=(await db.query<{user_id:string}>("SELECT user_id FROM hs_members WHERE workspace_id=$1 AND role='admin'",[workspaceId])).rows[0].user_id;
+    await expect(previewMemberChange(r,{id:survivor},workspaceId,{subjectId:survivor,role:'member',active:true})).rejects.toMatchObject({code:'last_admin'});
+  });
+
+  it('applies native admin content access and revocation on PostgreSQL',async()=>{
+    const actor={id:crypto.randomUUID()};
+    await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);
+    await db.query("INSERT INTO hs_members(workspace_id,user_id,role) VALUES('ws-aplyd',$1,'admin')",[actor.id]);
+    const p=await r.create(localActor,'Private admin PG','space-product');
+    expect((await r.get(p.id,actor)).role).toBe('editor');
+    await r.save(p.id,actor,{operationId:crypto.randomUUID(),baseVersion:p.version,title:'Admin write PG',document:p.document});
+    await db.transaction(async tx=>{
+      await tx.query("SELECT id FROM hs_workspaces WHERE id='ws-aplyd' FOR UPDATE");
+      await tx.query("UPDATE hs_members SET role='member' WHERE user_id=$1",[actor.id]);
+    });
+    await expect(r.get(p.id,actor)).rejects.toMatchObject({status:404});
+    expect((await r.list(actor)).some(x=>x.id===p.id)).toBe(false);
+  });
   it('persists scoped search cursors across pool restart and safely replays concurrent reads',async()=>{const query='pgscope'+crypto.randomUUID().replaceAll('-','');for(let i=0;i<22;i++)await r.create(localActor,query+' '+i,'space-product');const input={query,workspaceId:'ws-aplyd',requestId:crypto.randomUUID()},first=await connectedSearch(r,localActor,input);expect(first.results).toHaveLength(20);expect(first.nextCursor).toBeTruthy();await db.close();db=await createDatabase();r=new Repository(db);const responses=await Promise.all([1,2].map(()=>connectedSearch(r,localActor,{...input,requestId:crypto.randomUUID(),cursor:first.nextCursor!})));expect(responses[0].results.map(p=>p.id)).toEqual(responses[1].results.map(p=>p.id));expect(responses[0].results).toHaveLength(2);expect(responses[0].nextCursor).toBeNull();});
   it('publishes backlink changes only with the durable document transaction',async()=>{const target=await r.create(localActor,'PG backlink target','space-product'),source=await r.create(localActor,'PG backlink source','space-product'),document=ensureIds({type:'doc',content:[{type:'pageLink',attrs:{pageId:target.id}},{type:'pageLink',attrs:{pageId:target.id}}]});await r.save(source.id,localActor,{operationId:crypto.randomUUID(),baseVersion:1,title:source.title,document});expect((await backlinks(r,localActor,target.id)).items.find(p=>p.id===source.id)?.occurrences).toBe(2);const bad=ensureIds({type:'doc',content:[{type:'pageLink',attrs:{pageId:'missing-pg-target'}}]});await expect(r.save(source.id,localActor,{operationId:crypto.randomUUID(),baseVersion:2,title:'Rejected change',document:bad})).rejects.toMatchObject({status:404});expect((await backlinks(r,localActor,target.id)).items.find(p=>p.id===source.id)?.occurrences).toBe(2);await r.save(source.id,localActor,{operationId:crypto.randomUUID(),baseVersion:2,title:source.title,document:ensureIds({type:'doc',content:[{type:'paragraph'}]})});expect((await backlinks(r,localActor,target.id)).items.some(p=>p.id===source.id)).toBe(false);});
   it('serializes personal list changes without losing unrelated favourites',async()=>{const a=await r.create(localActor,'PG personal A','space-product'),b=await r.create(localActor,'PG personal B','space-product'),version=(await personalNavigation(r,localActor)).version;const changes=[a,b].map(p=>({action:'favourite' as const,pageId:p.id,value:true,version}));const results=await Promise.allSettled(changes.map(change=>updatePersonalNavigation(r,localActor,change)));expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);const failed=results.findIndex(x=>x.status==='rejected');expect((results[failed] as PromiseRejectedResult).reason).toMatchObject({code:'navigation_conflict'});await updatePersonalNavigation(r,localActor,{...changes[failed],version:(await personalNavigation(r,localActor)).version});const saved=await personalNavigation(r,localActor);expect(saved.favourites.filter(f=>[a.id,b.id].includes(f.id))).toHaveLength(2);await Promise.all([a,b,a].map(p=>updatePersonalNavigation(r,localActor,{action:'opened',pageId:p.id})));expect((await personalNavigation(r,localActor)).recents.filter(f=>[a.id,b.id].includes(f.id))).toHaveLength(2);});
