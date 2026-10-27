@@ -8,11 +8,11 @@ export type NavigationAction={action:'favourite';pageId:string;value:boolean;ver
 async function state(tx:Sql,actor:Actor){await tx.query('INSERT INTO hs_navigation_state(user_id) SELECT id FROM hs_users WHERE id=$1 ON CONFLICT DO NOTHING',[actor.id]);const {rows}=await tx.query<{version:number}>('SELECT version FROM hs_navigation_state WHERE user_id=$1 FOR UPDATE',[actor.id]);if(!rows.length)throw new DocumentError('Your HS account is unavailable','not_found',404);return rows[0].version;}
 export async function personalNavigation(r:Repository,actor:Actor,workspaceId?:string):Promise<PersonalNavigation>{
  const version=await r.db.query<{version:number}>('SELECT version FROM hs_navigation_state WHERE user_id=$1',[actor.id]);
- const read=async(table:'hs_favourites'|'hs_recents',order:string)=>{const {rows}=await r.db.query<NavigationEntry>(`WITH RECURSIVE permitted AS (
-  SELECT p.id,p.workspace_id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
+ const read=async(table:'hs_favourites'|'hs_recents',order:string)=>{const {rows}=await r.db.query<NavigationEntry>(`WITH RECURSIVE reachable AS (
+  SELECT p.id,p.workspace_id,0 AS depth FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
   WHERE p.deleted_at IS NULL AND (p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
-  UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN permitted a ON c.parent_id=a.id AND c.workspace_id=a.workspace_id WHERE c.deleted_at IS NULL
- ) SELECT p.id,p.title,p.workspace_id AS "workspaceId",w.name AS "workspaceName",p.space_id AS "spaceId",s.name AS "spaceName",parent.title AS "parentTitle"
+  UNION SELECT c.id,c.workspace_id,a.depth+1 FROM hs_pages c JOIN reachable a ON c.parent_id=a.id AND c.workspace_id=a.workspace_id WHERE c.deleted_at IS NULL AND a.depth<99
+ ), permitted AS (SELECT DISTINCT id,workspace_id FROM reachable) SELECT p.id,p.title,p.workspace_id AS "workspaceId",w.name AS "workspaceName",p.space_id AS "spaceId",s.name AS "spaceName",parent.title AS "parentTitle"
  FROM ${table} n JOIN permitted a ON a.id=n.page_id JOIN hs_pages p ON p.id=n.page_id JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
  LEFT JOIN hs_pages parent ON parent.id=p.parent_id AND parent.id IN (SELECT id FROM permitted)
  WHERE n.user_id=$1 AND p.deleted_at IS NULL AND ($2::text IS NULL OR p.workspace_id=$2) ORDER BY ${order}`,[actor.id,workspaceId??null]);return rows;};

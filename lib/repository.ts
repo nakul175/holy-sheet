@@ -8,6 +8,7 @@ import { updateCommentAnchors } from './comment-anchors';
 import { revisionDigest } from './revision';
 import { usableMedia } from './media-authorization';
 import { canEdit,type Page,type PageRole } from './types';
+import { validateNewPageReferences } from './page-references';
 
 type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
 export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole};
@@ -117,6 +118,7 @@ export class Repository {
         if(!mediaIds.has(media.rows[0].id)){mediaIds.add(media.rows[0].id);mediaBytes+=Number(media.rows[0].size);}
       }
       if(mediaIds.size>100||mediaBytes>100_000_000)throw new DocumentError("Active page upload allowance exceeded; your draft is retained","quota_exceeded",422);
+      await validateNewPageReferences(this,tx,actor,p.workspace_id,next,activeDocument.document);
       const current=activeDocument;
       if(nextTitle===p.title&&stableStringify(next)===stableStringify(current.document)){
         await tx.query('INSERT INTO hs_operations(page_id,operation_id,actor_id,request_hash,version) VALUES($1,$2,$3,$4,$5)',[id,input.operationId,actor.id,hash,p.version]);
