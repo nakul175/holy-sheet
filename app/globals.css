@@ -103,6 +103,7 @@ article:hover .add-block,.add-block:focus { opacity:1; }
 .format-tools { display:flex; align-items:center; flex-wrap:wrap; gap:3px; padding:5px; border:1px solid #e7e7e4; border-radius:10px; background:white; box-shadow:0 4px 18px #00000008; }
 .format-tools button { border:0; border-radius:6px; min-width:36px; height:36px; background:transparent; font-size:12px; }
 .format-tools button[aria-pressed=true] { background:#eae7ff; color:#5141d2; }
+.format-tools button[aria-pressed=mixed] { background:#f2efff; color:#5141d2; text-decoration:underline dotted; text-underline-offset:5px; }
 .colour-control { font-size:9px; color:#999; display:grid; margin-left:6px; gap:2px; }
 .colour-control select { max-width:80px; border:0; background:#f8f8f6; border-radius:5px; font-size:11px; padding:3px; }
 .rich-prose { outline:none; min-height:240px; font-size:16px; line-height:1.75; letter-spacing:-.01em; overflow-wrap:anywhere; }
