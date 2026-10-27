@@ -72,9 +72,10 @@ export class Repository {
       if(operationId){
         // Serialize this actor's create intents across locations and concurrent retries.
         await tx.query('SELECT id FROM hs_users WHERE id=$1 FOR NO KEY UPDATE',[actor.id]);
-        const prior=await tx.query<{page_id:string;request_hash:string}>('SELECT page_id,request_hash FROM hs_page_creations WHERE actor_id=$1 AND operation_id=$2',[actor.id,operationId]);
+        const prior=await tx.query<{page_id:string|null;request_hash:string}>('SELECT page_id,request_hash FROM hs_page_creations WHERE actor_id=$1 AND operation_id=$2',[actor.id,operationId]);
         if(prior.rows.length){
           if(prior.rows[0].request_hash!==requestHash)throw new DocumentError('Creation attempt was reused with different fields','operation_mismatch',409);
+          if(!prior.rows[0].page_id)throw new DocumentError('Page is restricted or unavailable','not_found',404);
           return this.get(prior.rows[0].page_id,actor,tx);
         }
       }

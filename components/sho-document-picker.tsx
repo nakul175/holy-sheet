@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { embedContext } from '../lib/embed-context';
+import styles from './sho-document-picker.module.css';
 import { SignInLink } from './session-boundary';
 const parentOrigin = 'https://sheethappensofficer.aplyd.org';
 type Space = {
@@ -85,7 +86,7 @@ export default function ShoDocumentPicker() {
         }
     }
     const workspaces = Array.from(new Set(spaces.map(s => s.workspaceId)));
-    return <main className="workspace-home"><h1>Holy Sheet documents</h1><p>Pages stay in Holy Sheet and keep their existing permissions.</p>
+    return <main className={`workspace-home ${styles.picker}`}><h1>Holy Sheet documents</h1><p>Pages stay in Holy Sheet and keep their existing permissions.</p>
  {error && <p role="status">{error}</p>}
  {!ready ? <><SignInLink path="/" newWindow/><button onClick={() => setRetry(n => n + 1)}>Retry access check</button></> : <>
  <label>Workspace <select value={workspace} disabled={busy || pending} onChange={e => { setWorkspace(e.target.value); setSpace(''); }}><option value="">Choose workspace</option>{workspaces.map(id => <option key={id} value={id}>{spaces.find(s => s.workspaceId === id)?.workspaceName ?? 'Workspace'}</option>)}</select></label>
@@ -106,7 +107,7 @@ export default function ShoDocumentPicker() {
                 setBusy(false);
             } }}>
  <label>New space name <input value={name} maxLength={80} disabled={busy || pending} onChange={e => setName(e.target.value)}/></label><button disabled={!workspace || !name.trim() || busy || pending}>Create space</button></form>
- <label><input type="checkbox" checked={setDefault} disabled={busy || pending} onChange={e => setSetDefault(e.target.checked)}/>Use this space as the project default</label>
+ <label className={styles.defaultOption}><input type="checkbox" checked={setDefault} disabled={busy || pending} onChange={e => setSetDefault(e.target.checked)}/>Use this space as the project default</label>
  <form onSubmit={e => { e.preventDefault(); void choose(); }}><label>Page title <input value={title} maxLength={240} disabled={busy || pending} onChange={e => setTitle(e.target.value)}/></label><button disabled={!space || busy}>{pending ? 'Retry same creation' : 'Create and link page'}</button></form></>}
  {mode === 'link' && <><label>Find existing page <input value={query} disabled={busy || pending} onChange={e => setQuery(e.target.value)}/></label>
  <ul>{pages.filter(p => (!space || p.spaceId === space) && p.workspaceId === workspace && p.title.toLowerCase().includes(query.toLowerCase())).map(p => <li key={p.id}><button disabled={busy || pending} onClick={() => void choose(p.id)}>{p.title}</button></li>)}</ul></>}

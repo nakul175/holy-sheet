@@ -28,3 +28,12 @@ it('rolls back a failed creation intent so corrected retries can succeed', async
     const page = await r.create(localActor, 'Valid space', 'space-product', null, op);
     expect(page.id).toBeTruthy();
 });
+
+it('does not block retention purge or recreate a purged page on retry',async()=>{
+ const op=crypto.randomUUID(),title='Purged creation';const page=await r.create(localActor,title,'space-product',null,op);
+ await db.query('DELETE FROM hs_blocks WHERE page_id=$1',[page.id]);
+ await db.query('DELETE FROM hs_revisions WHERE page_id=$1',[page.id]);
+ await db.query('DELETE FROM hs_pages WHERE id=$1',[page.id]);
+ await expect(r.create(localActor,title,'space-product',null,op)).rejects.toMatchObject({status:404});
+ expect((await db.query('SELECT id FROM hs_pages WHERE title=$1',[title])).rows).toHaveLength(0);
+});
