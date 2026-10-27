@@ -2,6 +2,10 @@
   "name": "holy-sheet-collaboration-protocol-spike",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test convergence.mjs" },
-  "dependencies": { "loro-crdt": "1.17.1" }
+  "scripts": {
+    "test": "node --test convergence.mjs deletion-policy.test.mjs"
+  },
+  "dependencies": {
+    "loro-crdt": "1.17.1"
+  }
 }
