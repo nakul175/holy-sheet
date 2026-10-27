@@ -48,3 +48,16 @@ export async function changeSharing(r:Repository,actor:Actor,pageId:string,input
     return {state:await sharingState(r,actor,pageId,tx),appliedVersion:version,replayed:false,effectiveRole};
   });
 }
+
+export type SharingAuditEvent={id:string;pageId:string;actorId:string;actorName:string;recipientId:string;recipientName:string;beforeRole:Role|null;afterRole:Role|null;operationId:string;createdAt:string;scope:'page-and-descendants'};
+/** Only the actual owner may read this page's permission history. Never infer audit access from content editing. */
+export async function sharingAudit(r:Repository,actor:Actor,pageId:string):Promise<SharingAuditEvent[]>{
+ const page=await r.access(r.db,pageId,actor);
+ if(page.role!=='owner')throw new DocumentError('Only the page owner can inspect sharing history','owner_required',403);
+ const {rows}=await r.db.query<Omit<SharingAuditEvent,'createdAt'|'scope'>&{createdAt:string|Date}>(`SELECT a.id,a.page_id AS "pageId",a.actor_id AS "actorId",actor.name AS "actorName",a.subject_id AS "recipientId",COALESCE(recipient.name,'Former member') AS "recipientName",a.before_value->>'role' AS "beforeRole",a.after_value->>'role' AS "afterRole",a.correlation_id AS "operationId",a.created_at AS "createdAt"
+ FROM hs_audit a JOIN hs_users actor ON actor.id=a.actor_id LEFT JOIN hs_users recipient ON recipient.id=a.subject_id
+ WHERE a.page_id=$1 AND a.action='sharing.change' ORDER BY a.created_at DESC,a.id DESC LIMIT 50`,[pageId]);
+ // Recheck after the query so membership loss during the read cannot expose audit metadata.
+ const current=await r.access(r.db,pageId,actor);if(current.role!=='owner')throw new DocumentError('Only the page owner can inspect sharing history','owner_required',403);
+ return rows.map(event=>({...event,createdAt:new Date(event.createdAt).toISOString(),scope:'page-and-descendants'}));
+}

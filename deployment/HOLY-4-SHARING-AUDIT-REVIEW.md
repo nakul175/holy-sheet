@@ -1,0 +1,9 @@
+# HOLY-4 sharing-history qualification
+
+Sharing changes were already written to the append-only audit table, but owners had no supported way to inspect that evidence in the app. The sharing dialog now offers a private latest-50 history showing actor, recipient, previous/new direct role, timestamp and page/subpage scope. A successful mutation clears previously loaded history; a failed history refresh removes stale events rather than showing them as current.
+
+The new GET sharing/audit route authenticates normally, applies the actual-page-owner requirement independently of content Editor access, returns no-store data, limits results to the requested page and rechecks access after reading. Editors, inherited Editors, Viewers, outsiders and inactive owners are denied. No role, membership or grant authority is added. History inspection never changes grants. The append-only full event store is unchanged; the UI is a bounded recent-history view.
+
+Validation includes idempotent operation replay producing exactly one audit event, page isolation, direct/inherited role restrictions, inactive membership denial, response cache/privacy boundaries, UI event rendering and stale-history removal after denial. PostgreSQL qualification extends the concurrent inherited revocation scenario to verify durable before/after audit values and denial to the revoked actor. See the PR for exact current test counts and CI.
+
+Staging qualification of the earlier HOLY-4 merge verified Viewer/Editor behavior, existing/future descendants, restricted ancestor redaction, direct Viewer removal retaining inherited Editor and already-open descendant revocation. These are targeted observations, not a blanket manual-case pass. Actual SHO attachment integration and the full native-role/cross-workspace fixture matrix remain prerequisites; no standalone embed route is called actual SHO acceptance.
