@@ -38,6 +38,8 @@ for(const [name,path] of [
   ['Workspace membership','/api/v1/workspaces/ws-aplyd/members'],['Personal navigation','/api/v1/personal-navigation'],['Templates','/api/v1/templates?workspaceId=ws-aplyd'],
   ['Media','/api/media/11111111-1111-4111-8111-111111111111'],['Upload recovery','/api/uploads/11111111-1111-4111-8111-111111111111'],
 ])await check(`${name} requires verified identity`,path,401);
+await check('Page move requires identity','/api/v1/pages/welcome/location',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Page move rejects foreign origin','/api/v1/pages/welcome/location',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
 await check('Workspace mutation requires identity','/api/v1/workspaces/ws-aplyd/members',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
 await check('Workspace mutation rejects foreign origin','/api/v1/workspaces/ws-aplyd/members',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
 await check('Forged actor headers rejected','/api/pages',401,{headers:{'x-user-id':'local-owner','x-hs-local-preview':'1'}});

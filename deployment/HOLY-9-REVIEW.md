@@ -1,0 +1,13 @@
+# Reviewed page-tree organisation
+
+Page owners with explicit native workspace-administrator management authority can review and move a page subtree within its current workspace. Content access alone grants no whole-page movement authority. The keyboard-accessible dialog selects destination space, parent and sibling position, then shows the selected root, all-descendant count, current/destination paths, exact effective access losses/additions and the actual sibling position. Any inherited expansion requires an explicit additional confirmation.
+
+The server takes the workspace lock used by document, sharing and membership changes, verifies ownership/management, rejects self/descendant cycles and cross-workspace destinations, and recomputes the preview at commit. A tree version and digest bind source/destination state, content versions, current memberships and grants. Stale reviews fail before mutation. Idempotent actor-bound operations and an audit event record a single accepted move. A failed sibling write rolls back the complete change.
+
+The existing page IDs, URLs, ownership, direct grants, content versions, block IDs, comments, assets and history are retained. Descendants receive the new space atomically; trashed descendants stay trashed. Inherited access and navigation/search paths follow the new parent immediately. Explicit sibling positions persist. Document or discussion drafts must be saved/resolved before the reload following a move.
+
+This release bounds the workspace inventory to 1,000 pages/500 members and the review to 5,000 effective access deltas. Larger cases get a clear no-move error; there is no silently approximate preview or claimed large-workspace workflow.
+
+Validation covers subtree identity/content preservation, direct-grant preservation, inherited expansion/loss, parity against the existing SQL authorizer for ancestor owners and stronger direct/space grants, cycles, scope and authority, stale content/ACLs, retry/audit deduplication, atomic failure rollback, and persisted keyboard ordering. Real PostgreSQL coverage races two accepted previews; only one move may commit. Dialog tests cover the expansion checkbox, unknown authority and identical-operation retry. Actual browser preview/cancel was checked independently.
+
+Open acceptance gates include full distinct-account live/manual/device/screen-reader and representative maximum-size qualification. Workspace owners are not inferred or promoted from page ownership. For live rehearsal use a new isolated synthetic workspace, not a native administrator grant over existing staging or production content. No central writer, credentials or scheduled task is changed.
