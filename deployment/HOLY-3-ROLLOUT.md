@@ -36,6 +36,10 @@ private operator receipt. Do not deploy an unreviewed branch or moving branch na
   not authenticated edit, scanner, performance or SHO acceptance.
 - Application CI also dumps/restores its disposable PostgreSQL database and
   verifies all HS table counts/digests plus reopened synthetic document views.
+  Verification rejects missing/extra HS tables and empty page fixtures before
+  repository initialization can recreate missing tables. It compares every
+  reopenable seeded owner page, without a sample limit. Negative tests cover
+  same-count content corruption, missing/extra tables and empty fixture databases.
   This qualifies SQL restoration only; cloud objects and separately protected
   recovery-key restoration still need their own evidence.
 
