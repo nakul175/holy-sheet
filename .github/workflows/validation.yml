@@ -79,6 +79,11 @@ jobs:
           node-version: 24
       - name: Build exact candidate image
         run: docker build --label org.opencontainers.image.revision=${{ env.HS_CANDIDATE_SHA }} --tag holy-sheet-candidate:${{ env.HS_CANDIDATE_SHA }} .
+      - name: Verify the isolated import parser ships in the exact image
+        run: |
+          mkdir -p artifacts
+          printf 'Isolated import image canary' | docker run --rm --interactive --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 30 --memory 384m --network none --entrypoint node holy-sheet-candidate:${{ env.HS_CANDIDATE_SHA }} --max-old-space-size=256 --disallow-code-generation-from-strings --permission --allow-fs-read=/app/scripts/dist/import-document-worker.cjs /app/scripts/dist/import-document-worker.cjs txt > artifacts/import-image-canary.json
+          node --input-type=module -e "import {readFileSync} from 'node:fs';import assert from 'node:assert/strict';const data=JSON.parse(readFileSync('artifacts/import-image-canary.json','utf8'));assert.equal(data.result.document.content[0].content[0].text,'Isolated import image canary');assert.equal(data.result.blocks,1);"
       - name: Qualify disabled and enabled editor boundaries
         run: |
           mkdir -p artifacts

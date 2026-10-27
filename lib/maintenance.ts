@@ -42,5 +42,6 @@ export async function maintainStorage(r:Repository,erase:(key:string)=>Promise<v
     await tx.query('SELECT w.id FROM hs_workspaces w JOIN hs_pages p ON p.workspace_id=w.id WHERE p.id=$1 FOR UPDATE OF w',[key.page_id]);
     await tx.query('DELETE FROM hs_drafts WHERE id=$1 AND expires_at<=clock_timestamp()',[key.id]);
   });
+  await r.db.query("UPDATE hs_import_jobs SET state='expired',document=NULL,completed_at=clock_timestamp() WHERE id IN (SELECT id FROM hs_import_jobs WHERE state='preview' AND expires_at<=clock_timestamp() ORDER BY expires_at LIMIT 100)");
   return {considered:candidates.length,removed,failed};
 }
