@@ -9,4 +9,4 @@
 .picker .defaultOption { display: flex; align-items: center; gap: 8px; }
 .picker .defaultOption input { width: 18px; height: 18px; min-height: 0; padding: 0; margin: 0; }
 .picker ul { padding: 0; list-style: none; }
-.picker li button { text-align: left; width: 100%; }
+.picker li button { text-align: left; width: 100%; overflow-wrap: anywhere; white-space: normal; }

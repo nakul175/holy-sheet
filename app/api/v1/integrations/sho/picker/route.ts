@@ -18,7 +18,7 @@ export async function GET(req: Request) {
             name: string;
             workspaceId: string;
             workspaceName: string;
-        }>(`SELECT s.id,s.name,s.workspace_id AS "workspaceId",w.name AS "workspaceName" FROM hs_spaces s JOIN hs_workspaces w ON w.id=s.workspace_id JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$1 AND m.active=true ORDER BY w.name,s.name`, [actor.id])).rows, pages = (await r.list(actor)).map(p => ({ id: p.id, title: p.title, spaceId: p.spaceId, workspaceId: p.workspaceId }));
+        }>(`SELECT s.id,s.name,s.workspace_id AS "workspaceId",w.name AS "workspaceName" FROM hs_spaces s JOIN hs_workspaces w ON w.id=s.workspace_id JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$1 AND m.active=true ORDER BY w.name,s.name`, [actor.id])).rows, pages = new URL(req.url).searchParams.get('metadataOnly')==='1'?[]:(await r.list(actor)).map(p => ({ id: p.id, title: p.title, spaceId: p.spaceId, workspaceId: p.workspaceId }));
         return { subject: actor.id, spaces, pages };
     });
 }
