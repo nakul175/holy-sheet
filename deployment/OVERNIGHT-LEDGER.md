@@ -23,6 +23,7 @@ BTF All view currently lists HOLY-1 through HOLY-8. HOLY-9 returns Issue not fou
 - PR #3 (HOLY-6 foundation), merge `65df4c6441dfb964962483a70cad9a7a70e67fe0`.
 - PR #4 (HOLY-7 foundation), merge `a5b4ab866f66acba89edd1167ace4c1b734d96ab`.
 - PR #5 (HOLY-8 private template foundation), merge `e541a2cd3f0e20a838b19ea8ed9d10446d5c5fc8`.
+- PR #6 (private media/staging qualification), merge `8d4e8a99977f70f9ab56b0b7e07f4db265af3692`.
 
 Each merge followed passing GitHub CI and exact source-tree verification. Local main was fast-forwarded to the same revision; current HOLY-7 work starts there. These merges are incremental, with production access still disabled. They do not mark any story Done or replace the documented acceptance gates.
 
@@ -41,3 +42,5 @@ No story is marked Done by this ledger. Automated checks and manual BugOff execu
 ## Additional qualification
 
 Five real ClamAV checks passed, including encrypted archive/signature detection and quarantine retry. A separate synthetic PostgreSQL restore matched all 26 tables and 38 authorized document reads. The immutable HOLY-8 package passed 13 disabled-access runtime checks with non-root/read-only verification. Full boundaries and exact revisions are in LOCAL-QUALIFICATION.md. The unavailable MinIO registry dependency has been removed from the deployment path in favor of a required qualified HTTPS private S3 endpoint. Staging DNS remained unresolved on recheck.
+
+Additional HOLY-3 editor checkpoint: reviewed single-file paste/drop and replacement, reservation retry/cancellation handling, repeated-reference quota accounting, asynchronous language loading/large-code fallback and authorized dynamic find labels. Local browser rehearsal verified actual scanning, saved replacement and one-step Undo with original/replacement bytes unchanged. Combined checks: 150 local tests, seven real PostgreSQL tests, five real scanner tests, typecheck/build. See HOLY-3-EDITOR-REVIEW.md; pending recovery/import/transform and full release gates remain open.

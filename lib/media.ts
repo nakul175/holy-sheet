@@ -74,7 +74,7 @@ export async function reserveMedia(r:Repository,actor:Actor,pageId:string,input:
     const pending=rows.filter(m=>!refs.has(m.id)&&!["rejected","deleted","purged","purging","cancelled"].includes(m.state)&&Date.now()-new Date(m.created_at).getTime()<30*60_000);
     let creditCount=0,creditBytes=0;
     if(input.replacedId){const old=active.find(m=>m.id===input.replacedId);const referenceCount=documentBlocks(current.document).filter(b=>b.node.attrs?.attachmentId===input.replacedId).length;
-      if(!old||referenceCount!==1||pending.some(m=>m.replaced_id===input.replacedId))throw new DocumentError("Replacement changed elsewhere; review the page","conflict",409);creditCount=1;creditBytes=Number(old.size);}
+      if(!old||referenceCount<1||pending.some(m=>m.replaced_id===input.replacedId))throw new DocumentError("Replacement changed elsewhere; review the page","conflict",409);if(referenceCount===1){creditCount=1;creditBytes=Number(old.size);}}
     if(active.length+pending.length+1-creditCount>100||[...active,...pending].reduce((sum,m)=>sum+Number(m.size),0)+input.size-creditBytes>100_000_000)throw new DocumentError("Page upload allowance exceeded. Remove active media or choose a smaller file.","quota_exceeded",422);
     const id=randomUUID();await tx.query("INSERT INTO hs_media(id,page_id,uploader_id,operation_id,name,mime,size,object_key,state,replaced_id) VALUES($1::uuid,$2,$3,$4,$5,$6,$7,$1::text,'reserved',$8)",[id,pageId,actor.id,input.operationId,input.name,mime,input.size,input.replacedId??null]);
     return {id,state:"reserved"};
