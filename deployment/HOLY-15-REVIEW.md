@@ -1,0 +1,9 @@
+# Checklist-to-SHO task transaction foundation (not live functionality)
+
+This branch supplies a typed destination contract and HS-side intent/binding ledger for one persisted checklist item. The current page must be editable, its source version and text reviewed, and its title/project/eligible assignee/required date explicitly selected. One active source intent fences competing attempts. Audit rows contain IDs/phases, not checklist text. Source check state never changes the task completion state.
+
+The destination adapter must use the actual delegated SHO user, native project/create and assignee authority, durable task-side idempotency, current task read access and an exact initiating central subject. No implementation, production route, user-facing Create SHO task action or service credential is supplied here. Until that actual adapter and live paired checks exist, this is not HOLY-15 acceptance and must not be advertised as a working connection.
+
+Execution retains one stable intent across an unknown destination response. Task creation occurs outside HS database locks. A task confirmed by SHO but not linked in HS returns an explicit binding-pending/source-unavailable result; retry consults the same destination intent, never deletes or compensates by recreating a task. Unlink is an explicit source-only operation; pending unknown creation cannot be discarded to bypass idempotency. Deleting or changing HS source does not delete the task.
+
+No live grants, tokens, shared secrets, destination accounts, schedules or production deployment are enabled by this foundation. Actual destination audience review, browser/mobile UI, trusted receipts, cross-system recovery and paired staging qualification remain open. Tests must exercise the contract with synthetic adapters and must never be presented as real SHO task creation evidence.
