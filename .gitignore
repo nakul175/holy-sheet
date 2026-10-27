@@ -10,3 +10,4 @@ artifacts/
 packages/editor/dist/
 packages/editor/*.tgz
 .env.staging
+scripts/dist/

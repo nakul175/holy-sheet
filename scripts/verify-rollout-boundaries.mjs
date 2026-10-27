@@ -32,12 +32,13 @@ if(bridge){
 }
 await check('Callback without transaction fails closed','/auth/callback?code=synthetic&state=synthetic',bridge?400:503);
 for(const [name,path] of [
-  ['Session','/auth/session'],['Pages','/api/pages'],['Spaces','/api/spaces'],['Global search','/api/search?q=orchid'],
+  ['Document import','/api/v1/imports/11111111-1111-4111-8111-111111111111'],['Session','/auth/session'],['Pages','/api/pages'],['Spaces','/api/spaces'],['Global search','/api/search?q=orchid'],
   ['Document','/api/v1/pages/welcome/document'],['Page access','/api/v1/pages/welcome/access'],
   ['Sharing audit','/api/v1/pages/welcome/sharing/audit'],['History','/api/v1/pages/welcome/history'],
   ['Workspace membership','/api/v1/workspaces/ws-aplyd/members'],['Personal navigation','/api/v1/personal-navigation'],['Templates','/api/v1/templates?workspaceId=ws-aplyd'],
   ['Media','/api/media/11111111-1111-4111-8111-111111111111'],['Upload recovery','/api/uploads/11111111-1111-4111-8111-111111111111'],
 ])await check(`${name} requires verified identity`,path,401);
+await check('Import preparation requires identity','/api/v1/imports',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/octet-stream'},body:'synthetic'});
 await check('Workspace mutation requires identity','/api/v1/workspaces/ws-aplyd/members',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
 await check('Workspace mutation rejects foreign origin','/api/v1/workspaces/ws-aplyd/members',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
 await check('Forged actor headers rejected','/api/pages',401,{headers:{'x-user-id':'local-owner','x-hs-local-preview':'1'}});
