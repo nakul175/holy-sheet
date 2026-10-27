@@ -5,6 +5,13 @@ import { closeHistory } from '@tiptap/pm/history';
 import { plainText,stableStringify,validateDocument,type RichNode } from '../../lib/document';
 export const transformTargets=['paragraph','heading-1','heading-2','heading-3','bullet','number','checklist','quote'] as const;
 export type TransformTarget=typeof transformTargets[number];
+type ShortcutEvent=Pick<KeyboardEvent,'key'|'code'|'metaKey'|'ctrlKey'|'shiftKey'|'altKey'|'isComposing'>&{keyCode?:number;getModifierState?:(key:string)=>boolean};
+export function transformShortcut(event:ShortcutEvent,active:{heading?:number;quote?:boolean;bullet?:boolean;number?:boolean;checklist?:boolean}={}):TransformTarget|null{
+ if(event.isComposing||event.getModifierState?.('AltGraph')||!(event.metaKey||event.ctrlKey))return null;const shifted:Record<string,string>={'&':'Digit7','*':'Digit8','(':'Digit9'},code=event.code||(/^\d$/.test(event.key)?'Digit'+event.key:shifted[event.key]??(event.keyCode&&event.keyCode>=48&&event.keyCode<=57?'Digit'+(event.keyCode-48):''));
+ if(event.altKey&&!event.shiftKey&&/^Digit[0-3]$/.test(code)){const level=Number(code.at(-1));return !level||active.heading===level?'paragraph':`heading-${level}` as TransformTarget;}
+ if(event.shiftKey&&!event.altKey){if(code==='Digit7')return active.number?'paragraph':'number';if(code==='Digit8')return active.bullet?'paragraph':'bullet';if(code==='Digit9')return active.checklist?'paragraph':'checklist';if(code==='KeyB'||event.key.toLowerCase()==='b'||event.keyCode===66)return active.quote?'paragraph':'quote';}
+ return null;
+}
 export const transformLabels:Record<TransformTarget,string>={paragraph:'Paragraph','heading-1':'Heading 1','heading-2':'Heading 2','heading-3':'Heading 3',bullet:'Bulleted item',number:'Numbered item',checklist:'Checklist item',quote:'Quote'};
 export type TransformPlan={from:number;to:number;expected:string;replacement:RichNode[];warnings:string[];text:string;blockId:string;target:TransformTarget;noop:boolean};
 type Normalizer=(document:RichNode)=>RichNode;
