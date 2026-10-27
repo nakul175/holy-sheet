@@ -1,12 +1,15 @@
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
+import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey,type JWTPayload } from "jose";
 import { DocumentError } from "./document";
+import { requireActiveSuiteSession } from './suite-session';
 
 export type Actor = { id: string; name?: string };
 export const localActor: Actor = {id:"00000000-0000-4000-8000-000000000001",name:"Your workspace"};
 const keys = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-export async function verifyIdentityToken(token:string,keyset:JWTVerifyGetKey,issuer:string,audience:string):Promise<Actor>{
+export async function verifyIdentityToken(token:string,keyset:JWTVerifyGetKey,issuer:string,audience:string,checkSession?:(payload:JWTPayload)=>Promise<void>):Promise<Actor>{
   const {payload}=await jwtVerify(token,keyset,{issuer,audience,algorithms:['RS256','ES256'],requiredClaims:['sub','exp','iat'],maxTokenAge:'1h',clockTolerance:5});
   if(!payload.sub||payload.sub.length>200||payload.exp!-Number(payload.iat)>3600||payload.exp!<=Number(payload.iat))throw new Error('Invalid session');
+  // Never send an unverified subject/session identifier to the live authority.
+  if(checkSession)await checkSession(payload);
   return {id:payload.sub};
 }
 export function localPreview(request: Request) {
@@ -37,8 +40,9 @@ export async function authenticate(request: Request): Promise<Actor> {
   if(!token) throw new DocumentError("Sign in to open this page", "authentication_required",401);
   try {
     let keyset=keys.get(jwks);if(!keyset){keyset=createRemoteJWKSet(new URL(jwks));keys.set(jwks,keyset);}
-    return await verifyIdentityToken(token,keyset,issuer,process.env.HS_IDENTITY_AUDIENCE??'holy-sheet');
-  } catch { throw new DocumentError("Session is invalid or expired", "authentication_required",401); }
+    const checkSession=process.env.HS_OIDC_ENABLED==='1'?(payload:JWTPayload)=>requireActiveSuiteSession(payload.sub!,payload.aplyd_session_uid,issuer,process.env.HS_OIDC_CLIENT_SECRET):undefined;
+    return await verifyIdentityToken(token,keyset,issuer,process.env.HS_IDENTITY_AUDIENCE??'holy-sheet',checkSession);
+  } catch(error) { if(error instanceof DocumentError)throw error;throw new DocumentError("Session is invalid or expired", "authentication_required",401); }
 }
 
 export async function api(request: Request, fn: (actor: Actor)=>Promise<unknown>, mutation = false) {
