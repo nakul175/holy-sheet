@@ -1,0 +1,15 @@
+// @vitest-environment jsdom
+import {act,createElement,type ReactNode} from 'react';
+import {createRoot} from 'react-dom/client';
+import {afterEach,it,expect,vi} from 'vitest';
+const mocks=vi.hoisted(()=>({request:vi.fn()}));
+vi.mock('../components/editor/use-document-session',async()=>({...await vi.importActual('../components/editor/use-document-session'),requestJson:mocks.request}));
+vi.mock('../components/editor/rich-editor',()=>({Dialog:({children}:{children:ReactNode})=>createElement('div',{role:'dialog'},children)}));
+import ExportPolicyDialog from '../components/export-policy-dialog';
+import {ApiError} from '../components/editor/use-document-session';
+let cleanup:()=>Promise<void>;
+afterEach(async()=>{await cleanup?.();vi.resetAllMocks();});
+async function mount(){Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});const host=document.createElement('div');document.body.append(host);const root=createRoot(host);await act(async()=>root.render(createElement(ExportPolicyDialog,{workspaceId:'workspace',onClose:vi.fn()})));cleanup=async()=>{await act(async()=>root.unmount());host.remove();};return {host,button:(name:string)=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent===name)!};}
+it('shows current reader policy without offering native management rights to an ordinary member',async()=>{mocks.request.mockResolvedValue({enabled:true,version:1,manage:false});const h=await mount();expect(h.host.querySelector<HTMLInputElement>('input')!.disabled).toBe(true);expect(h.host.textContent).toContain('Only a native workspace administrator');expect(h.host.textContent).not.toContain('Save workspace export policy');expect(mocks.request).toHaveBeenCalledOnce();});
+it('retains the same versioned policy request after an unconfirmed response',async()=>{mocks.request.mockResolvedValueOnce({enabled:true,version:1,manage:true}).mockRejectedValueOnce(new ApiError('Unconfirmed',503,'unavailable')).mockResolvedValueOnce({enabled:false,version:2,manage:true});const h=await mount();await act(async()=>h.host.querySelector<HTMLInputElement>('input')!.click());await act(async()=>h.button('Save workspace export policy').click());expect(h.host.querySelector<HTMLInputElement>('input')!.disabled).toBe(true);await act(async()=>h.button('Retry policy confirmation').click());expect(mocks.request.mock.calls[2][1].body).toBe(mocks.request.mock.calls[1][1].body);expect(h.host.textContent).toContain('policy confirmed');expect(h.host.querySelector<HTMLInputElement>('input')!.checked).toBe(false);});
+it('reports the current policy rather than mislabelling an old replay as the latest setting',async()=>{mocks.request.mockResolvedValueOnce({enabled:true,version:1,manage:true}).mockResolvedValueOnce({enabled:true,version:4,manage:true,replayed:true,applied:{enabled:false,version:2}});const h=await mount();await act(async()=>h.host.querySelector<HTMLInputElement>('input')!.click());await act(async()=>h.button('Save workspace export policy').click());expect(h.host.textContent).toContain('policy changed again later');expect(h.host.querySelector<HTMLInputElement>('input')!.checked).toBe(true);});

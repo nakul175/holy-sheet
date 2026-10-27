@@ -1,0 +1,7 @@
+import {z} from 'zod';
+import {api,localPreview,readJson} from '../../../../../../lib/auth';
+import {repository} from '../../../../../../lib/repository';
+import {downloadExport} from '../../../../../../lib/page-exports';
+import {DocumentError} from '../../../../../../lib/document';
+const schema=z.object({reviewHash:z.string().regex(/^[a-f0-9]{64}$/),confirmOmissions:z.boolean()}).strict();
+export async function POST(req:Request,{params}:{params:Promise<{id:string}>}){return api(req,async actor=>{const id=(await params).id;if(!z.string().uuid().safeParse(id).success)throw new DocumentError('Export unavailable','not_found',404);const input=schema.safeParse(await readJson(req,2048));if(!input.success)throw new DocumentError('Invalid download review');const result=await downloadExport(await repository(localPreview(req)),actor,id,input.data);return new Response(new Uint8Array(result.bytes),{headers:{'Content-Type':result.contentType,'Content-Disposition':`attachment; filename="holy-sheet-v${result.version}.${result.contentType==='application/pdf'?'pdf':'md'}"; filename*=UTF-8''${encodeURIComponent(result.filename).replace(/['()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase())}`,'Cache-Control':'private, no-store','Vary':'Cookie, Authorization','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'Referrer-Policy':'no-referrer','X-HS-Export-Version':String(result.version)}});},true);}
