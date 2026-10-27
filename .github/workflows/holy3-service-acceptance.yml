@@ -1,0 +1,57 @@
+name: HOLY-3 isolated scanner acceptance
+on:
+  push:
+    branches: [qualification/holy3-service-acceptance]
+permissions:
+  contents: read
+jobs:
+  scanner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: aeba93130d4ea304b07311cbd3cac0405153e543
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Start disposable loopback scanner with unchanged scan policy
+        run: |
+          mkdir -p artifacts
+          docker run -d --name holy3-acceptance-scanner --memory=2048m --memory-swap=2048m -p 127.0.0.1:57310:3310 -v "$PWD/deployment/clamd.conf:/etc/clamav/clamd.conf:ro" --entrypoint sh clamav/clamav@sha256:bda39705e291105049c3936e2803ac90b955172af8030f94f05dce1252df6c6d -c '(test -f /var/lib/clamav/daily.cvd || test -f /var/lib/clamav/daily.cld || freshclam) && exec clamd --config-file=/etc/clamav/clamd.conf'
+          node --input-type=module - <<'JS'
+          import net from 'node:net';
+          for(let attempt=0;attempt<90;attempt++){
+            const ready=await new Promise(resolve=>{const s=net.connect(57310,'127.0.0.1');let done=false;const finish=x=>{if(!done){done=true;s.destroy();resolve(x);}};s.setTimeout(2000,()=>finish(false));s.on('error',()=>finish(false));s.on('connect',()=>s.write('zPING\0'));s.on('data',b=>finish(b.toString().includes('PONG')));s.on('end',()=>finish(false));});
+            if(ready)process.exit(0);
+            await new Promise(resolve=>setTimeout(resolve,10000));
+          }
+          throw Error('Scanner readiness failed; no acceptance inferred.');
+          JS
+          docker exec holy3-acceptance-scanner clamdscan --version > artifacts/scanner-version.txt
+      - name: Run all six opt-in real scanner scenarios
+        env:
+          HS_TEST_CLAMAV_PORT: '57310'
+        run: |
+          npm run build:editor
+          npx vitest run lib/scanner.integration.test.ts --reporter=default --reporter=junit --outputFile.junit=artifacts/scanner.xml
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          const xml=fs.readFileSync('artifacts/scanner.xml','utf8');
+          if(!xml.includes('tests="6"')||!xml.includes('failures="0"')||xml.includes('<skipped'))throw Error('All six scanner scenarios must run and pass.');
+          fs.writeFileSync('artifacts/source.json',JSON.stringify({source:'aeba93130d4ea304b07311cbd3cac0405153e543',scope:'Real isolated scanner plus synthetic local objects/SQL; no staging service stopped or cloud restore claimed.'}));
+          JS
+      - name: Capture scanner evidence
+        if: always()
+        run: docker logs holy3-acceptance-scanner > artifacts/scanner.log 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: holy3-real-scanner-acceptance
+          path: artifacts/
+          retention-days: 7
+      - name: Remove only this disposable scanner
+        if: always()
+        run: docker rm -f holy3-acceptance-scanner || true
