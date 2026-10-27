@@ -8,7 +8,7 @@ export function createHolySheetSessionProvider():SessionProvider {
   // Capture the initial restrictive hint once: editor heading links may later change the hash.
   let context:ReturnType<typeof embedContext>|undefined;
   return {async check({signal,viewContext}){
-    context??=embedContext(location.hash,viewContext==='embedded'&&window.parent!==window);
+    context??=embedContext(location.hash,window.parent!==window);
     if(context.kind==='missing')return {status:'missing'};
     const response=await fetch('/auth/session',{cache:'no-store',signal});
     if(response.status===401)return {status:'signin'};

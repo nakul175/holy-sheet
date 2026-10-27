@@ -2,7 +2,13 @@
 import {act,createElement} from 'react';
 import {createRoot} from 'react-dom/client';
 import {expect,it,vi} from 'vitest';
-import {SessionGate} from '@aplyd/holy-sheet-editor/boundary';
+import {SessionGate,createHolySheetSessionProvider} from '@aplyd/holy-sheet-editor/boundary';
+it('requires a restrictive context in any frame even if the host asks for standalone layout',async()=>{
+  const parent=Object.getOwnPropertyDescriptor(window,'parent'),fetcher=vi.fn();
+  Object.defineProperty(window,'parent',{configurable:true,value:{}});vi.stubGlobal('fetch',fetcher);location.hash='';
+  try{expect(await createHolySheetSessionProvider().check({pageId:'qa-page',viewContext:'standalone',signal:new AbortController().signal})).toEqual({status:'missing'});expect(fetcher).not.toHaveBeenCalled();}
+  finally{if(parent)Object.defineProperty(window,'parent',parent);vi.unstubAllGlobals();}
+});
 it('enforces its own deadline even if a provider ignores abort and later succeeds',async()=>{
   vi.useFakeTimers();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
   const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
