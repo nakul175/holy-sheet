@@ -49,6 +49,16 @@ jobs:
           docker exec ${{ job.services.postgres.id }} createdb --username holy_sheet_acceptance holy_sheet_restore_acceptance
           docker exec -i ${{ job.services.postgres.id }} pg_restore --username holy_sheet_acceptance --dbname holy_sheet_restore_acceptance --no-owner --no-privileges < /tmp/holy-sheet-acceptance.dump
           node --import tsx scripts/verify-postgres-restore.mts > artifacts/postgres-restore.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Qualify synthetic PDF layout and preserve rendered pages
+        run: |
+          python -m pip install --disable-pip-version-check --no-input -r requirements-export-qa.txt
+          if ! command -v pdftoppm >/dev/null; then sudo apt-get update -qq && sudo apt-get install --yes poppler-utils; fi
+          node --import tsx scripts/verify-export-layout.mts
+          python scripts/check-export-layout.py
+          pdftoppm -scale-to 1000 -png output/pdf/export-layout-acceptance.pdf output/pdf/export-layout-page
       - run: npm run typecheck
       - run: npm run build
         env:
@@ -63,6 +73,7 @@ jobs:
             artifacts/unit.xml
             artifacts/*.tgz
             artifacts/postgres-restore.json
+            output/pdf/*
           if-no-files-found: ignore
 
   container:
@@ -84,6 +95,11 @@ jobs:
           mkdir -p artifacts
           printf 'Isolated import image canary' | docker run --rm --interactive --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 30 --memory 384m --network none --entrypoint node holy-sheet-candidate:${{ env.HS_CANDIDATE_SHA }} --max-old-space-size=256 --disallow-code-generation-from-strings --permission --allow-fs-read=/app/scripts/dist/import-document-worker.cjs /app/scripts/dist/import-document-worker.cjs txt > artifacts/import-image-canary.json
           node --input-type=module -e "import {readFileSync} from 'node:fs';import assert from 'node:assert/strict';const data=JSON.parse(readFileSync('artifacts/import-image-canary.json','utf8'));assert.equal(data.result.document.content[0].content[0].text,'Isolated import image canary');assert.equal(data.result.blocks,1);"
+      - name: Verify the bounded PDF worker ships in the exact image
+        run: |
+          node --input-type=module -e "import {writeFileSync} from 'node:fs';writeFileSync('/tmp/hs-export-canary.json',JSON.stringify({title:'Container export canary',version:1,createdAt:'2026-10-28T00:00:00Z',format:'pdf',origin:'https://hs.example',references:{},document:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Synthetic PDF image check'}]}]}}));"
+          docker run --rm --interactive --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 30 --memory 384m --network none --entrypoint node holy-sheet-candidate:${{ env.HS_CANDIDATE_SHA }} --max-old-space-size=256 --disallow-code-generation-from-strings --permission --allow-fs-read=/app/scripts/dist/export-document-worker.cjs /app/scripts/dist/export-document-worker.cjs < /tmp/hs-export-canary.json > artifacts/export-image-canary.pdf
+          node --input-type=module -e "import {readFileSync} from 'node:fs';import assert from 'node:assert/strict';const data=readFileSync('artifacts/export-image-canary.pdf');assert.equal(data.subarray(0,5).toString(),'%PDF-');assert.ok(data.length>1000);"
       - name: Qualify disabled and enabled editor boundaries
         run: |
           mkdir -p artifacts

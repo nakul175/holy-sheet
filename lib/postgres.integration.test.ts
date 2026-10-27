@@ -11,11 +11,21 @@ import { reserveMedia } from './media';
 import { personalNavigation,updatePersonalNavigation } from './personal-navigation';
 import { backlinks } from './page-references';
 import {prepareImport,changeImport} from './document-imports';
+import {createExport,downloadExport,cancelExport,changeExportPolicy} from './page-exports';
 import { connectedSearch } from './connected-search';
 
 const url=process.env.HS_TEST_POSTGRES_URL;
 let db:Database,r:Repository;
 describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
+  it('deduplicates concurrent private export starts and response retries',async()=>{
+    const p=await r.create(localActor,'PG export snapshot '+crypto.randomUUID(),'space-product'),input={id:crypto.randomUUID(),expectedVersion:p.version,format:'markdown' as const},jobs=await Promise.all([createExport(r,localActor,p.id,input),createExport(r,localActor,p.id,input)]);expect(jobs.filter(j=>j.replayed)).toHaveLength(1);expect(jobs[0].id).toBe(jobs[1].id);const files=await Promise.all(jobs.map(j=>downloadExport(r,localActor,j.id,{reviewHash:j.reviewHash,confirmOmissions:true})));expect(files[0].bytes.equals(files[1].bytes)).toBe(true);expect((await db.query('SELECT id FROM hs_audit WHERE action=$1 AND correlation_id=$2',['export.download',input.id])).rows).toHaveLength(1);
+  });
+  it('releases database locks while rendering so cancellation can prevent file issuance',async()=>{
+    const p=await r.create(localActor,'PG export cancel '+crypto.randomUUID(),'space-product'),j=await createExport(r,localActor,p.id,{id:crypto.randomUUID(),expectedVersion:p.version,format:'pdf'});let entered!:()=>void,release!:()=>void;const ready=new Promise<void>(resolve=>{entered=resolve;}),finish=new Promise<void>(resolve=>{release=resolve;});const file=downloadExport(r,localActor,j.id,{reviewHash:j.reviewHash,confirmOmissions:true},async()=>{entered();await finish;return Buffer.from('%PDF-synthetic');});await ready;try{await cancelExport(r,localActor,j.id);}finally{release();}await expect(file).rejects.toMatchObject({status:410});expect((await db.query('SELECT issued_at FROM hs_export_jobs WHERE id=$1',[j.id])).rows[0].issued_at).toBeNull();
+  });
+  it('serializes competing native export policies instead of losing a newer setting',async()=>{
+    const workspaceId=crypto.randomUUID(),actors=[{id:crypto.randomUUID()},{id:crypto.randomUUID()}];await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$2)',[workspaceId,'Isolated export policy PG']);for(const a of actors){await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[a.id]);await db.query("INSERT INTO hs_members(workspace_id,user_id,role) VALUES($1,$2,'admin')",[workspaceId,a.id]);}const results=await Promise.allSettled(actors.map(a=>changeExportPolicy(r,a,workspaceId,{operationId:crypto.randomUUID(),expectedVersion:1,enabled:false})));expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);expect(results.filter(x=>x.status==='rejected')).toHaveLength(1);expect((await db.query<{export_version:number;export_enabled:boolean}>('SELECT export_version,export_enabled FROM hs_workspaces WHERE id=$1',[workspaceId])).rows[0]).toEqual({export_version:2,export_enabled:false});
+  });
   it('deduplicates concurrent import previews and commits without copying content permissions',async()=>{
     const input={id:crypto.randomUUID(),spaceId:'space-product',title:'PG imported '+crypto.randomUUID(),filename:'source.txt'},source=Buffer.from('PG source'),parse=async()=>({document:ensureIds({type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'PG imported body'}]}]}),warnings:[],omittedImages:0,blocks:1,expandedBytes:9});
     const previews=await Promise.all([prepareImport(r,localActor,input,source,parse),prepareImport(r,localActor,input,source,parse)]);expect(previews[0].reviewHash).toBe(previews[1].reviewHash);expect((await db.query('SELECT id FROM hs_import_jobs WHERE id=$1',[input.id])).rows).toHaveLength(1);
