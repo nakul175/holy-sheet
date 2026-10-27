@@ -5,6 +5,7 @@ import { deleteObject } from "./media";
 export async function maintainStorage(r:Repository,erase:(key:string)=>Promise<void>=deleteObject){
   const {rows:candidates}=await r.db.query<{id:string;page_id:string;object_key:string}>(`SELECT m.id,m.page_id,m.object_key FROM hs_media m
     WHERE m.state IN ('rejected','purging') OR (m.state!='purged' AND m.created_at<now()-interval '30 minutes'
+    AND NOT(m.state IN ('reserved','uploading','processing') AND m.reservation_expires_at>clock_timestamp())
     AND NOT EXISTS (SELECT 1 FROM hs_blocks b JOIN hs_pages p ON p.id=b.page_id
       WHERE b.page_id=m.page_id AND p.deleted_at IS NULL AND b.type IN ('image','file') AND b.node->'attrs'->>'attachmentId'=m.id::text)
     AND NOT EXISTS (SELECT 1 FROM hs_drafts d WHERE d.page_id=m.page_id AND d.expires_at>now() AND d.attachment_ids @> jsonb_build_array(m.id::text))
@@ -16,6 +17,7 @@ export async function maintainStorage(r:Repository,erase:(key:string)=>Promise<v
     const {rows}=await tx.query<{state:string;scanned_at:string|null;deleted_at:string|null;created_at:string}>("SELECT state,scanned_at,deleted_at,created_at FROM hs_media WHERE id=$1 FOR UPDATE",[m.id]);const current=rows[0];if(!current)return;
     if(current.state==='purging'){purge.push({id:m.id,key:m.object_key});return;}
     if(current.state==='rejected'){await tx.query("UPDATE hs_media SET state='purging' WHERE id=$1",[m.id]);purge.push({id:m.id,key:m.object_key});return;}
+    const transfer=await tx.query("SELECT id FROM hs_media WHERE id=$1 AND state IN ('reserved','uploading','processing') AND reservation_expires_at>clock_timestamp()",[m.id]);if(transfer.rows.length)return;
     const live=await tx.query("SELECT b.id FROM hs_blocks b JOIN hs_pages p ON p.id=b.page_id WHERE b.page_id=$1 AND p.deleted_at IS NULL AND b.type IN ('image','file') AND b.node->'attrs'->>'attachmentId'=$2 LIMIT 1",[m.page_id,m.id]);
     const lease=await tx.query("SELECT id FROM hs_drafts WHERE page_id=$1 AND expires_at>now() AND attachment_ids @> $2::jsonb LIMIT 1",[m.page_id,JSON.stringify([m.id])]);
     const history=await tx.query("SELECT rm.media_id FROM hs_revision_media rm JOIN hs_revisions v ON v.page_id=rm.page_id AND v.version=rm.version JOIN hs_pages p ON p.id=v.page_id WHERE rm.media_id=$1 AND p.deleted_at IS NULL AND (p.version=v.version OR v.superseded_at>clock_timestamp()-interval '90 days') LIMIT 1",[m.id]);
