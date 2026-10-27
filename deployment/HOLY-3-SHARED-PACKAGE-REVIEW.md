@@ -1,5 +1,9 @@
 # Shared editor package candidate
 
+Subsequent package version 0.1.0-holy3.3 adds recovery lease and truthful-warning
+hardening; see HOLY-3-RECOVERY-LEASE-REVIEW.md. The earlier package checkpoint below
+remains historical evidence, not the final combined candidate result.
+
 `@aplyd/holy-sheet-editor@0.1.0-holy3.2` has local, hosted and boundary React
 entries. Both editor entries accept a page ID, view context and session provider.
 There is no authoritative user/role prop. HS standalone and embedded routes use
