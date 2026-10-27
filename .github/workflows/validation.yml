@@ -2,7 +2,7 @@ name: Validate Holy Sheet
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, integration/holy-next50-20261027]
 permissions:
   contents: read
 jobs:
