@@ -7,3 +7,5 @@ artifacts
 test-results
 playwright-report
 experiments
+packages/editor/dist
+packages/editor/*.tgz
