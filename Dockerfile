@@ -1,6 +1,7 @@
 FROM node:24-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY packages/editor/package.json ./packages/editor/package.json
 RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
