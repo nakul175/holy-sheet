@@ -1,0 +1,47 @@
+name: HOLY-3 container qualification
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build exact candidate image
+        run: docker build --tag holy-sheet-candidate:${{ github.sha }} .
+      - name: Qualify disabled and enabled editor boundaries
+        run: |
+          mkdir -p artifacts
+          for editor in 0 1; do
+            docker run --detach --name hs-container-check --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 100 --memory 512m --tmpfs /tmp:rw,noexec,nosuid,size=64m --publish 127.0.0.1:53104:3000 --env HS_LOCAL_PREVIEW=0 --env HS_RICH_EDITOR_ENABLED=$editor --env HS_OIDC_ENABLED=0 --env HS_ORIGIN=https://staging.holysheet.aplyd.org --env HS_IDENTITY_ISSUER=https://identity.example.invalid --env HS_IDENTITY_JWKS_URL=https://identity.example.invalid/jwks holy-sheet-candidate:${{ github.sha }}
+            for attempt in $(seq 1 30); do
+              if curl --fail --silent http://127.0.0.1:53104/ > /dev/null; then break; fi
+              sleep 1
+            done
+            node scripts/verify-rollout-boundaries.mjs http://127.0.0.1:53104 --require-framing > artifacts/container-boundaries-$editor.json
+            docker inspect --format '{{.Image}} {{.Config.User}} {{.HostConfig.ReadonlyRootfs}}' hs-container-check > artifacts/container-identity-$editor.txt
+            docker logs hs-container-check > artifacts/container-$editor.log 2>&1
+            docker rm --force hs-container-check
+          done
+          docker image inspect --format '{{.Id}}' holy-sheet-candidate:${{ github.sha }} > artifacts/container-image.txt
+      - name: Preserve the exact qualified image for constrained operator rollout
+        run: |
+          docker save holy-sheet-candidate:${{ github.sha }} | gzip -1 > artifacts/holy-sheet-candidate.tar.gz
+          sha256sum artifacts/holy-sheet-candidate.tar.gz > artifacts/holy-sheet-candidate.tar.gz.sha256
+      - name: Capture failure logs
+        if: failure()
+        run: docker logs hs-container-check > artifacts/container-failed.log 2>&1 || true
+      - name: Remove isolated test container
+        if: always()
+        run: docker rm --force hs-container-check || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: holy3-container-${{ github.sha }}
+          path: artifacts/
