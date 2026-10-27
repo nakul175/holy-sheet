@@ -107,6 +107,7 @@ article:hover .add-block,.add-block:focus { opacity:1; }
 .colour-control { font-size:9px; color:#999; display:grid; margin-left:6px; gap:2px; }
 .colour-control select { max-width:80px; border:0; background:#f8f8f6; border-radius:5px; font-size:11px; padding:3px; }
 .rich-prose { outline:none; min-height:240px; font-size:16px; line-height:1.75; letter-spacing:-.01em; overflow-wrap:anywhere; }
+.rich-prose[aria-readonly=true]:focus-visible { outline:2px solid #5141d2; outline-offset:4px; border-radius:4px; }
 .rich-prose p { margin:.45em 0 .8em; min-height:1.75em; }
 .rich-prose h1 { font-size:36px; letter-spacing:-.035em; line-height:1.2; margin:1em 0 .4em; }
 .rich-prose h2 { font-size:27px; letter-spacing:-.025em; line-height:1.3; margin:1.1em 0 .4em; }
