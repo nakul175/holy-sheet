@@ -26,6 +26,6 @@ Exact completed run counts are recorded in OVERNIGHT-LEDGER.md. Logs are retaine
 
 ## Remaining gates
 
-Expired local records are reported, but a dedicated expired-record cleanup control remains to be implemented. Browser coverage does not yet qualify simultaneous cross-tab crash/restart races, all network interruption points, mobile/browser matrix, accessibility, long-session performance, storage exhaustion or every HOLY-3 acceptance case. The coordinator and crypto have focused automated coverage, not full device acceptance.
+Confirmed own-device expired-record cleanup and bounded expired-key operator maintenance are now implemented; see HOLY-3-EXPIRED-RECOVERY-REVIEW.md. Browser coverage does not yet qualify simultaneous cross-tab crash/restart races, all network interruption points, mobile/browser matrix, accessibility, long-session performance, storage exhaustion or every HOLY-3 acceptance case. The coordinator and crypto have focused automated coverage, not full device acceptance.
 
 HOLY-3 still needs the remaining import/transform behavior and full security, recovery, accessibility and performance gates from its final specification. Actual suite identity, private staging object storage, DNS/TLS, SHO embed and integrated staging acceptance remain unresolved. Do not enable the rich editor or mark the story Done based on this checkpoint.

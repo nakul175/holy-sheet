@@ -36,5 +36,11 @@ export async function maintainStorage(r:Repository,erase:(key:string)=>Promise<v
   await r.db.query("DELETE FROM hs_revisions v WHERE superseded_at<=clock_timestamp()-interval '90 days' AND NOT EXISTS(SELECT 1 FROM hs_pages p WHERE p.id=v.page_id AND p.version=v.version) AND NOT EXISTS(SELECT 1 FROM hs_drafts d WHERE d.page_id=v.page_id AND d.base_version=v.version AND d.expires_at>now())");
   await r.db.query('DELETE FROM hs_restore_previews WHERE expires_at<=clock_timestamp()');
   await r.db.query('DELETE FROM hs_search_snapshots WHERE id IN (SELECT id FROM hs_search_snapshots WHERE expires_at<=clock_timestamp() ORDER BY expires_at LIMIT 100)');
+  const expiredKeys=await r.db.query<{id:string;page_id:string}>('SELECT id,page_id FROM hs_drafts WHERE expires_at<=clock_timestamp() ORDER BY expires_at LIMIT 50');
+  for(const key of expiredKeys.rows)await r.db.transaction(async tx=>{
+    // Same workspace-before-media/key order as upload and key renewal operations.
+    await tx.query('SELECT w.id FROM hs_workspaces w JOIN hs_pages p ON p.workspace_id=w.id WHERE p.id=$1 FOR UPDATE OF w',[key.page_id]);
+    await tx.query('DELETE FROM hs_drafts WHERE id=$1 AND expires_at<=clock_timestamp()',[key.id]);
+  });
   return {considered:candidates.length,removed,failed};
 }
