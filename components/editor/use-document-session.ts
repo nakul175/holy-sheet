@@ -3,13 +3,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DocumentPage } from "../../lib/repository";
 import { monitorAccess } from "../../lib/access-monitor";
 import { canEdit,type PageRole } from "../../lib/types";
-import { ensureIds, mergeDocuments, stableStringify, type RichNode } from "../../lib/document";
+import { ensureIds, mergeDocuments, schemaVersion, stableStringify, type RichNode } from "../../lib/document";
 import { decryptDraft, discardDraft, importDraftKey, recoveryDrafts, storeDraft, type DraftProtection, type RecoveryRecord } from "../../lib/recovery-client";
 
 export class ApiError extends Error { constructor(message:string,public status:number,public code:string,public retryAfter=0){super(message);} }
 export async function requestJson<T>(url:string,options?:RequestInit):Promise<T>{const r=await fetch(url,{cache:"no-store",...options});const data=await r.json();if(!r.ok)throw new ApiError(data.error??"Request failed",r.status,data.code,Number(r.headers.get("retry-after")??0));return data;}
 const post=(body:unknown):RequestInit=>({method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
 const signature=(title:string,document:RichNode)=>stableStringify([title,document]);
+const editableDocument=(page:DocumentPage)=>canEdit(page.role)&&page.schemaVersion===schemaVersion;
 type SavePayload = {operationId:string;baseVersion:number;title:string;document:RichNode};
 export type SaveStatus="loading"|"saved"|"saving"|"unsaved"|"offline"|"error"|"conflict"|"readonly";
 export function useDocumentSession(pageId:string,onSaved?:()=>void){
@@ -20,10 +21,10 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
   const restoredFrom=useRef<string|null>(null);
   const discardRequest=useRef(0);
   const setCurrent=(next:DocumentPage)=>{current.current=next;setPage(next);};
-  const establish=useCallback(async(p:DocumentPage)=>{if(!canEdit(p.role))return;try{const epoch=permissionEpoch.current,id=crypto.randomUUID();const response=await requestJson<{id:string;key:string;expiresAt:string}>(`/api/v1/pages/${pageId}/drafts`,post({id}));if(!alive.current||epoch!==permissionEpoch.current)return;const key=await importDraftKey(response.key);if(!alive.current||epoch!==permissionEpoch.current)return;protection.current={id,key,expiresAt:response.expiresAt};setRecoveryError("");}catch{setRecoveryError("Recovery unavailable — keep this tab open until your changes are saved.");}},[pageId]);
-  useEffect(()=>{alive.current=true;let cancelled=false;const epoch=permissionEpoch.current;void (async()=>{try{const d=await requestJson<{page:DocumentPage;actorId:string}>(`/api/v1/pages/${pageId}/document`);if(cancelled||epoch!==permissionEpoch.current)return;actor.current=d.actorId;setObservedActor(d.actorId);window.dispatchEvent(new CustomEvent("holy-sheet:identity",{detail:{userId:d.actorId}}));setCurrent(d.page);setStatus(!canEdit(d.page.role)?"readonly":"saved");await establish(d.page);try{const old=await recoveryDrafts(d.actorId,pageId);if(!cancelled&&epoch===permissionEpoch.current&&current.current&&canEdit(current.current.role))setCandidates(old);}catch{setRecoveryError("Recovery storage is unavailable in this browser.");}}catch(e){if(!cancelled){setError(e instanceof Error?e.message:"Page unavailable");setAuthRequired(e instanceof ApiError&&e.status===401);setStatus("error");}}})();return()=>{cancelled=true;alive.current=false;protection.current=null;for(const timer of [saveTimer,maxTimer,retryTimer,draftTimer])if(timer.current)clearTimeout(timer.current);};},[pageId,establish]);
+  const establish=useCallback(async(p:DocumentPage)=>{if(!editableDocument(p))return;try{const epoch=permissionEpoch.current,id=crypto.randomUUID();const response=await requestJson<{id:string;key:string;expiresAt:string}>(`/api/v1/pages/${pageId}/drafts`,post({id}));if(!alive.current||epoch!==permissionEpoch.current)return;const key=await importDraftKey(response.key);if(!alive.current||epoch!==permissionEpoch.current)return;protection.current={id,key,expiresAt:response.expiresAt};setRecoveryError("");}catch{setRecoveryError("Recovery unavailable — keep this tab open until your changes are saved.");}},[pageId]);
+  useEffect(()=>{alive.current=true;let cancelled=false;const epoch=permissionEpoch.current;void (async()=>{try{const d=await requestJson<{page:DocumentPage;actorId:string}>(`/api/v1/pages/${pageId}/document`);if(cancelled||epoch!==permissionEpoch.current)return;actor.current=d.actorId;setObservedActor(d.actorId);window.dispatchEvent(new CustomEvent("holy-sheet:identity",{detail:{userId:d.actorId}}));setCurrent(d.page);setStatus(!editableDocument(d.page)?"readonly":"saved");await establish(d.page);try{const old=await recoveryDrafts(d.actorId,pageId);if(!cancelled&&epoch===permissionEpoch.current&&current.current&&editableDocument(current.current))setCandidates(old);}catch{setRecoveryError("Recovery storage is unavailable in this browser.");}}catch(e){if(!cancelled){setError(e instanceof Error?e.message:"Page unavailable");setAuthRequired(e instanceof ApiError&&e.status===401);setStatus("error");}}})();return()=>{cancelled=true;alive.current=false;protection.current=null;for(const timer of [saveTimer,maxTimer,retryTimer,draftTimer])if(timer.current)clearTimeout(timer.current);};},[pageId,establish]);
 
-  const checkpoint=useCallback(async()=>{const p=current.current,k=protection.current;if(!p||!k||!dirty.current)return;try{if(Date.parse(k.expiresAt)<=Date.now())throw new Error('Recovery lease expired');await storeDraft(k,actor.current,pageId,{title:p.title,document:p.document,baseVersion:p.version});setRecoveryError("");}catch{setRecoveryError("Recovery storage failed — your changes still need a confirmed save.");}},[pageId]);
+  const checkpoint=useCallback(async()=>{const p=current.current,k=protection.current;if(!p||!k||!dirty.current||!editableDocument(p))return;try{if(Date.parse(k.expiresAt)<=Date.now())throw new Error('Recovery lease expired');await storeDraft(k,actor.current,pageId,{title:p.title,document:p.document,baseVersion:p.version});setRecoveryError("");}catch{setRecoveryError("Recovery storage failed — your changes still need a confirmed save.");}},[pageId]);
   useEffect(()=>{
     if(!observedActor)return;
     let stopped=false,reloading=false;
@@ -45,7 +46,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
       const p=current.current;
       if(p&&p.role===value.role){
         const paused=!accessReady.current;accessReady.current=true;setAccessUnverified(false);
-        if(paused){setError('');setStatus(canEdit(p.role)?dirty.current?'unsaved':'saved':'readonly');if(dirty.current&&!blocked.current)void saveFunction.current();}
+        if(paused){setError('');setStatus(editableDocument(p)?dirty.current?'unsaved':'saved':'readonly');if(dirty.current&&!blocked.current)void saveFunction.current();}
         return;
       }
       if(reloading)return;
@@ -56,10 +57,10 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
           const data=await requestJson<{page:DocumentPage;actorId:string}>(`/api/v1/pages/${pageId}/document`);
           if(stopped||epoch!==permissionEpoch.current||data.actorId!==observedActor)return;
           setCurrent(data.page);blocked.current=false;accessReady.current=true;setAccessUnverified(false);setAuthRequired(false);
-          setStatus(canEdit(data.page.role)?'saved':'readonly');setError(canEdit(data.page.role)?'':'Access changed. This page is now read-only.');
+          setStatus(editableDocument(data.page)?'saved':'readonly');setError(editableDocument(data.page)?'':'Access changed. This page is now read-only.');
           await establish(data.page);
           if(stopped||epoch!==permissionEpoch.current)return;
-          const drafts=canEdit(data.page.role)?await recoveryDrafts(observedActor,pageId):[];
+          const drafts=editableDocument(data.page)?await recoveryDrafts(observedActor,pageId):[];
           if(!stopped&&epoch===permissionEpoch.current)setCandidates(drafts);
         }catch{if(!stopped&&epoch===permissionEpoch.current)setError('Access changed. Reopen the page to check your current permission.');}
         finally{reloading=false;}
@@ -69,9 +70,9 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
     });
     return()=>{stopped=true;stop();};
   },[pageId,observedActor,checkpoint,establish]);
-  useEffect(()=>{let stopped=false;const renew=async()=>{const p=current.current,k=protection.current;if(!p||!k||!canEdit(p.role)||!dirty.current||!navigator.onLine)return;try{const ids=new Set<string>();const visit=(n:RichNode)=>{if((n.type==='image'||n.type==='file')&&typeof n.attrs?.attachmentId==='string')ids.add(n.attrs.attachmentId);n.content?.forEach(visit);};visit(p.document);const result=await requestJson<{expiresAt:string}>(`/api/v1/pages/${pageId}/drafts`,post({id:k.id,renew:true,attachmentIds:[...ids],baseVersion:p.version}));if(!stopped&&protection.current===k){k.expiresAt=result.expiresAt;await checkpoint();}}catch{if(!stopped)setRecoveryError('Recovery protection could not be renewed. Keep this tab open until your changes are saved.');}};const timer=setInterval(()=>void renew(),60_000);window.addEventListener('online',renew);return()=>{stopped=true;clearInterval(timer);window.removeEventListener('online',renew);};},[pageId,checkpoint]);
+  useEffect(()=>{let stopped=false;const renew=async()=>{const p=current.current,k=protection.current;if(!p||!k||!editableDocument(p)||!dirty.current||!navigator.onLine)return;try{const ids=new Set<string>();const visit=(n:RichNode)=>{if((n.type==='image'||n.type==='file')&&typeof n.attrs?.attachmentId==='string')ids.add(n.attrs.attachmentId);n.content?.forEach(visit);};visit(p.document);const result=await requestJson<{expiresAt:string}>(`/api/v1/pages/${pageId}/drafts`,post({id:k.id,renew:true,attachmentIds:[...ids],baseVersion:p.version}));if(!stopped&&protection.current===k){k.expiresAt=result.expiresAt;await checkpoint();}}catch{if(!stopped)setRecoveryError('Recovery protection could not be renewed. Keep this tab open until your changes are saved.');}};const timer=setInterval(()=>void renew(),60_000);window.addEventListener('online',renew);return()=>{stopped=true;clearInterval(timer);window.removeEventListener('online',renew);};},[pageId,checkpoint]);
   const save=useCallback(async()=>{
-    const p=current.current;if(!p||!dirty.current||saving.current||blocked.current||!accessReady.current||!canEdit(p.role))return;
+    const p=current.current;if(!p||!dirty.current||saving.current||blocked.current||!accessReady.current||!editableDocument(p))return;
     if(!navigator.onLine){setStatus("offline");void checkpoint();return;}
     saving.current=true;setStatus("saving");const token=generation.current,epoch=permissionEpoch.current;
     const operation=pending.current??{operationId:crypto.randomUUID(),baseVersion:p.version,title:p.title,document:structuredClone(p.document)};pending.current=operation;
@@ -79,6 +80,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
     try{
       const result=await requestJson<{page:DocumentPage;acknowledgedOperationId:string}>(`/api/v1/pages/${pageId}/operations`,post(operation));
       if(!alive.current||epoch!==permissionEpoch.current)return;
+      if(result.page.schemaVersion!==schemaVersion)throw new ApiError('The saved page uses a different document version. Your draft is retained.',409,'schema_version');
       if(result.acknowledgedOperationId!==operation.operationId)throw new Error("Save acknowledgement mismatch");
       pending.current=null;attempts.current=0;succeeded=true;
       const now=current.current!;
@@ -102,14 +104,14 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
   },[pageId,onSaved,checkpoint]);
   saveFunction.current=save;
 
-  function change(patch:Partial<Pick<DocumentPage,"title"|"document">>){const p=current.current;if(!p||!canEdit(p.role)||!accessReady.current)return;const next={...p,...patch};if(signature(next.title,next.document)===signature(p.title,p.document))return;setCurrent(next);generation.current++;dirty.current=true;setStatus(latest?"conflict":"unsaved");
+  function change(patch:Partial<Pick<DocumentPage,"title"|"document">>){const p=current.current;if(!p||!editableDocument(p)||!accessReady.current)return;const next={...p,...patch};if(signature(next.title,next.document)===signature(p.title,p.document))return;setCurrent(next);generation.current++;dirty.current=true;setStatus(latest?"conflict":"unsaved");
     if(saveTimer.current)clearTimeout(saveTimer.current);if(draftTimer.current)clearTimeout(draftTimer.current);
     draftTimer.current=setTimeout(()=>void checkpoint(),900);
     if(!latest){saveTimer.current=setTimeout(()=>void saveFunction.current(),750);if(!maxTimer.current)maxTimer.current=setTimeout(()=>{maxTimer.current=null;void saveFunction.current();},5000);}
   }
   useEffect(()=>{const online=()=>{if(dirty.current&&!latest)void saveFunction.current();};const leave=(e:BeforeUnloadEvent)=>{if(dirty.current){void checkpoint();e.preventDefault();e.returnValue="";}};const hide=()=>{if(document.visibilityState==="hidden")void checkpoint();};const clear=()=>{protection.current=null;};window.addEventListener("online",online);window.addEventListener("beforeunload",leave);document.addEventListener("visibilitychange",hide);window.addEventListener("holy-sheet:logout",clear);window.addEventListener("holy-sheet:checkpoint",checkpoint);return()=>{window.removeEventListener("online",online);window.removeEventListener("beforeunload",leave);document.removeEventListener("visibilitychange",hide);window.removeEventListener("holy-sheet:logout",clear);window.removeEventListener("holy-sheet:checkpoint",checkpoint);};},[checkpoint,latest]);
 
-  async function restore(candidate:RecoveryRecord){if(!accessReady.current||!current.current||!canEdit(current.current.role))return;const epoch=permissionEpoch.current;try{const data=await requestJson<{key:string}>(`/api/v1/pages/${pageId}/drafts`,post({id:candidate.id,existingOnly:true}));const draft=await decryptDraft(candidate,await importDraftKey(data.key));if(!alive.current||epoch!==permissionEpoch.current||!accessReady.current||!current.current||!canEdit(current.current.role))return;restoredFrom.current=candidate.id;setCurrent({...current.current,title:draft.title,document:draft.document,version:draft.baseVersion});generation.current++;dirty.current=true;pending.current=null;setCandidates([]);setStatus("unsaved");void saveFunction.current();}catch(e){setRecoveryError(e instanceof Error?e.message:"Draft cannot be unlocked");}}
+  async function restore(candidate:RecoveryRecord){if(!accessReady.current||!current.current||!editableDocument(current.current))return;const epoch=permissionEpoch.current;try{const data=await requestJson<{key:string}>(`/api/v1/pages/${pageId}/drafts`,post({id:candidate.id,existingOnly:true}));const draft=await decryptDraft(candidate,await importDraftKey(data.key));if(!alive.current||epoch!==permissionEpoch.current||!accessReady.current||!current.current||!editableDocument(current.current))return;restoredFrom.current=candidate.id;setCurrent({...current.current,title:draft.title,document:draft.document,version:draft.baseVersion});generation.current++;dirty.current=true;pending.current=null;setCandidates([]);setStatus("unsaved");void saveFunction.current();}catch(e){setRecoveryError(e instanceof Error?e.message:"Draft cannot be unlocked");}}
   async function discard(candidate:RecoveryRecord){await discardDraft(candidate.id);setCandidates(c=>c.filter(x=>x.id!==candidate.id));}
   async function keepLatest(){
     if(!latest||!current.current||!accessReady.current)return;
@@ -122,7 +124,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
       const discardIds=new Set([protection.current?.id,restoredFrom.current].filter((id):id is string=>!!id));
       dirty.current=false;pending.current=null;blocked.current=false;restoredFrom.current=null;
       for(const timer of [saveTimer,maxTimer,retryTimer,draftTimer]){if(timer.current)clearTimeout(timer.current);timer.current=null;}
-      setCurrent(fresh.page);setLatest(null);setStatus(!canEdit(fresh.page.role)?'readonly':'saved');setError('');
+      setCurrent(fresh.page);setLatest(null);setStatus(!editableDocument(fresh.page)?'readonly':'saved');setError('');
       for(const id of discardIds)await discardDraft(id).catch(()=>setRecoveryError('The discarded recovery checkpoint could not be removed from this device.'));
       onSaved?.();
     }catch(e){
@@ -134,7 +136,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
       }
     }
   }
-  function keepBoth(){if(!latest||!current.current||!accessReady.current||!canEdit(current.current.role))return;const recovered=ensureIds(current.current.document,true);const heading:RichNode={type:"heading",attrs:{id:crypto.randomUUID(),level:2},content:[{type:"text",text:"Recovered draft"}]};setCurrent({...latest,document:{type:"doc",content:[...(latest.document.content??[]),heading,...(recovered.content??[])]}});generation.current++;pending.current=null;dirty.current=true;blocked.current=false;setLatest(null);setStatus("unsaved");void saveFunction.current();}
-  function acceptExternal(next:DocumentPage){if(!current.current||!accessReady.current)return;if(dirty.current||saving.current||pending.current){blocked.current=true;setLatest(next);setStatus('conflict');return;}setCurrent(next);setStatus(canEdit(next.role)?'saved':'readonly');setError('');onSaved?.();}
+  function keepBoth(){if(!latest||!current.current||!accessReady.current||!editableDocument(current.current))return;if(latest.schemaVersion!==schemaVersion){setError('The latest page uses a different document version. Copy your draft or open the page in a compatible editor.');return;}const recovered=ensureIds(current.current.document,true);const heading:RichNode={type:"heading",attrs:{id:crypto.randomUUID(),level:2},content:[{type:"text",text:"Recovered draft"}]};setCurrent({...latest,document:{type:"doc",content:[...(latest.document.content??[]),heading,...(recovered.content??[])]}});generation.current++;pending.current=null;dirty.current=true;blocked.current=false;setLatest(null);setStatus("unsaved");void saveFunction.current();}
+  function acceptExternal(next:DocumentPage){if(!current.current||!accessReady.current)return;if(dirty.current||saving.current||pending.current){blocked.current=true;setLatest(next);setStatus('conflict');return;}setCurrent(next);setStatus(editableDocument(next)?'saved':'readonly');setError('');onSaved?.();}
   return {page,status,error,accessUnverified,authRequired,recoveryError,candidates,latest,change,save,restore,discard,keepLatest,keepBoth,acceptExternal,dirty:()=>dirty.current,checkpoint,actorId:actor.current};
 }

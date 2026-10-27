@@ -15,6 +15,15 @@ afterAll(async()=>{await db.close();});
 async function fixture(){const p=await r.create(owner,'Test page','space-product');await db.query("INSERT INTO hs_grants(page_id,subject,role) VALUES($1,'editor','editor'),($1,'viewer','viewer')",[p.id]);return p;}
 const operation=(p:{version:number},text:string)=>({operationId:crypto.randomUUID(),baseVersion:p.version,title:'Test page',document:body(text)});
 describe('authorized transactional persistence',()=>{
+  it('preserves unfamiliar-schema nodes and rejects old-writer saves without recording an operation',async()=>{
+    const p=await fixture(),future={type:'futureWidget',attrs:{id:p.document.content![0].attrs!.id,futureSetting:'retain'},content:[{type:'text',text:'Future content stays intact'}]};
+    await db.query('UPDATE hs_blocks SET type=$2,node=$3 WHERE page_id=$1',[p.id,'futureWidget',JSON.stringify(future)]);
+    await db.query('UPDATE hs_pages SET schema_version=3 WHERE id=$1',[p.id]);
+    const before=await r.get(p.id,owner),input=operation(p,'Old writer overwrite');
+    await expect(r.save(p.id,owner,input)).rejects.toMatchObject({code:'schema_version',status:409});
+    expect(await r.get(p.id,owner)).toEqual(before);expect(before.document.content).toEqual([future]);
+    expect((await db.query('SELECT * FROM hs_operations WHERE page_id=$1 AND operation_id=$2',[p.id,input.operationId])).rows).toHaveLength(0);
+  });
   it('starts from a durable SQL-backed welcome document',async()=>{const p=await r.get('welcome',owner);expect(p.document.content?.length).toBe(3);expect(p.role).toBe('owner');});
   it('reads grants, rejects viewer writes and does not reveal private pages',async()=>{const p=await fixture();expect((await r.get(p.id,viewer)).role).toBe('viewer');await expect(r.save(p.id,viewer,operation(p,'no'))).rejects.toMatchObject({status:403});await expect(r.get(p.id,outsider)).rejects.toMatchObject({status:404});expect((await r.list(outsider)).some(x=>x.id===p.id)).toBe(false);});
   it('checks membership even for a page owner and ignores mere space membership',async()=>{const p=await fixture();await db.query("UPDATE hs_members SET active=false WHERE user_id='editor'");await expect(r.get(p.id,editor)).rejects.toMatchObject({status:404});await db.query("UPDATE hs_members SET active=true WHERE user_id='editor'");});

@@ -3,11 +3,12 @@ import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {act,createElement} from 'react';
 import {createRoot,type Root} from 'react-dom/client';
 import {useDocumentSession} from '../components/editor/use-document-session';
+import {schemaVersion} from './document';
 import type {DocumentPage} from './repository';
 const mocks=vi.hoisted(()=>({receive:undefined as undefined|((value:any)=>void),unavailable:undefined as undefined|(()=>void)}));
 vi.mock('./access-monitor',()=>({monitorAccess:vi.fn((_check,receive,unavailable)=>{mocks.receive=receive;mocks.unavailable=unavailable;return vi.fn();})}));
 vi.mock('./recovery-client',()=>({importDraftKey:vi.fn().mockResolvedValue({}),recoveryDrafts:vi.fn().mockResolvedValue([]),storeDraft:vi.fn().mockResolvedValue(undefined),discardDraft:vi.fn().mockResolvedValue(undefined),decryptDraft:vi.fn()}));
-const initial={id:'test',title:'Private document',role:'editor',version:1,schemaVersion:1,workspaceId:'w',workspaceName:'QA',spaceId:'s',spaceName:'QA',parentPageId:null,visibility:'private',updatedAt:new Date().toISOString(),blocks:[],document:{type:'doc',content:[{type:'paragraph',attrs:{id:'p'}}]}} as DocumentPage;
+const initial={id:'test',title:'Private document',role:'editor',version:1,schemaVersion,workspaceId:'w',workspaceName:'QA',spaceId:'s',spaceName:'QA',parentPageId:null,visibility:'private',updatedAt:new Date().toISOString(),blocks:[],document:{type:'doc',content:[{type:'paragraph',attrs:{id:'p'}}]}} as DocumentPage;
 let root:Root,host:HTMLElement,session:ReturnType<typeof useDocumentSession>,remote:DocumentPage,fetchMock:ReturnType<typeof vi.fn>;
 function Probe(){session=useDocumentSession('test');return null;}
 const response=(data:unknown)=>({ok:true,json:async()=>data,headers:new Headers()});
