@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { embedContext } from '../lib/embed-context';
 import styles from './sho-document-picker.module.css';
 import { SignInLink } from './session-boundary';
+import ShoPageSearch from './sho-page-search';
 const defaultParentOrigin = 'https://sheethappensofficer.aplyd.org';
 const approvedHosts = new Set([defaultParentOrigin,'https://sho-qa.aplyd.org']);
 type Space = {
@@ -11,28 +12,22 @@ type Space = {
     workspaceId: string;
     workspaceName?: string;
 };
-type Page = {
-    id: string;
-    title: string;
-    spaceId: string;
-    workspaceId: string;
-};
 export default function ShoDocumentPicker() {
-    const [spaces, setSpaces] = useState<Space[]>([]), [pages, setPages] = useState<Page[]>([]), [space, setSpace] = useState(''), [workspace, setWorkspace] = useState('');
-    const [title, setTitle] = useState(''), [name, setName] = useState(''), [query, setQuery] = useState(''), [error, setError] = useState(''), [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [retry, setRetry] = useState(0), [pending, setPending] = useState(false), [setDefault, setSetDefault] = useState(false), [mode, setMode] = useState('create');
+    const [spaces, setSpaces] = useState<Space[]>([]), [space, setSpace] = useState(''), [workspace, setWorkspace] = useState('');
+    const [title, setTitle] = useState(''), [name, setName] = useState(''), [error, setError] = useState(''), [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [retry, setRetry] = useState(0), [pending, setPending] = useState(false), [setDefault, setSetDefault] = useState(false), [mode, setMode] = useState('create');
     const parentOrigin = useRef(defaultParentOrigin), identity = useRef(''), channel = useRef(''), intent = useRef<{
         title: string;
         spaceId: string;
         operationId: string;
     } | null>(null), active = useRef(true), epoch = useRef(0);
     async function call(body?: unknown) {
-        const response = await fetch('/api/v1/integrations/sho/picker', { method: body ? 'POST' : 'GET', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-HS-Actor': identity.current }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(10000) });
+        const response = await fetch('/api/v1/integrations/sho/picker'+(body?'':'?metadataOnly=1'), { method: body ? 'POST' : 'GET', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-HS-Actor': identity.current }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(10000) });
         const data = await response.json();
         if (!response.ok || data.subject !== identity.current) {
             if (response.status === 401 || response.status === 403) {
                 setReady(false);
                 setSpaces([]);
-                setPages([]);
+
             }
             throw Error(data.error || 'Holy Sheet is unavailable. Retry when connected.');
         }
@@ -53,9 +48,9 @@ export default function ShoDocumentPicker() {
         setBusy(false);
         setMode(params.get('hs-mode') === 'link' ? 'link' : 'create');
         void call().then(data => { if (!active.current || attempt !== epoch.current)
-            return; setSpaces(data.spaces); setPages(data.pages); const preferred = params.get('hs-space'); const selected = data.spaces.find((s: Space) => s.id === preferred); setSpace(selected?.id ?? ''); setWorkspace(selected?.workspaceId ?? data.spaces[0]?.workspaceId ?? ''); setReady(true); setError(preferred && !selected ? 'The project’s saved location is unavailable. Choose another space.' : ''); }).catch(e => { if (active.current && attempt === epoch.current)
+            return; setSpaces(data.spaces);  const preferred = params.get('hs-space'); const selected = data.spaces.find((s: Space) => s.id === preferred); setSpace(selected?.id ?? ''); setWorkspace(selected?.workspaceId ?? (params.get('hs-mode')==='link'?'':data.spaces[0]?.workspaceId??'')); setReady(true); setError(preferred && !selected ? 'The project’s saved location is unavailable. Choose another space.' : ''); }).catch(e => { if (active.current && attempt === epoch.current)
             setError(e.message); });
-        const revoke = () => { epoch.current++; setBusy(false); setReady(false); setSpaces([]); setPages([]); setError('Your session changed. Check your account and retry.'); };
+        const revoke = () => { epoch.current++; setBusy(false); setReady(false); setSpaces([]);  setError('Your session changed. Check your account and retry.'); };
         window.addEventListener('holy-sheet:logout', revoke);
         return () => { active.current = false; epoch.current++; window.removeEventListener('holy-sheet:logout', revoke); };
     }, [retry]);
@@ -111,7 +106,6 @@ export default function ShoDocumentPicker() {
  <label>New space name <input value={name} maxLength={80} disabled={busy || pending} onChange={e => setName(e.target.value)}/></label><button disabled={!workspace || !name.trim() || busy || pending}>Create space</button></form>
  <label className={styles.defaultOption}><input type="checkbox" checked={setDefault} disabled={busy || pending} onChange={e => setSetDefault(e.target.checked)}/>Use this space as the project default</label>
  <form onSubmit={e => { e.preventDefault(); void choose(); }}><label>Page title <input value={title} maxLength={240} disabled={busy || pending} onChange={e => setTitle(e.target.value)}/></label><button disabled={!space || busy}>{pending ? 'Retry same creation' : 'Create and link page'}</button></form></>}
- {mode === 'link' && <><label>Find existing page <input value={query} disabled={busy || pending} onChange={e => setQuery(e.target.value)}/></label>
- <ul>{pages.filter(p => (!space || p.spaceId === space) && p.workspaceId === workspace && p.title.toLowerCase().includes(query.toLowerCase())).map(p => <li key={p.id}><button disabled={busy || pending} onClick={() => void choose(p.id)}>{p.title}</button></li>)}</ul></>}
+ {mode === 'link' && <ShoPageSearch key={identity.current+':'+workspace+':'+space} subject={identity.current} workspaceId={workspace} spaceId={space||undefined} locked={busy||pending} onSelect={id=>void choose(id)} onAccountFailure={()=>{epoch.current++;setReady(false);setSpaces([]);setError('Your session changed. Sign in with the same Aplyd account as SHO and retry.');}}/>}
  </>}</main>;
 }
