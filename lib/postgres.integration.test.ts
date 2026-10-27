@@ -10,11 +10,21 @@ import { changeTemplate,readTemplate } from './templates';
 import { reserveMedia } from './media';
 import { personalNavigation,updatePersonalNavigation } from './personal-navigation';
 import { backlinks } from './page-references';
+import {prepareImport,changeImport} from './document-imports';
 import { connectedSearch } from './connected-search';
 
 const url=process.env.HS_TEST_POSTGRES_URL;
 let db:Database,r:Repository;
 describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
+  it('deduplicates concurrent import previews and commits without copying content permissions',async()=>{
+    const input={id:crypto.randomUUID(),spaceId:'space-product',title:'PG imported '+crypto.randomUUID(),filename:'source.txt'},source=Buffer.from('PG source'),parse=async()=>({document:ensureIds({type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'PG imported body'}]}]}),warnings:[],omittedImages:0,blocks:1,expandedBytes:9});
+    const previews=await Promise.all([prepareImport(r,localActor,input,source,parse),prepareImport(r,localActor,input,source,parse)]);expect(previews[0].reviewHash).toBe(previews[1].reviewHash);expect((await db.query('SELECT id FROM hs_import_jobs WHERE id=$1',[input.id])).rows).toHaveLength(1);
+    const results=await Promise.all([1,2].map(()=>changeImport(r,localActor,input.id,{action:'commit',reviewHash:previews[0].reviewHash})));expect(results.filter(x=>x.replayed)).toHaveLength(1);expect(results[0].pageId).toBe(results[1].pageId);expect((await db.query('SELECT id FROM hs_pages WHERE title=$1',[input.title])).rows).toHaveLength(1);expect((await db.query('SELECT * FROM hs_grants WHERE page_id=$1',[results[0].pageId])).rows).toEqual([]);
+  });
+  it('serializes import cancel versus commit into one terminal outcome',async()=>{
+    const p=await prepareImport(r,localActor,{id:crypto.randomUUID(),spaceId:'space-product',title:'PG cancel race '+crypto.randomUUID(),filename:'race.txt'},Buffer.from('race'),async()=>({document:ensureIds({type:'doc',content:[{type:'paragraph'}]}),warnings:[],omittedImages:0,blocks:1,expandedBytes:4}));
+    const results=await Promise.allSettled([changeImport(r,localActor,p.id,{action:'commit',reviewHash:p.reviewHash}),changeImport(r,localActor,p.id,{action:'cancel',reviewHash:p.reviewHash})]);expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);const job=(await db.query<{state:string;page_id:string|null;document:unknown}>('SELECT state,page_id,document FROM hs_import_jobs WHERE id=$1',[p.id])).rows[0];expect(['committed','cancelled']).toContain(job.state);expect(job.document).toBeNull();expect(!!job.page_id).toBe(job.state==='committed');
+  });
   it('creates exactly one page for concurrent lost-response retries and checks current membership on replay',async()=>{
     const operationId=crypto.randomUUID(),title='PG creation '+operationId;
     const [first,second]=await Promise.all([r.create(localActor,title,'space-product',null,operationId),r.create(localActor,title,'space-product',null,operationId)]);
