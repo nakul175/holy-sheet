@@ -2,6 +2,24 @@
 
 Status: **in progress, not release qualified**. Authoritative requirements are HOLY-3 final spec revision 2.0 in BTF and its linked 38-case BugOff catalogue.
 
+Code checkpoint after PR31 (27 October 2026): merged as `dbc5066`, including
+the versioned shared React editor package and recovery/conflict corrections.
+Final application CI passed 458 tests with six scanner checks skipped; real
+isolated PostgreSQL, typecheck/build/pack and source/artifact verification passed.
+Preparation initially observed staging `99a6327`; the later independent rollout
+was observed at `188524d` (previous `99a6327`), with OIDC/editor enabled and preview
+disabled. Grok's live tests and full product/device/performance acceptance remain separate.
+Follow [HOLY-3-ROLLOUT.md](HOLY-3-ROLLOUT.md) for the prepared switch/rollback
+procedure; container qualification is an additional readiness gate. The older
+paragraphs below are historical implementation checkpoints, not current flag or
+deployment assertions.
+
+Merged picker PR32 (`9aa0556`) subsequently adds private creation/selection for
+SHO, retry-safe creation-ledger migration011 and the separate same-site QA framing
+origin. The prepared rollout incorporates that source rather than reverting it;
+refer to the rollout plan and its new container/SQL restore gates. Paired live
+qualification remains open.
+
 Implemented locally: shared rich editor, structured document validation, stable block IDs, SQL-backed documents and revisions, permission-filtered reads/search, optimistic save operations and conservative merges, encrypted local draft recovery with authorized key retrieval, private upload reservations/scanning gateway, protected media downloads, and staging infrastructure scaffolding.
 
 Known work remaining before full acceptance:

@@ -43,6 +43,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test -- --reporter=default --reporter=junit --outputFile.junit=artifacts/unit.xml
+      - name: Rehearse synthetic PostgreSQL backup and restore
+        run: |
+          docker exec ${{ job.services.postgres.id }} pg_dump --username holy_sheet_acceptance --dbname holy_sheet_acceptance --format custom > /tmp/holy-sheet-acceptance.dump
+          docker exec ${{ job.services.postgres.id }} createdb --username holy_sheet_acceptance holy_sheet_restore_acceptance
+          docker exec -i ${{ job.services.postgres.id }} pg_restore --username holy_sheet_acceptance --dbname holy_sheet_restore_acceptance --no-owner --no-privileges < /tmp/holy-sheet-acceptance.dump
+          node --import tsx scripts/verify-postgres-restore.mts > artifacts/postgres-restore.json
       - run: npm run typecheck
       - run: npm run build
         env:
@@ -56,30 +62,52 @@ jobs:
           path: |
             artifacts/unit.xml
             artifacts/*.tgz
+            artifacts/postgres-restore.json
           if-no-files-found: ignore
 
   container:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      HS_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
-      - name: Build the actual workspace deployment image
-        run: docker build -t holy-sheet-qualification:${{ github.sha }} .
-      - name: Verify standalone and embedded routes load from the image
+        with:
+          ref: ${{ env.HS_CANDIDATE_SHA }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build exact candidate image
+        run: docker build --label org.opencontainers.image.revision=${{ env.HS_CANDIDATE_SHA }} --tag holy-sheet-candidate:${{ env.HS_CANDIDATE_SHA }} .
+      - name: Qualify disabled and enabled editor boundaries
         run: |
-          name="holy-sheet-image-${GITHUB_RUN_ID}"
-          cleanup() { docker logs "$name" || true; docker rm -f "$name" || true; }
-          trap cleanup EXIT
-          docker run -d --name "$name" -p 127.0.0.1:3419:3000 \
-            -e HS_LOCAL_PREVIEW=0 -e HS_RICH_EDITOR_ENABLED=1 \
-            -e HS_IDENTITY_ISSUER=https://accounts.aplyd.org \
-            -e HS_IDENTITY_JWKS_URL=https://accounts.aplyd.org/jwks \
-            holy-sheet-qualification:${{ github.sha }}
-          for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:3419/embed/picker > /tmp/holy-sheet-picker.html; then break; fi
-            sleep 1
+          mkdir -p artifacts
+          for editor in 0 1; do
+            docker run --detach --name hs-container-check --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 100 --memory 512m --tmpfs /tmp:rw,noexec,nosuid,size=64m --publish 127.0.0.1:53104:3000 --env HS_LOCAL_PREVIEW=0 --env HS_RICH_EDITOR_ENABLED=$editor --env HS_OIDC_ENABLED=0 --env HS_ORIGIN=https://staging.holysheet.aplyd.org --env HS_IDENTITY_ISSUER=https://identity.example.invalid --env HS_IDENTITY_JWKS_URL=https://identity.example.invalid/jwks holy-sheet-candidate:${{ env.HS_CANDIDATE_SHA }}
+            for attempt in $(seq 1 30); do
+              if curl --fail --silent http://127.0.0.1:53104/ > /dev/null; then break; fi
+              sleep 1
+            done
+            node scripts/verify-rollout-boundaries.mjs http://127.0.0.1:53104 --require-framing --picker > artifacts/container-boundaries-$editor.json
+            docker inspect --format '{{.Image}} {{.Config.User}} {{.HostConfig.ReadonlyRootfs}}' hs-container-check > artifacts/container-identity-$editor.txt
+            docker logs hs-container-check > artifacts/container-$editor.log 2>&1
+            if rg 'MODULE_NOT_FOUND|Cannot find module' artifacts/container-$editor.log; then exit 1; fi
+            docker rm --force hs-container-check
           done
-          curl -fsS http://127.0.0.1:3419/ > /tmp/holy-sheet-home.html
-          curl -fsS http://127.0.0.1:3419/embed/pages/00000000-0000-4000-8000-000000000001 > /tmp/holy-sheet-embed.html
-          test "$(curl -s -o /tmp/holy-sheet-denied.json -w '%{http_code}' http://127.0.0.1:3419/api/pages)" = 401
-          if docker logs "$name" 2>&1 | rg 'MODULE_NOT_FOUND|Cannot find module'; then exit 1; fi
+          docker image inspect --format '{{.Id}} {{.Size}} {{index .Config.Labels "org.opencontainers.image.revision"}}' holy-sheet-candidate:${{ env.HS_CANDIDATE_SHA }} > artifacts/container-image.txt
+      - name: Preserve the exact qualified image for constrained operator rollout
+        run: |
+          docker save holy-sheet-candidate:${{ env.HS_CANDIDATE_SHA }} | gzip -1 > artifacts/holy-sheet-candidate.tar.gz
+          sha256sum artifacts/holy-sheet-candidate.tar.gz > artifacts/holy-sheet-candidate.tar.gz.sha256
+      - name: Capture failure logs
+        if: failure()
+        run: docker logs hs-container-check > artifacts/container-failed.log 2>&1 || true
+      - name: Remove isolated test container
+        if: always()
+        run: docker rm --force hs-container-check || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: holy3-container-${{ env.HS_CANDIDATE_SHA }}
+          path: artifacts/
+          retention-days: 7
