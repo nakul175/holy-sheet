@@ -1,0 +1,2 @@
+# CI/local synthetic layout checks only; not an application runtime dependency.
+pdfplumber==0.11.9
