@@ -8,6 +8,10 @@ await check('Document data requires identity','/api/v1/pages/welcome/document',4
 await check('Page listing requires identity','/api/pages',401);
 await check('Search requires identity','/api/search?q=orchid',401);
 await check('Template library requires identity','/api/v1/templates?workspaceId=ws-aplyd',401);
+await check('Personal lists require identity','/api/v1/personal-navigation',401);
+await check('Backlinks require identity','/api/v1/pages/welcome/backlinks',401);
+await check('Scoped private search requires identity','/api/v1/connected-search',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:JSON.stringify({query:'synthetic query',workspaceId:'ws-aplyd',requestId:'11111111-1111-4111-8111-111111111111'})});
+await check('Upload recovery state requires identity','/api/uploads/11111111-1111-4111-8111-111111111111',401);
 await check('Protected media requires identity','/api/media/11111111-1111-4111-8111-111111111111',401);
 await check('Forged user header is not an identity','/api/pages',401,{headers:{'x-user-id':'local-owner','x-hs-local-preview':'1'}});
 await check('Foreign mutation origin denied','/api/pages',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});

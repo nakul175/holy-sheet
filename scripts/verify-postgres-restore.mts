@@ -7,7 +7,9 @@ import { stableStringify } from '../lib/document';
 const source=new URL(process.env.HS_TEST_POSTGRES_URL??'');
 assert.ok(['127.0.0.1','localhost'].includes(source.hostname));
 assert.equal(source.pathname,'/holy_sheet_acceptance');
-const restored=new URL(source);restored.pathname='/holy_sheet_restore_acceptance';
+const restored=new URL(source),restoreDatabase=process.env.HS_TEST_RESTORE_DATABASE??'holy_sheet_restore_acceptance';
+assert.match(restoreDatabase,/^holy_sheet_restore_acceptance(?:_[a-f0-9]{8})?$/,'Use a dedicated synthetic restore database.');
+restored.pathname='/'+restoreDatabase;
 const a=new Pool({connectionString:source.href}),b=new Pool({connectionString:restored.href});
 try{
  const tables=(await a.query<{tablename:string}>("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'hs_%' ORDER BY tablename")).rows;
