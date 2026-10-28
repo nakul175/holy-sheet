@@ -15,7 +15,8 @@ import Image from "@tiptap/extension-image";
 import { Details, DetailsSummary, DetailsContent } from "@tiptap/extension-details";
 import UniqueID from "@tiptap/extension-unique-id";
 import { sanitizePaste } from "../../lib/editor-paste";
-import { NodeSelection, TextSelection } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { Step } from "@tiptap/pm/transform";
 import { collab, getVersion, receiveTransaction, sendableSteps } from "prosemirror-collab";
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -44,6 +45,7 @@ import type { ThreadView } from '../../lib/discussion-types';
 import type { AnchorInput } from '../../lib/comment-anchors';
 
 const noThreads:ThreadView[]=[];
+const presencePluginKey=new PluginKey<DecorationSet>('holySheetPresence');
 type Collaborator={sessionId:string;actorId:string;name:string;clientId:string;anchorBlockId:string|null;anchorOffset:number|null;headBlockId:string|null;headOffset:number|null};
 type CollaborationStart={sessionId:string;epoch:string;stepVersion:number;pageVersion:number;document:RichNode;collaborators:Collaborator[]};
 type CollaborationStatus='saved'|'saving'|'offline'|'error';
@@ -100,7 +102,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
   useEffect(()=>{const logout=()=>{closeMedia();setTransformOpen(false);setTransformPlan(null);setPasteReview(null);setPlainPoint(null);};window.addEventListener('holy-sheet:logout',logout);return()=>window.removeEventListener('holy-sheet:logout',logout);},[]);
   const slash=useRef(false),insertAt=useRef<number|null>(null),onChangeRef=useRef(onChange),collaborativeChangeRef=useRef(onCollaborativeChange),lastEmitted=useRef(stableStringify(document)),restoring=useRef(false),savedFindSelection=useRef<FindSelection|null>(null),temporaryOpen=useRef<TemporarySection[]>([]),discussionOpen=useRef<TemporarySection[]>([]);
   onChangeRef.current=onChange;collaborativeChangeRef.current=onCollaborativeChange;
-  const collaborationExtension=useRef(collaboration?Extension.create({name:'holySheetCollaboration',addProseMirrorPlugins(){return [collab({version:collaboration.stepVersion,clientID:collaboration.clientId})];}}):null);
+  const collaborationExtension=useRef(collaboration?Extension.create({name:'holySheetCollaboration',addProseMirrorPlugins(){return [collab({version:collaboration.stepVersion,clientID:collaboration.clientId}),new Plugin<DecorationSet>({key:presencePluginKey,state:{init:()=>DecorationSet.empty,apply(transaction,current){return transaction.getMeta(presencePluginKey)??current.map(transaction.mapping,transaction.doc);}},props:{decorations(state){return presencePluginKey.getState(state)??null;}}})];}}):null);
   const editor=useEditor({immediatelyRender:false,editable,content:document,extensions:[
     StarterKit.configure({heading:{levels:[1,2,3]},codeBlock:false,undoRedo:{depth:100,newGroupDelay:750},link:{openOnClick:false,autolink:false,linkOnPaste:false,isAllowedUri:url=>safeUrl(url),HTMLAttributes:{target:"_blank",rel:"noopener noreferrer"}}}),
     TextStyle,Color,Highlight.configure({multicolor:true}),TaskList,TaskItem.configure({nested:true}),TableKit.configure({table:{resizable:true,allowTableNodeSelection:true}}),
@@ -145,6 +147,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
     collaborationWake.current=()=>void run();presenceWake.current=()=>void sendPresence();timer=setInterval(()=>{void run();void sendPresence();},5000);void run();void sendPresence();
     return()=>{live=false;collaborationWake.current=null;presenceWake.current=null;if(timer)clearInterval(timer);void fetch(`/api/v1/pages/${encodeURIComponent(pageId)}/collaboration`,{...body({action:'leave',sessionId:collaboration.sessionId,epoch:collaboration.epoch,clientId:collaboration.clientId}),keepalive:true}).catch(()=>{});};
   },[editor,collaboration,pageId]);
+  useEffect(()=>{if(!editor||!collaboration)return;const blocks=new Map<string,{pos:number;size:number}>();editor.state.doc.descendants((node,pos)=>{if(typeof node.attrs.id==='string')blocks.set(node.attrs.id,{pos:pos+1,size:node.content.size});});const decorations:Decoration[]=[];for(const person of collaborators){if(person.clientId===collaboration.clientId)continue;const anchor=person.anchorBlockId?blocks.get(person.anchorBlockId):undefined,head=person.headBlockId?blocks.get(person.headBlockId):undefined;if(!anchor||!head)continue;const from=Math.min(anchor.pos+Math.min(anchor.size,person.anchorOffset??0),head.pos+Math.min(head.size,person.headOffset??0)),to=Math.max(anchor.pos+Math.min(anchor.size,person.anchorOffset??0),head.pos+Math.min(head.size,person.headOffset??0)),colour=`hsl(${[...person.actorId].reduce((sum,char)=>sum+char.charCodeAt(0),0)%360} 65% 45%)`;if(to>from)decorations.push(Decoration.inline(from,to,{class:'collaborator-selection',style:`--collaborator-colour:${colour}`}));decorations.push(Decoration.widget(to,()=>{const marker=window.document.createElement('span');marker.className='collaborator-caret';marker.style.setProperty('--collaborator-colour',colour);marker.setAttribute('aria-label',`${person.name} cursor`);marker.title=person.name;return marker;},{key:person.sessionId,side:1}));}editor.view.dispatch(editor.state.tr.setMeta(presencePluginKey,DecorationSet.create(editor.state.doc,decorations)).setMeta('addToHistory',false));},[editor,collaboration,collaborators]);
   useEffect(()=>{if(!editor||!resumeUpload)return;let active=true,handed=false;void(async()=>{try{const target=resumeUpload.newPlacement?captureMediaPlacement(editor,resumeUpload.payload.type):await rehydrateMediaPlacement(editor,resumeUpload.payload.target);if(!active){await resumeUpload.release?.();return;}setMediaTarget(target);setMediaFile(null);setMediaRecovered(resumeUpload);setMedia(resumeUpload.payload.type);handed=true;}catch(e){if(active){setNotice(e instanceof Error?e.message:'The upload placement needs review.');onRecoveryClosed?.();}await resumeUpload.release?.();}})();return()=>{active=false;if(!handed)void resumeUpload.release?.();};},[editor,resumeUpload]);
   const state=useEditorState({editor,selector:({editor:e})=>e?{selection:e.state.selection.from,selectionEnd:e.state.selection.to,find:findKey.getState(e.state),undo:e.can().undo(),redo:e.can().redo(),table:e.isActive("table"),code:e.isActive("codeBlock"),image:e.isActive("image"),file:e.isActive("file"),callout:e.isActive("callout"),format:selectionFormat(e.state)}:null});
   useEffect(()=>{if(editor){editor.setEditable(editable);editor.view.dom.setAttribute('aria-readonly',String(!editable));}},[editor,editable]);
