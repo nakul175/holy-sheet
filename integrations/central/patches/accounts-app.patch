@@ -8,7 +8,7 @@
  
  const sha=(s)=>createHash('sha256').update(s).digest();
  const same=(a,b)=>typeof a==='string'&&typeof b==='string'&&timingSafeEqual(sha(a),sha(b));
-@@ -134,16 +135,24 @@
+@@ -134,16 +135,25 @@
        next();
      } catch(error) { next(error); }
    });
