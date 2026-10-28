@@ -24,6 +24,10 @@ describe('private template and starter foundation',()=>{
   const page=await changeTemplate(r,other,workspace,{kind:'instantiate',operationId:crypto.randomUUID(),id,revision:1,spaceId:'space-product',title:'Member copy'});
   expect((await r.get(String(page.pageId),other)).role).toBe('owner');
   await expect(readTemplate(r,other,workspace,id,true)).rejects.toMatchObject({status:404});
+  await db.query("UPDATE hs_members SET role='owner' WHERE workspace_id=$1 AND user_id=$2",[workspace,owner.id]);
+  const ownerTemplate=await personal('Owner-managed space template');
+  await expect(changeTemplate(r,owner,workspace,{kind:'publish-space',operationId:crypto.randomUUID(),id:ownerTemplate,expectedDraftVersion:1,spaceId:'space-product',reviewed:true})).resolves.toMatchObject({publishedVersion:1,spaceId:'space-product'});
+  await expect(readTemplate(r,owner,workspace,ownerTemplate,true)).resolves.toMatchObject({scope:'space'});
   await db.query("UPDATE hs_members SET role='member' WHERE workspace_id=$1 AND user_id=$2",[workspace,owner.id]);
   await expect(changeTemplate(r,owner,workspace,{kind:'archive',operationId:crypto.randomUUID(),id,expectedDraftVersion:1})).rejects.toMatchObject({status:404});
  });
