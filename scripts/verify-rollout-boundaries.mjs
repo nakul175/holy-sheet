@@ -13,6 +13,8 @@ async function check(name,path,status,options={}){
 await check('Public landing','/',200);
 await check('Workspace chooser public shell','/workspaces',200);
 await check('Workspace actor hint cannot authenticate','/api/workspaces',401,{headers:{'x-user-id':'local-owner','x-hs-local-preview':'1'}});
+await check('Space creation intent requires identity','/api/v1/space-creations',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Space creation intent rejects foreign origin','/api/v1/space-creations',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
 await check('Local-only synthetic record preview','/qualification/record-layout',404);
 const documentShell=await check('Standalone public shell','/pages/welcome',200),embedShell=await check('Embedded public shell','/embed/pages/11111111-1111-4111-8111-111111111111',200);
 if(framing){
