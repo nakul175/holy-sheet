@@ -16,14 +16,15 @@ export default function CreatePage({spaces:allSpaces,parent,workspaceId,onClose,
   async function submit(e:React.FormEvent){
     e.preventDefault();if(running.current)return;running.current=true;setBusy(true);setError('');
     try{
+      const retrying=!!attempt.current;
       if(!attempt.current)attempt.current={title:name,parentPageId:asChild&&parent?parent.id:null,destination:spaceId,spaceBody:newSpace.trim()?JSON.stringify({name:newSpace,workspaceId,operationId:crypto.randomUUID()}):null,pageBody:null};
       const intent=attempt.current;
       if(intent.spaceBody){
         try{
-          const d=await requestJson<{space:Space}>("/api/spaces",{method:'POST',headers:{'content-type':'application/json'},body:intent.spaceBody});
+          const d=await requestJson<{space:Space}>("/api/v1/space-creations",{method:'POST',headers:{'content-type':'application/json'},body:intent.spaceBody});
           intent.destination=d.space.id;intent.spaceBody=null;
         }catch(e){
-          if(e instanceof ApiError&&e.status>=400&&e.status<500&&e.status!==408&&e.status!==429)attempt.current=null;
+          if(!retrying&&e instanceof ApiError&&e.status>=400&&e.status<500&&e.status!==408&&e.status!==429)attempt.current=null;
           throw e;
         }
       }
