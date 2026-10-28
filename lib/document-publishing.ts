@@ -11,17 +11,20 @@ const hash=(v:unknown)=>createHash('sha256').update(stableStringify(v)).digest('
 const fail=(code='publication_conflict',status=409)=>new DocumentError('Publishing state changed or is unavailable. Refresh and review before retrying.',code,status);
 const identity=z.string().min(1).max(200),version=z.number().int().positive();
 const base={operationId:z.string().uuid(),expectedVersion:z.number().int().nonnegative()};
+const blockId=z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
+const referenceBinding=z.object({blockId,sourceBlockId:blockId}).strict();
+type ReferenceBinding=z.infer<typeof referenceBinding>;
 export const publishingCommand=z.discriminatedUnion('action',[
  z.object({...base,action:z.literal('configure'),reviewers:z.array(identity).min(1).max(20)}).strict(),
- z.object({...base,action:z.literal('submit'),sourceVersion:version}).strict(),
+ z.object({...base,action:z.literal('submit'),sourceVersion:version,bindings:z.array(referenceBinding).max(100).optional()}).strict(),
  z.object({...base,action:z.enum(['approve','reject']),reviewId:z.string().uuid(),snapshotHash:z.string().regex(/^[a-f0-9]{64}$/),reason:z.string().trim().min(1).max(1000)}).strict(),
  z.object({...base,action:z.literal('publish'),reviewId:z.string().uuid(),snapshotHash:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
  z.object({...base,action:z.literal('withdraw'),reason:z.string().trim().min(1).max(1000)}).strict(),
 ]);
 type Workflow={version:number;policy_version:number;reviewers:string[];publication_id:string|null};
-type Pin={blockId:string;kind:'page'|'attachment';targetId:string;version:number|string;title?:string;size?:number;mime?:string};
+type Pin={blockId:string;kind:'page'|'block'|'attachment';targetId:string;version:number|string;sourceBlockId?:string;title?:string;size?:number;mime?:string};
 type Snapshot={title:string;document:RichNode;manifest:Pin[]};
-type Review=Snapshot&{id:string;source_version:number;policy_version:number;submitted_by:string;snapshot_hash:string;state:'pending'|'approved'|'rejected';decided_by:string|null;decided_at:string|null;submitted_at:string;reason:string|null};
+type Review=Snapshot&{id:string;source_actor_id:string|null;reference_bindings:ReferenceBinding[];source_version:number;policy_version:number;submitted_by:string;snapshot_hash:string;state:'pending'|'approved'|'rejected';decided_by:string|null;decided_at:string|null;submitted_at:string;reason:string|null};
 type Publication=Snapshot&{id:string;source_version:number;snapshot_hash:string;published_by:string;published_at:string};
 
 async function workflow(tx:Sql,pageId:string){return (await tx.query<Workflow>('SELECT version,policy_version,reviewers,publication_id FROM hs_document_workflows WHERE page_id=$1',[pageId])).rows[0];}
@@ -30,7 +33,7 @@ async function reviewer(r:Repository,tx:Sql,pageId:string,actor:Actor,w:Workflow
  await r.access(tx,pageId,actor,true,true);
 }
 async function eligible(r:Repository,tx:Sql,pageId:string,reviewers:string[]){for(const id of reviewers)await r.access(tx,pageId,{id},true,true);}
-async function snapshot(r:Repository,tx:Sql,pageId:string,actor:Actor,sourceVersion:number):Promise<Snapshot>{
+async function snapshot(r:Repository,tx:Sql,pageId:string,actor:Actor,sourceVersion:number,bindings:ReferenceBinding[]=[]):Promise<Snapshot>{
  const p=await r.access(tx,pageId,actor,true,true);
  if(p.version!==sourceVersion)throw fail();
  const revision=(await tx.query<{title:string;document:RichNode;content_hash:string|null}>('SELECT title,document,content_hash FROM hs_revisions WHERE page_id=$1 AND version=$2',[pageId,sourceVersion])).rows[0];
@@ -38,17 +41,33 @@ async function snapshot(r:Repository,tx:Sql,pageId:string,actor:Actor,sourceVers
  const document=validateDocument(revision.document);
  if(!revision.content_hash||revisionDigest(revision.title,document)!==revision.content_hash)throw fail('publication_integrity');
  const manifest:Pin[]=[];
+ const replacements=new Map<string,RichNode>(),bindingMap=new Map(bindings.map(b=>[b.blockId,b.sourceBlockId]));
+ if(bindingMap.size!==bindings.length)throw fail('publication_reference_validation',422);
+ for(const binding of bindings)if(!documentBlocks(document).some(b=>b.id===binding.blockId&&b.type==='pageLink'))throw fail('publication_reference_validation',422);
  for(const b of documentBlocks(document)){
   if(b.type==='pageLink'){
    const targetId=String(b.node.attrs?.pageId),target=await r.access(tx,targetId,actor,false,true);
    if(target.workspace_id!==p.workspace_id)throw fail('publication_reference_unavailable',422);
    // A reader of a governed source can pin only its published snapshot, never its draft.
    const sourcePublication=!canEdit(target.role)?await publishedDocument(r,tx,actor,targetId):null;
-   if(sourcePublication){manifest.push({blockId:b.id,kind:'page',targetId,version:sourcePublication.publicationId,title:sourcePublication.title});continue;}
-   // Page references pin their visible label and exact saved revision, never a mutable label.
-   const targetRevision=(await tx.query<{title:string;document:RichNode;content_hash:string|null}>('SELECT title,document,content_hash FROM hs_revisions WHERE page_id=$1 AND version=$2',[targetId,target.version])).rows[0];
-   if(!targetRevision?.content_hash||revisionDigest(targetRevision.title,validateDocument(targetRevision.document))!==targetRevision.content_hash)throw fail('publication_reference_unavailable',422);
-   manifest.push({blockId:b.id,kind:'page',targetId,version:target.version,title:targetRevision.title});
+   let sourceDocument:RichNode,sourceTitle:string,resolvedVersion:number|string;
+   if(sourcePublication){sourceDocument=sourcePublication.document;sourceTitle=sourcePublication.title;resolvedVersion=sourcePublication.publicationId;}
+   else{
+    const targetRevision=(await tx.query<{title:string;document:RichNode;content_hash:string|null}>('SELECT title,document,content_hash FROM hs_revisions WHERE page_id=$1 AND version=$2',[targetId,target.version])).rows[0];
+    if(!targetRevision?.content_hash)throw fail('publication_reference_unavailable',422);
+    sourceDocument=validateDocument(targetRevision.document);sourceTitle=targetRevision.title;resolvedVersion=target.version;
+    if(revisionDigest(sourceTitle,sourceDocument)!==targetRevision.content_hash)throw fail('publication_reference_unavailable',422);
+   }
+   const sourceBlockId=bindingMap.get(b.id);
+   if(sourceBlockId){
+    // A bounded submission payload exercises pinning without adding live-block authoring or a catalogue.
+    const source=documentBlocks(sourceDocument).find(n=>n.id===sourceBlockId)?.node;
+    if(!source||!['paragraph','heading','codeBlock'].includes(source.type)||(source.content??[]).some(n=>!['text','hardBreak'].includes(n.type)))throw fail('publication_reference_unavailable',422);
+    const copy=structuredClone(source);copy.attrs={...copy.attrs,id:hash([b.id,sourceBlockId]).slice(0,40)};
+    replacements.set(b.id,{type:'blockquote',attrs:{id:b.id},content:[copy]});
+    manifest.push({blockId:b.id,kind:'block',targetId,sourceBlockId,version:resolvedVersion,title:sourceTitle});continue;
+   }
+   manifest.push({blockId:b.id,kind:'page',targetId,version:resolvedVersion,title:sourceTitle});
   }else if(b.type==='image'||b.type==='file'){
    const targetId=String(b.node.attrs?.attachmentId),m=(await tx.query<{sha256:string|null;size:string;mime:string}>('SELECT sha256,size,mime FROM hs_media WHERE id=$1 AND page_id=$2 AND state=\'ready\' FOR UPDATE',[targetId,pageId])).rows[0];
    if(!m?.sha256)throw fail('publication_attachment_unavailable',422);
@@ -56,13 +75,14 @@ async function snapshot(r:Repository,tx:Sql,pageId:string,actor:Actor,sourceVers
   }
  }
  if(manifest.length>500||manifest.filter(p=>p.kind==='attachment').length>100||manifest.reduce((n,p)=>n+(p.size??0),0)>100_000_000)throw fail('publication_reference_limit',422);
- return {title:revision.title,document,manifest};
+ function resolve(n:RichNode):RichNode{return replacements.get(String(n.attrs?.id))??{...n,...(n.content?{content:n.content.map(resolve)}:{})};}
+ return {title:revision.title,document:validateDocument(resolve(document)),manifest};
 }
 async function currentReview(r:Repository,tx:Sql,pageId:string,actor:Actor,id:string,w:Workflow){
  const row=(await tx.query<Review>('SELECT * FROM hs_document_reviews WHERE id=$1 AND page_id=$2 FOR UPDATE',[id,pageId])).rows[0];
  if(!row)throw fail('publication_review_unavailable',404);
  if(row.policy_version!==w.policy_version)throw fail('publication_policy_changed');
- const fresh=await snapshot(r,tx,pageId,actor,row.source_version);
+ const fresh=await snapshot(r,tx,pageId,actor,row.source_version,row.reference_bindings);
  if(hash(fresh)!==row.snapshot_hash)throw fail('publication_snapshot_changed');
  return row;
 }
@@ -88,13 +108,15 @@ export async function changePublishing(r:Repository,actor:Actor,pageId:string,in
    if(c.action==='submit'){
     await eligible(r,tx,pageId,w.reviewers);
     if(!w.reviewers.some(id=>id!==actor.id))throw fail('publication_independent_review_required',422);
-    const s=await snapshot(r,tx,pageId,actor,c.sourceVersion),id=randomUUID(),snapshotHash=hash(s);
-    await tx.query("INSERT INTO hs_document_reviews(id,page_id,source_version,policy_version,submitted_by,title,document,manifest,snapshot_hash,state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')",[id,pageId,c.sourceVersion,w.policy_version,actor.id,s.title,JSON.stringify(s.document),JSON.stringify(s.manifest),snapshotHash]);
+    const s=await snapshot(r,tx,pageId,actor,c.sourceVersion,c.bindings),id=randomUUID(),snapshotHash=hash(s);
+    const author=(await tx.query<{actor_id:string|null}>('SELECT actor_id FROM hs_revisions WHERE page_id=$1 AND version=$2',[pageId,c.sourceVersion])).rows[0]?.actor_id;
+    if(!author)throw fail('publication_author_unavailable',422);
+    await tx.query("INSERT INTO hs_document_reviews(id,page_id,source_version,policy_version,submitted_by,title,document,manifest,snapshot_hash,state,reference_bindings,source_actor_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11)",[id,pageId,c.sourceVersion,w.policy_version,actor.id,s.title,JSON.stringify(s.document),JSON.stringify(s.manifest),snapshotHash,JSON.stringify(c.bindings??[]),author]);
     result={...result,reviewId:id,snapshotHash};
    }else if(c.action==='approve'||c.action==='reject'){
-    const row=await currentReview(r,tx,pageId,actor,c.reviewId,w);
-    const author=(await tx.query<{actor_id:string|null}>('SELECT actor_id FROM hs_revisions WHERE page_id=$1 AND version=$2',[pageId,row.source_version])).rows[0]?.actor_id;
-    if(row.state!=='pending'||row.snapshot_hash!==c.snapshotHash||row.submitted_by===actor.id||author===actor.id)throw fail('publication_independent_review_required',403);
+    const row=c.action==='approve'?await currentReview(r,tx,pageId,actor,c.reviewId,w):(await tx.query<Review>('SELECT * FROM hs_document_reviews WHERE id=$1 AND page_id=$2 FOR UPDATE',[c.reviewId,pageId])).rows[0];
+    if(!row)throw fail('publication_review_unavailable',404);
+    if(row.state!=='pending'||row.snapshot_hash!==c.snapshotHash||row.submitted_by===actor.id||!row.source_actor_id||row.source_actor_id===actor.id)throw fail('publication_independent_review_required',403);
     await tx.query('UPDATE hs_document_reviews SET state=$2,decided_by=$3,decided_at=clock_timestamp(),reason=$4 WHERE id=$1',[row.id,c.action==='approve'?'approved':'rejected',actor.id,c.reason]);
     result={...result,reviewId:row.id};
    }else if(c.action==='publish'){
@@ -142,7 +164,7 @@ export async function publishedDocument(r:Repository,tx:Sql,actor:Actor,pageId:s
 async function projectSnapshot(r:Repository,tx:Sql,actor:Actor,pageId:string,s:Snapshot){
  const p=await r.access(tx,pageId,actor),visible=new Map<string,Pin>();
  for(const pin of s.manifest){
-  if(pin.kind==='page'){
+  if(pin.kind==='page'||pin.kind==='block'){
    try{const source=await r.access(tx,pin.targetId,actor),sourceWorkflow=!canEdit(source.role)?await workflow(tx,pin.targetId):null;if(source.workspace_id===p.workspace_id&&(!sourceWorkflow||sourceWorkflow.publication_id))visible.set(pin.blockId,pin);}catch(e){if(!(e instanceof DocumentError)||![403,404].includes(e.status))throw e;}
   }else{
    const media=(await tx.query<{sha256:string;size:string;mime:string}>("SELECT sha256,size,mime FROM hs_media WHERE id=$1 AND page_id=$2 AND state='ready'",[pin.targetId,pageId])).rows[0];
@@ -151,6 +173,8 @@ async function projectSnapshot(r:Repository,tx:Sql,actor:Actor,pageId:string,s:S
  }
  await r.access(tx,pageId,actor);
  function render(n:RichNode):RichNode{
+  const bound=s.manifest.find(pin=>pin.kind==='block'&&pin.blockId===n.attrs?.id);
+  if(bound&&!visible.has(bound.blockId))return {type:'paragraph',attrs:{id:n.attrs?.id},content:[{type:'text',text:'Restricted or unavailable source'}]};
   if(n.type==='pageLink'||n.type==='image'||n.type==='file'){
    const pin=visible.get(String(n.attrs?.id));
    if(n.type==='pageLink'||!pin)return {type:'paragraph',attrs:{id:n.attrs?.id},content:[{type:'text',text:pin?`${pin.title} (reviewed version ${pin.version})`:'Restricted or unavailable source'}]};
