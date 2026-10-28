@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Bounded off-host packet for establishing the already-approved HOLY-127 fixed installer surface; it does not itself authorize execution.",
+  "packetSourceCommit": "d140c7f951fc1412a5fe3deb3f67727b85b100a2",
+  "bootstrap": {
+    "source": "scripts/holy127_qualifier_bootstrap.py",
+    "sha256": "8a1f5bb6a6496c61597a9cbfd48bdb5be96668d79708ac1eaf8c3849027c1af1",
+    "transferDestination": "/root/holy127-bootstrap-d140c7f.py",
+    "owner": 0,
+    "group": 0,
+    "mode": "0500",
+    "arguments": 0,
+    "invocation": "/root/holy127-bootstrap-d140c7f.py"
+  },
+  "payload": {
+    "source": "deployment/HOLY-127-BOOTSTRAP-PAYLOAD-d140c7f.tar",
+    "sha256": "aad7fbc7d4b44944029536c7fb49a53a0bd70839cd8dfe977c47739c5edb1f45",
+    "sizeBytes": 143360,
+    "transferDestination": "/var/tmp/holy127-bootstrap-rootpath-v2/holy127-payload-d140c7f.tar",
+    "parentOwner": 0,
+    "parentGroup": 0,
+    "parentMode": "0700",
+    "owner": 0,
+    "group": 0,
+    "mode": "0400",
+    "containsSecrets": false,
+    "exactFileCount": 15,
+    "contents": "The fourteen hash-pinned source payloads in HOLY-127-QUALIFIER-INSTALL-MANIFEST.json plus scripts/holy127_qualifier_installer.py at SHA-256 212184f578c567595ebbc547d0486af2e635b4306c68a6435935222676cb3e1e."
+  },
+  "exclusiveCollisionPolicy": "The bootstrap refuses any occupied source-parent or installer target and never overwrites it. It requires fixed root ownership, exact modes, no symlinks, exact archive size/hash/member set, and per-file hashes before mutation.",
+  "onlyMutations": [
+    "/var/tmp/holy127-installer-rootpath-v2 and its exact source tree",
+    "/usr/local/sbin/holy127-q-f4f5a94-install",
+    "the qualification bundle, three qualifier entrypoints, shared release lock and exact three-command sudo policy already enumerated by HOLY-127-QUALIFIER-INSTALL-MANIFEST.json"
+  ],
+  "forbidden": [
+    "legacy deploy.sh or backup.sh",
+    "arbitrary shell, Python, Docker, sudo or filesystem arguments",
+    "live /opt/holy-sheet-staging ownership or content changes",
+    "identity, fixture or production changes"
+  ],
+  "operatorSequence": [
+    "Through the existing DigitalOcean console transfer only these two public, secret-free files to their exact transfer destinations and exact root ownership/modes above.",
+    "Verify the two transferred SHA-256 values exactly match this packet before invocation.",
+    "Invoke only /root/holy127-bootstrap-d140c7f.py with zero arguments.",
+    "Stop on any ownership, mode, symlink, size, hash, member, collision, timeout, installer or rollback refusal; do not substitute a command or legacy helper.",
+    "After a successful fixed installation, obtain a fresh Product serialized slot before invoking the qualifier entrypoint."
+  ],
+  "authorization": "Packet publication and review are not server execution authority. Use requires Product acceptance of this exact packet and the already-authorized bounded console installation workflow; qualification still requires a fresh serialized slot."
+}

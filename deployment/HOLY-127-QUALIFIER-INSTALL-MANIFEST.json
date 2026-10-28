@@ -116,6 +116,16 @@
     "refusesUnsafeOrIncompatibleAncestorsAndLock": true,
     "rollbackScope": "Only pending or committed paths created by the current failed attempt; never live application paths or pre-existing lock state."
   },
+  "bootstrapPacket": {
+    "manifest": "deployment/HOLY-127-BOOTSTRAP-PACKET.json",
+    "script": "scripts/holy127_qualifier_bootstrap.py",
+    "scriptSha256": "8a1f5bb6a6496c61597a9cbfd48bdb5be96668d79708ac1eaf8c3849027c1af1",
+    "payload": "deployment/HOLY-127-BOOTSTRAP-PAYLOAD-d140c7f.tar",
+    "payloadSha256": "aad7fbc7d4b44944029536c7fb49a53a0bd70839cd8dfe977c47739c5edb1f45",
+    "payloadSizeBytes": 143360,
+    "sourceCommit": "d140c7f951fc1412a5fe3deb3f67727b85b100a2",
+    "reviewOnly": true
+  },
   "orderedOperatorSteps": [
     "Acquire a Product-issued serialized staging slot and fresh preflight approval.",
     "Invoke only sudo -n /usr/local/sbin/holy127-q-f4f5a94.",
