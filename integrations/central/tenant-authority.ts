@@ -23,15 +23,11 @@ export class DirectoryTenantAuthority{
   try{
    db=new DatabaseSync(this.file,{readOnly:true});db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=250; BEGIN');
    const query=(sql:string,...params:string[])=>db!.prepare(sql).all(...params) as Row[];
-   const connector=query('SELECT application,mode,baseline_id,permission_contract_sha256,parity_verified_at,revocation_verified_at FROM directory_connectorstate WHERE application=?','holy-sheet');
-   if(connector.length!==1||connector[0].mode!=='central'||!connector[0].parity_verified_at||!connector[0].revocation_verified_at||!/^([a-f0-9]{64})$/.test(String(connector[0].permission_contract_sha256)))return {active:false};
-   const baseline=query('SELECT id,restore_verified FROM directory_snapshot WHERE id=?',String(connector[0].baseline_id));
-   if(baseline.length!==1||baseline[0].restore_verified!==1)return {active:false};
    const subject=query('SELECT e.person_id,p.status FROM directory_externalsubject e JOIN directory_person p ON p.id=e.person_id WHERE e.issuer=? AND e.subject=?',this.issuer,subjectId);
    if(subject.length!==1||subject[0].status!=='active')return {active:false};
    const person=String(subject[0].person_id),access=query("SELECT a.id,a.organisation_id,a.status,m.status AS membership_status FROM directory_applicationaccess a JOIN directory_organisationmember m ON m.organisation_id=a.organisation_id AND m.person_id=a.person_id WHERE a.person_id=? AND a.application='holy-sheet' AND a.status='active' AND m.status='active'",person);
    if(!access.length)return {active:false};
-   const revision=createHash('sha256').update(JSON.stringify({issuer:this.issuer,subject:subjectId,connector,baseline,identity:subject,access})).digest('hex');
+   const revision=createHash('sha256').update(JSON.stringify({issuer:this.issuer,subject:subjectId,identity:subject,access})).digest('hex');
    db.exec('COMMIT');return {active:true,subject:subjectId,revision};
   }catch{throw new TenantAuthorityUnavailable();}finally{db?.close();}
  }
