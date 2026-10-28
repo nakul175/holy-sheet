@@ -26,7 +26,8 @@ for(const width of [1440,390,320])test(`editor WCAG text contrast and usable con
     }));
     expect(undersized).toEqual([]);
   }
-  await page.getByRole('button',{name:'＋ Insert',exact:true}).click();
+  await page.getByRole('button',{name:/More blocks/,exact:false}).click();
+  await page.getByRole('button',{name:'Browse all blocks',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'Insert a block',exact:true});
   await expect(dialog.getByRole('button',{name:'Close dialog',exact:true})).toBeFocused();
   await page.keyboard.press('Tab');
@@ -35,5 +36,5 @@ for(const width of [1440,390,320])test(`editor WCAG text contrast and usable con
   await expect(dialog.getByRole('button',{name:'Close dialog',exact:true})).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('heading',{name:'Insert a block',exact:true})).toHaveCount(0);
-  await expect(page.getByRole('button',{name:'＋ Insert',exact:true})).toBeFocused();
+  await expect(page.getByRole('button',{name:'Browse all blocks',exact:true})).toBeFocused();
 });
