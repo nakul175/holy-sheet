@@ -3,7 +3,7 @@ import {DocumentError,stableStringify} from './document';
 import {createHash} from 'node:crypto';
 export const standardCollections=['organisations','accounts','contacts','employees','contracts'] as const;
 export type StandardCollection=typeof standardCollections[number];
-export const recordCapabilities=['view','create','edit','link','import','export','bulk','archive','delete','restore','merge','schema','manage-views','history','restore-values'] as const;
+export const recordCapabilities=['view','create','edit','link','import','export','bulk','archive','delete','restore','merge','schema','manage-views','history','restore-values','manage-templates'] as const;
 export type RecordCapability=typeof recordCapabilities[number];
 export type FieldKind='text'|'long-text'|'number'|'currency'|'date'|'boolean'|'single-select'|'multi-select'|'email'|'phone'|'url'|'attachment'|'record';
 export type RecordField={key:string;label:string;kind:FieldKind;required:boolean;defaultValue?:unknown;choices:string[];sensitive:boolean;unique:boolean;deprecated:boolean;core:boolean;version:number};
