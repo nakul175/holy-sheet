@@ -1,0 +1,15 @@
+# HOLY-42 reference-list field binding
+
+This change binds administrator-reviewed single-select and multi-select custom fields to a tenant-qualified reference list. It extends the internal record/schema/import services; no native record UI, HTTP route, central authority implementation or live grant is introduced. HOLY-42 remains incomplete.
+
+Migration 034 adds a nullable composite foreign key from a field to its own tenant's list. Bound fields persist no inline choices; their current up-to-1,000 item catalogue is resolved inside each current-authority record transaction. List rows and the explicit read-permission row are held under shared locks until commit. Invalid or mismatched persisted definitions fail closed. Fields without a binding retain their existing behavior and 100 inline-choice limit.
+
+Schema preview/application require the existing central tenant-administrator proof and native schema capability. Reference binding also requires current list-read permission. A changed list invalidates an outstanding preview through existing tenant schema epochs; application additionally resolves and compares the exact current metadata. Populated fields cannot silently change bindings or switch between list and inline identity spaces. No automatic value conversion is performed.
+
+Record values remain immutable item IDs. Labels, translations, order and deprecation are current configuration metadata. Renames do not rewrite saved values. Deprecation rejects new choices and defaults; an update may retain a deprecated item already held by that same record, remove it, or choose an active item. It cannot re-add the deprecated item after removal. Historical filter and condition comparisons still accept the reserved historical IDs. The existing multi-select selected-value bound of 100 is unchanged; it is distinct from the 1,000-item catalogue capacity.
+
+Import mappings can explicitly choose `referenceLookup` of `id`, `code` or `label`, defaulting to `id`. No automatic namespace guessing occurs. Ambiguous labels include deprecated matches in ambiguity detection. Deprecated import selections are rejected. Export continues emitting portable stable IDs; no labels replace stored identities.
+
+Validation covers schema binding, rename stability, 1,000 entries, current read-permission revocation, deprecated selections/defaults, retained multi-select identities, historical rule comparisons, explicit import namespaces, stale previews and populated conversion blockers. A real PostgreSQL integration case additionally exercises concurrent schema approval retries and migration startup replay with renamed/deprecated values. Local service skips must not be reported as PostgreSQL acceptance; required CI provides that evidence.
+
+Still required for full HOLY-42 acceptance: actual central tenant authority and approved mappings/roles, native configuration and record editor/draft UI, permitted initial custom-collection binding workflow, dependency-qualified unused-item removal, distinct-account/live acceptance and story-wide performance/accessibility gates. This review does not claim those requirements are complete.
