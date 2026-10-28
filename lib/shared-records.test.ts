@@ -1,32 +1,528 @@
-import {beforeAll,afterAll,beforeEach,it,expect,vi} from 'vitest';
-import {createDatabase,type Database} from './database';import {Repository} from './repository';import {localActor as owner,type Actor} from './auth';
-import {SharedRecordRepository,type RecordContext,type CurrentSuiteTenantAuthority} from './shared-records';
-import {recordCapabilities,standardCollections,type RecordCapability} from './shared-record-types';
-let db:Database,pages:Repository,data:SharedRecordRepository;const tenant=crypto.randomUUID(),otherTenant=crypto.randomUUID(),viewer={id:'record-viewer'},outsider={id:'record-outsider'};
-const proof=(c:RecordContext)=>({subject:c.actor.id,tenantId:c.tenantId,workspaceId:c.workspaceId,active:true,tenantAdministrator:c.actor.id===owner.id,revision:'synthetic-current-mapping-v1'});
-const authority:CurrentSuiteTenantAuthority={verify:vi.fn(async c=>proof(c))};
-const context=(actor:Actor=owner,tenantId=tenant,workspaceId='ws-aplyd'):RecordContext=>({actor,tenantId,workspaceId});
-const request=(collection='organisations',name='Synthetic organisation '+crypto.randomUUID(),patch:Record<string,unknown>={})=>({operationId:crypto.randomUUID(),collection,name,schemaVersion:1,values:{},...patch});
-async function create(collection='organisations',patch:Record<string,unknown>={}){return (await data.create(context(),request(collection,undefined,patch))).record;}
-async function field(key:string,patch:Record<string,unknown>={}){await db.query('INSERT INTO hs_data_fields(tenant_id,collection,field_key,label,kind,sensitive,unique_value,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[tenant,'organisations',key,'Synthetic custom field','text',patch.sensitive??false,patch.unique??false,owner.id]);}
-beforeAll(async()=>{db=await createDatabase(':memory:');pages=new Repository(db);await pages.seedLocal();for(const a of [viewer,outsider]){await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[a.id]);await db.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-aplyd',$1)",[a.id]);}await db.query("INSERT INTO hs_workspaces(id,name) VALUES('ws-data-other','Other synthetic workspace')");await db.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-data-other',$1)",[owner.id]);for(const [id,ws] of [[tenant,'ws-aplyd'],[otherTenant,'ws-data-other']]){await db.query('INSERT INTO hs_data_tenants(id,name) VALUES($1,$2)',[id,'Synthetic suite tenant']);await db.query('INSERT INTO hs_data_workspaces(workspace_id,tenant_id,review_reference) VALUES($1,$2,$3)',[ws,id,'Isolated test mapping only']);for(const c of standardCollections){await db.query('INSERT INTO hs_data_collections(tenant_id,id,name,core) VALUES($1,$2,$2,true)',[id,c]);await db.query('INSERT INTO hs_data_collection_grants(tenant_id,user_id,collection,capabilities) VALUES($1,$2,$3,$4)',[id,owner.id,c,[...recordCapabilities]]);}}
- for(const c of standardCollections)await db.query('INSERT INTO hs_data_collection_grants(tenant_id,user_id,collection,capabilities) VALUES($1,$2,$3,$4)',[tenant,viewer.id,c,['view','history']]);data=new SharedRecordRepository(pages,authority);});
-beforeEach(()=>{vi.mocked(authority.verify).mockReset().mockImplementation(async c=>proof(c));});afterAll(async()=>db.close());
-it('has no implicit data rights for an active workspace member or a forged administrator claim',async()=>{const r=await create();await expect(data.get(context({...outsider,role:'admin'} as Actor),r.id)).rejects.toMatchObject({status:404});await expect(data.create(context(outsider),request())).rejects.toMatchObject({status:403});expect((await data.list(context(outsider),{collection:'organisations'})).results).toEqual([]);});
-it('requires the verified current suite tenant/workspace/subject as well as native HS membership',async()=>{const r=await create();vi.mocked(authority.verify).mockImplementation(async c=>({...proof(c),tenantId:otherTenant}));await expect(data.get(context(),r.id)).rejects.toMatchObject({status:404});vi.mocked(authority.verify).mockImplementation(async c=>proof(c));await expect(data.get(context(owner,tenant,'ws-data-other'),r.id)).rejects.toMatchObject({status:404});await db.query("UPDATE hs_members SET active=false WHERE workspace_id='ws-aplyd' AND user_id=$1",[viewer.id]);try{await expect(data.get(context(viewer),r.id)).rejects.toMatchObject({status:404});}finally{await db.query("UPDATE hs_members SET active=true WHERE workspace_id='ws-aplyd' AND user_id=$1",[viewer.id]);}});
-it('creates trimmed typed records once per tenant and actor operation, with immutable IDs and metadata-only change events',async()=>{const input=request('organisations','  Test organisation  ',{values:{'core:domain':'https://example.org'}}),first=await data.create(context(),input),again=await data.create(context(),input);expect(first.record.name).toBe('Test organisation');expect(first.record.values['core:domain']).toBe('https://example.org/');expect(again.record.id).toBe(first.record.id);expect(again.replayed).toBe(true);expect((await db.query('SELECT id FROM hs_data_events WHERE operation_id=$1',[input.operationId])).rows).toHaveLength(1);const outbox=JSON.stringify((await db.query('SELECT * FROM hs_data_change_events WHERE operation_id=$1',[input.operationId])).rows);expect(outbox).not.toContain('Test organisation');expect(outbox).not.toContain('example.org');await expect(data.create(context(),{...input,name:'Changed intent'})).rejects.toMatchObject({code:'operation_mismatch'});});
-it('keeps create operations tenant-bound and rejects a record ID from another tenant even for a user in both',async()=>{const a=await create(),b=await data.create(context(owner,otherTenant,'ws-data-other'),request());await expect(data.get(context(),b.record.id)).rejects.toMatchObject({status:404});await expect(data.get(context(owner,otherTenant,'ws-data-other'),a.id)).rejects.toMatchObject({status:404});});
-it('requires names, typed values, current schema versions and separate create/edit rights',async()=>{for(const name of ['','  ','x'.repeat(201),'bad\u0000name'])await expect(data.create(context(),request('organisations',name))).rejects.toMatchObject({code:'record_validation'});await expect(data.create(context(),request('organisations',undefined,{values:{'core:domain':'javascript:alert(1)'}}))).rejects.toMatchObject({code:'record_validation'});await expect(data.create(context(),request('organisations',undefined,{schemaVersion:99}))).rejects.toMatchObject({status:409});await expect(data.create(context(viewer),request())).rejects.toMatchObject({status:403});});
-it('uses optimistic edits and confirms an older replay without claiming it is the latest state',async()=>{const r=await create(),first={operationId:crypto.randomUUID(),expectedVersion:r.version,schemaVersion:1,name:'First edit'},done=await data.update(context(),r.id,first);await expect(data.update(context(),r.id,{...first,operationId:crypto.randomUUID(),name:'Stale edit'})).rejects.toMatchObject({code:'record_version_conflict'});await data.update(context(),r.id,{operationId:crypto.randomUUID(),expectedVersion:done.record.version,schemaVersion:1,name:'Later edit'});const replay=await data.update(context(),r.id,first);expect(replay.appliedVersion).toBe(2);expect(replay.record.version).toBe(3);expect(replay.record.name).toBe('Later edit');});
-it('redacts sensitive values from detail, list and historical values unless field-specific rights permit them',async()=>{await db.query('INSERT INTO hs_data_field_permissions(tenant_id,collection,field_key,user_id,can_view,can_write,can_history) VALUES($1,$2,$3,$4,true,true,true)',[tenant,'contacts','core:email',owner.id]);const r=await create('contacts',{values:{'core:email':'private@example.org','core:job-title':'Analyst'}});const seen=await data.get(context(viewer),r.id);expect(seen.values).toEqual({'core:job-title':'Analyst'});expect(JSON.stringify(await data.list(context(viewer),{collection:'contacts',query:r.name}))).not.toContain('private@example.org');expect(JSON.stringify(await data.history(context(viewer),r.id))).not.toContain('private@example.org');await db.query('INSERT INTO hs_data_field_permissions(tenant_id,collection,field_key,user_id,can_view,can_history) VALUES($1,$2,$3,$4,true,false)',[tenant,'contacts','core:email',viewer.id]);try{expect((await data.get(context(viewer),r.id)).values['core:email']).toBe('private@example.org');expect(JSON.stringify(await data.history(context(viewer),r.id))).not.toContain('private@example.org');await db.query('UPDATE hs_data_field_permissions SET can_history=true WHERE tenant_id=$1 AND collection=$2 AND field_key=$3 AND user_id=$4',[tenant,'contacts','core:email',viewer.id]);expect(JSON.stringify(await data.history(context(viewer),r.id))).toContain('private@example.org');}finally{await db.query('DELETE FROM hs_data_field_permissions WHERE tenant_id=$1 AND user_id=$2',[tenant,viewer.id]);}});
-it('does not allow sensitive blind writes or infer import/export/delete from ordinary edit',async()=>{await expect(data.create(context(),request('employees',undefined,{values:{'core:email':'hidden@example.org'}}))).rejects.toMatchObject({status:403});const r=await create();await db.query('INSERT INTO hs_data_record_grants(tenant_id,record_id,user_id,capabilities) VALUES($1,$2,$3,$4)',[tenant,r.id,outsider.id,['view','edit']]);const seen=await data.get(context(outsider),r.id);expect(seen.capabilities).toEqual(['view','edit']);for(const capability of ['import','export','delete','schema'])expect(seen.capabilities).not.toContain(capability);});
-it('requires exactly one same-tenant organisation parent for accounts and at least one legal party for contracts',async()=>{const org=await create(),contact=await create('contacts');await expect(data.create(context(),request('accounts'))).rejects.toMatchObject({code:'record_relationship_validation'});await expect(data.create(context(),request('accounts',undefined,{parentOrganisationId:contact.id}))).rejects.toMatchObject({code:'record_relationship_validation'});const account=await create('accounts',{parentOrganisationId:org.id});expect(account.parentOrganisation).toEqual({id:org.id,name:org.name});await expect(data.create(context(),request('contracts'))).rejects.toMatchObject({code:'record_relationship_validation'});const contract=await create('contracts',{legalOrganisationIds:[org.id],accountIds:[account.id]});expect(contract.related.map(e=>e.kind).sort()).toEqual(['contract-account','contract-legal-party']);const foreign=(await data.create(context(owner,otherTenant,'ws-data-other'),request())).record;await expect(data.create(context(),request('accounts',undefined,{parentOrganisationId:foreign.id}))).rejects.toMatchObject({status:404});});
-it('enforces legal-party cardinality and immutable tenant/type identity at the database boundary',async()=>{const org=await create(),contract=await create('contracts',{legalOrganisationIds:[org.id]});await expect(db.query("DELETE FROM hs_data_relationships WHERE tenant_id=$1 AND source_id=$2 AND kind='contract-legal-party'",[tenant,contract.id])).rejects.toThrow();expect((await data.get(context(),contract.id)).related).toHaveLength(1);await expect(db.query('UPDATE hs_data_records SET tenant_id=$2 WHERE id=$1',[org.id,otherTenant])).rejects.toThrow();await expect(db.query("UPDATE hs_data_records SET collection='contacts' WHERE id=$1",[org.id])).rejects.toThrow();});
-it('preserves hidden fields on a partial edit and never logs their values in ordinary audit',async()=>{const key=crypto.randomUUID();await field(key,{sensitive:true});await db.query('INSERT INTO hs_data_field_permissions(tenant_id,collection,field_key,user_id,can_view,can_write) VALUES($1,$2,$3,$4,true,true)',[tenant,'organisations',key,owner.id]);const r=await create('organisations',{values:{[key]:'Protected custom value'}});await db.query('INSERT INTO hs_data_record_grants(tenant_id,record_id,user_id,capabilities) VALUES($1,$2,$3,$4)',[tenant,r.id,outsider.id,['view','edit']]);const changed=await data.update(context(outsider),r.id,{operationId:crypto.randomUUID(),expectedVersion:r.version,schemaVersion:1,name:'Safe visible edit'});expect(changed.record.values[key]).toBeUndefined();expect((await data.get(context(),r.id)).values[key]).toBe('Protected custom value');const audits=JSON.stringify((await db.query("SELECT after_value FROM hs_audit WHERE action LIKE 'shared-record.%' ORDER BY id")).rows);expect(audits).not.toContain('Protected custom value');expect(audits).not.toContain('private@example.org');});
-it('checks independent HS page access and links documents without creating grants',async()=>{const r=await create(),page=await pages.create(owner,'Independent private document','space-product'),before=await db.query('SELECT * FROM hs_grants WHERE page_id=$1',[page.id]),op={operationId:crypto.randomUUID(),expectedVersion:r.version},linked=await data.linkDocument(context(),r.id,page.id,op);expect(linked.record.documents).toEqual([expect.objectContaining({pageId:page.id,title:page.title})]);expect((await data.linkDocument(context(),r.id,page.id,op)).replayed).toBe(true);expect((await data.get(context(viewer),r.id)).documents).toEqual([]);await expect(pages.get(page.id,viewer)).rejects.toMatchObject({status:404});expect(await db.query('SELECT * FROM hs_grants WHERE page_id=$1',[page.id])).toEqual(before);});
-it('rolls back record, operation, private event and outbox together if current suite authority is revoked before commit',async()=>{const input=request(),ctx=context(),counts=await db.query('SELECT count(*)::int AS n FROM hs_data_records');vi.mocked(authority.verify).mockResolvedValueOnce(proof(ctx)).mockResolvedValueOnce({...proof(ctx),active:false});await expect(data.create(ctx,input)).rejects.toMatchObject({status:404});expect(await db.query('SELECT count(*)::int AS n FROM hs_data_records')).toEqual(counts);for(const table of ['hs_data_operations','hs_data_events','hs_data_change_events'])expect((await db.query('SELECT * FROM '+table+' WHERE operation_id=$1',[input.operationId])).rows).toHaveLength(0);});
-it('enforces uniqueness without disclosing the matching inaccessible record',async()=>{const key=crypto.randomUUID();await field(key,{unique:true});const first=await create('organisations',{values:{[key]:'Unique typed value'}});await expect(data.create(context(),request('organisations',undefined,{values:{[key]:'Unique typed value'}}))).rejects.toMatchObject({code:'record_unique_conflict'});expect((await data.get(context(),first.id)).values[key]).toBe('Unique typed value');});
-it('denies attachment or relationship field writes without a current reference-authority adapter',async()=>{const key=crypto.randomUUID();await db.query('INSERT INTO hs_data_fields(tenant_id,collection,field_key,label,kind,created_by) VALUES($1,$2,$3,$4,$5,$6)',[tenant,'organisations',key,'Related record','record',owner.id]);await expect(data.create(context(),request('organisations',undefined,{values:{[key]:[crypto.randomUUID()]}}))).rejects.toMatchObject({code:'record_reference_unavailable'});});
-it('uses stable fifty-item pages, scope-bound expiring cursors and no full-dataset browser result',async()=>{const prefix='query'+crypto.randomUUID().replaceAll('-','');for(let i=0;i<53;i++)await data.create(context(),request('organisations',prefix+' '+String(i).padStart(3,'0')));const one=await data.list(context(),{collection:'organisations',query:prefix});expect(one.results).toHaveLength(50);expect(one.nextCursor).toBeTruthy();const two=await data.list(context(),{collection:'organisations',query:prefix,cursor:one.nextCursor!});expect(two.results).toHaveLength(3);expect(two.nextCursor).toBeNull();expect(new Set([...one.results,...two.results].map(r=>r.id)).size).toBe(53);await expect(data.list(context(viewer),{collection:'organisations',query:prefix,cursor:one.nextCursor!})).rejects.toMatchObject({code:'record_cursor_invalid'});await expect(data.list(context(),{collection:'organisations',query:prefix+' changed',cursor:one.nextCursor!})).rejects.toMatchObject({code:'record_cursor_invalid'});await db.query("UPDATE hs_data_query_cursors SET expires_at=clock_timestamp()-interval '1 second'");await expect(data.list(context(),{collection:'organisations',query:prefix,cursor:one.nextCursor!})).rejects.toMatchObject({code:'record_cursor_invalid'});});
-it('returns the same immutable record through another explicitly reviewed workspace of its tenant',async()=>{const r=await create(),workspace='same-tenant-'+crypto.randomUUID();await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$2)',[workspace,'Second same-tenant fixture']);await db.query('INSERT INTO hs_members(workspace_id,user_id) VALUES($1,$2)',[workspace,owner.id]);await db.query('INSERT INTO hs_data_workspaces(workspace_id,tenant_id,review_reference) VALUES($1,$2,$3)',[workspace,tenant,'Synthetic reviewed mapping']);expect((await data.get(context(owner,tenant,workspace),r.id)).id).toBe(r.id);});
-it('treats wildcard characters literally and never filters or sorts on an unpermitted sensitive field',async()=>{const marker='literal'+crypto.randomUUID().replaceAll('-',''),r=await create('organisations',{name:marker+'%_name'});expect((await data.list(context(),{collection:'organisations',query:marker+'%_'})).results.map(x=>x.id)).toEqual([r.id]);await expect(data.list(context(viewer),{collection:'contacts',query:'',sort:'core:email'} as Parameters<SharedRecordRepository['list']>[1])).rejects.toMatchObject({code:'record_validation'});});
+import { beforeAll, afterAll, beforeEach, it, expect, vi } from "vitest";
+import { createDatabase, type Database } from "./database";
+import { Repository } from "./repository";
+import { localActor as owner, type Actor } from "./auth";
+import { SharedRecordRepository, type RecordContext, type CurrentSuiteTenantAuthority } from "./shared-records";
+import { SharedRecordRelationshipRepository } from "./shared-record-relationships";
+import { recordCapabilities, standardCollections, type RecordCapability } from "./shared-record-types";
+let db: Database, pages: Repository, data: SharedRecordRepository;
+const tenant = crypto.randomUUID(),
+  otherTenant = crypto.randomUUID(),
+  viewer = { id: "record-viewer" },
+  outsider = { id: "record-outsider" };
+const proof = (c: RecordContext) => ({
+  subject: c.actor.id,
+  tenantId: c.tenantId,
+  workspaceId: c.workspaceId,
+  active: true,
+  tenantAdministrator: c.actor.id === owner.id,
+  revision: "synthetic-current-mapping-v1",
+});
+const authority: CurrentSuiteTenantAuthority = {
+  verify: vi.fn(async (c) => proof(c)),
+};
+const context = (actor: Actor = owner, tenantId = tenant, workspaceId = "ws-aplyd"): RecordContext => ({ actor, tenantId, workspaceId });
+const request = (collection = "organisations", name = "Synthetic organisation " + crypto.randomUUID(), patch: Record<string, unknown> = {}) => ({
+  operationId: crypto.randomUUID(),
+  collection,
+  name,
+  schemaVersion: 1,
+  values: {},
+  ...patch,
+});
+async function create(collection = "organisations", patch: Record<string, unknown> = {}) {
+  return (await data.create(context(), request(collection, undefined, patch))).record;
+}
+async function field(key: string, patch: Record<string, unknown> = {}) {
+  await db.query("INSERT INTO hs_data_fields(tenant_id,collection,field_key,label,kind,sensitive,unique_value,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)", [tenant, "organisations", key, "Synthetic custom field", "text", patch.sensitive ?? false, patch.unique ?? false, owner.id]);
+}
+beforeAll(async () => {
+  db = await createDatabase(":memory:");
+  pages = new Repository(db);
+  await pages.seedLocal();
+  for (const a of [viewer, outsider]) {
+    await db.query("INSERT INTO hs_users(id,name) VALUES($1,$1)", [a.id]);
+    await db.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-aplyd',$1)", [a.id]);
+  }
+  await db.query("INSERT INTO hs_workspaces(id,name) VALUES('ws-data-other','Other synthetic workspace')");
+  await db.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-data-other',$1)", [owner.id]);
+  for (const [id, ws] of [
+    [tenant, "ws-aplyd"],
+    [otherTenant, "ws-data-other"],
+  ]) {
+    await db.query("INSERT INTO hs_data_tenants(id,name) VALUES($1,$2)", [id, "Synthetic suite tenant"]);
+    await db.query("INSERT INTO hs_data_workspaces(workspace_id,tenant_id,review_reference) VALUES($1,$2,$3)", [ws, id, "Isolated test mapping only"]);
+    for (const c of standardCollections) {
+      await db.query("INSERT INTO hs_data_collections(tenant_id,id,name,core) VALUES($1,$2,$2,true)", [id, c]);
+      await db.query("INSERT INTO hs_data_collection_grants(tenant_id,user_id,collection,capabilities) VALUES($1,$2,$3,$4)", [id, owner.id, c, [...recordCapabilities]]);
+    }
+  }
+  for (const c of standardCollections) await db.query("INSERT INTO hs_data_collection_grants(tenant_id,user_id,collection,capabilities) VALUES($1,$2,$3,$4)", [tenant, viewer.id, c, ["view", "history"]]);
+  data = new SharedRecordRepository(pages, authority);
+});
+beforeEach(() => {
+  vi.mocked(authority.verify)
+    .mockReset()
+    .mockImplementation(async (c) => proof(c));
+});
+afterAll(async () => db.close());
+it("has no implicit data rights for an active workspace member or a forged administrator claim", async () => {
+  const r = await create();
+  await expect(data.get(context({ ...outsider, role: "admin" } as Actor), r.id)).rejects.toMatchObject({ status: 404 });
+  await expect(data.create(context(outsider), request())).rejects.toMatchObject({ status: 403 });
+  expect((await data.list(context(outsider), { collection: "organisations" })).results).toEqual([]);
+});
+it("requires the verified current suite tenant/workspace/subject as well as native HS membership", async () => {
+  const r = await create();
+  vi.mocked(authority.verify).mockImplementation(async (c) => ({
+    ...proof(c),
+    tenantId: otherTenant,
+  }));
+  await expect(data.get(context(), r.id)).rejects.toMatchObject({
+    status: 404,
+  });
+  vi.mocked(authority.verify).mockImplementation(async (c) => proof(c));
+  await expect(data.get(context(owner, tenant, "ws-data-other"), r.id)).rejects.toMatchObject({ status: 404 });
+  await db.query("UPDATE hs_members SET active=false WHERE workspace_id='ws-aplyd' AND user_id=$1", [viewer.id]);
+  try {
+    await expect(data.get(context(viewer), r.id)).rejects.toMatchObject({
+      status: 404,
+    });
+  } finally {
+    await db.query("UPDATE hs_members SET active=true WHERE workspace_id='ws-aplyd' AND user_id=$1", [viewer.id]);
+  }
+});
+it("creates trimmed typed records once per tenant and actor operation, with immutable IDs and metadata-only change events", async () => {
+  const input = request("organisations", "  Test organisation  ", {
+      values: { "core:domain": "https://example.org" },
+    }),
+    first = await data.create(context(), input),
+    again = await data.create(context(), input);
+  expect(first.record.name).toBe("Test organisation");
+  expect(first.record.values["core:domain"]).toBe("https://example.org/");
+  expect(again.record.id).toBe(first.record.id);
+  expect(again.replayed).toBe(true);
+  expect((await db.query("SELECT id FROM hs_data_events WHERE operation_id=$1", [input.operationId])).rows).toHaveLength(1);
+  const outbox = JSON.stringify((await db.query("SELECT * FROM hs_data_change_events WHERE operation_id=$1", [input.operationId])).rows);
+  expect(outbox).not.toContain("Test organisation");
+  expect(outbox).not.toContain("example.org");
+  await expect(data.create(context(), { ...input, name: "Changed intent" })).rejects.toMatchObject({ code: "operation_mismatch" });
+});
+it("keeps create operations tenant-bound and rejects a record ID from another tenant even for a user in both", async () => {
+  const a = await create(),
+    b = await data.create(context(owner, otherTenant, "ws-data-other"), request());
+  await expect(data.get(context(), b.record.id)).rejects.toMatchObject({
+    status: 404,
+  });
+  await expect(data.get(context(owner, otherTenant, "ws-data-other"), a.id)).rejects.toMatchObject({ status: 404 });
+});
+it("requires names, typed values, current schema versions and separate create/edit rights", async () => {
+  for (const name of ["", "  ", "x".repeat(201), "bad\u0000name"]) await expect(data.create(context(), request("organisations", name))).rejects.toMatchObject({ code: "record_validation" });
+  await expect(
+    data.create(
+      context(),
+      request("organisations", undefined, {
+        values: { "core:domain": "javascript:alert(1)" },
+      }),
+    ),
+  ).rejects.toMatchObject({ code: "record_validation" });
+  await expect(data.create(context(), request("organisations", undefined, { schemaVersion: 99 }))).rejects.toMatchObject({ status: 409 });
+  await expect(data.create(context(viewer), request())).rejects.toMatchObject({
+    status: 403,
+  });
+});
+it("uses optimistic edits and confirms an older replay without claiming it is the latest state", async () => {
+  const r = await create(),
+    first = {
+      operationId: crypto.randomUUID(),
+      expectedVersion: r.version,
+      schemaVersion: 1,
+      name: "First edit",
+    },
+    done = await data.update(context(), r.id, first);
+  await expect(
+    data.update(context(), r.id, {
+      ...first,
+      operationId: crypto.randomUUID(),
+      name: "Stale edit",
+    }),
+  ).rejects.toMatchObject({ code: "record_version_conflict" });
+  await data.update(context(), r.id, {
+    operationId: crypto.randomUUID(),
+    expectedVersion: done.record.version,
+    schemaVersion: 1,
+    name: "Later edit",
+  });
+  const replay = await data.update(context(), r.id, first);
+  expect(replay.appliedVersion).toBe(2);
+  expect(replay.record.version).toBe(3);
+  expect(replay.record.name).toBe("Later edit");
+});
+it("redacts sensitive values from detail, list and historical values unless field-specific rights permit them", async () => {
+  await db.query("INSERT INTO hs_data_field_permissions(tenant_id,collection,field_key,user_id,can_view,can_write,can_history) VALUES($1,$2,$3,$4,true,true,true)", [tenant, "contacts", "core:email", owner.id]);
+  const r = await create("contacts", {
+    values: {
+      "core:email": "private@example.org",
+      "core:job-title": "Analyst",
+    },
+  });
+  const seen = await data.get(context(viewer), r.id);
+  expect(seen.values).toEqual({ "core:job-title": "Analyst" });
+  expect(
+    JSON.stringify(
+      await data.list(context(viewer), {
+        collection: "contacts",
+        query: r.name,
+      }),
+    ),
+  ).not.toContain("private@example.org");
+  expect(JSON.stringify(await data.history(context(viewer), r.id))).not.toContain("private@example.org");
+  await db.query("INSERT INTO hs_data_field_permissions(tenant_id,collection,field_key,user_id,can_view,can_history) VALUES($1,$2,$3,$4,true,false)", [tenant, "contacts", "core:email", viewer.id]);
+  try {
+    expect((await data.get(context(viewer), r.id)).values["core:email"]).toBe("private@example.org");
+    expect(JSON.stringify(await data.history(context(viewer), r.id))).not.toContain("private@example.org");
+    await db.query("UPDATE hs_data_field_permissions SET can_history=true WHERE tenant_id=$1 AND collection=$2 AND field_key=$3 AND user_id=$4", [tenant, "contacts", "core:email", viewer.id]);
+    expect(JSON.stringify(await data.history(context(viewer), r.id))).toContain("private@example.org");
+  } finally {
+    await db.query("DELETE FROM hs_data_field_permissions WHERE tenant_id=$1 AND user_id=$2", [tenant, viewer.id]);
+  }
+});
+it("does not allow sensitive blind writes or infer import/export/delete from ordinary edit", async () => {
+  await expect(
+    data.create(
+      context(),
+      request("employees", undefined, {
+        values: { "core:email": "hidden@example.org" },
+      }),
+    ),
+  ).rejects.toMatchObject({ status: 403 });
+  const r = await create();
+  await db.query("INSERT INTO hs_data_record_grants(tenant_id,record_id,user_id,capabilities) VALUES($1,$2,$3,$4)", [tenant, r.id, outsider.id, ["view", "edit"]]);
+  const seen = await data.get(context(outsider), r.id);
+  expect(seen.capabilities).toEqual(["view", "edit"]);
+  for (const capability of ["import", "export", "delete", "schema"]) expect(seen.capabilities).not.toContain(capability);
+});
+it("requires exactly one same-tenant organisation parent for accounts and at least one legal party for contracts", async () => {
+  const org = await create(),
+    contact = await create("contacts");
+  await expect(data.create(context(), request("accounts"))).rejects.toMatchObject({ code: "record_relationship_validation" });
+  await expect(data.create(context(), request("accounts", undefined, { parentOrganisationId: contact.id }))).rejects.toMatchObject({ code: "record_relationship_validation" });
+  const account = await create("accounts", { parentOrganisationId: org.id });
+  expect(account.parentOrganisation).toEqual({ id: org.id, name: org.name });
+  await expect(data.create(context(), request("contracts"))).rejects.toMatchObject({ code: "record_relationship_validation" });
+  const contract = await create("contracts", {
+    legalOrganisationIds: [org.id],
+    accountIds: [account.id],
+  });
+  expect(contract.related.map((e) => e.kind).sort()).toEqual(["contract-account", "contract-legal-party"]);
+  const foreign = (await data.create(context(owner, otherTenant, "ws-data-other"), request())).record;
+  await expect(data.create(context(), request("accounts", undefined, { parentOrganisationId: foreign.id }))).rejects.toMatchObject({ status: 404 });
+});
+it("enforces legal-party cardinality and immutable tenant/type identity at the database boundary", async () => {
+  const org = await create(),
+    contract = await create("contracts", { legalOrganisationIds: [org.id] });
+  await expect(db.query("DELETE FROM hs_data_relationships WHERE tenant_id=$1 AND source_id=$2 AND kind='contract-legal-party'", [tenant, contract.id])).rejects.toThrow();
+  expect((await data.get(context(), contract.id)).related).toHaveLength(1);
+  await expect(db.query("UPDATE hs_data_records SET tenant_id=$2 WHERE id=$1", [org.id, otherTenant])).rejects.toThrow();
+  await expect(db.query("UPDATE hs_data_records SET collection='contacts' WHERE id=$1", [org.id])).rejects.toThrow();
+});
+it("manages many-account contact and employee assignments without granting record access", async () => {
+  const relationships = new SharedRecordRelationshipRepository(pages, authority),
+    org = await create(),
+    accountA = await create("accounts", { parentOrganisationId: org.id }),
+    accountB = await create("accounts", { parentOrganisationId: org.id }),
+    contact = await create("contacts"),
+    employee = await create("employees");
+  let version = contact.version;
+  for (const [target, role, primary] of [
+    [accountA, "Buyer", true],
+    [accountB, "Approver", false],
+  ] as const) {
+    const done = await relationships.mutateRelationship(context(), contact.id, {
+      operationId: crypto.randomUUID(),
+      expectedVersion: version,
+      kind: "contact-account",
+      targetId: target.id,
+      action: "upsert",
+      role,
+      primary,
+      status: "active",
+    });
+    version = done.record.version;
+  }
+  const seen = await data.get(context(), contact.id);
+  expect(seen.related.map((link) => [link.target.id, link.role, link.primary])).toEqual(
+    expect.arrayContaining([
+      [accountA.id, "Buyer", true],
+      [accountB.id, "Approver", false],
+    ]),
+  );
+  const grantsBefore = await db.query("SELECT * FROM hs_data_record_grants WHERE tenant_id=$1", [tenant]);
+  const assigned = await relationships.mutateRelationship(context(), employee.id, {
+    operationId: crypto.randomUUID(),
+    expectedVersion: employee.version,
+    kind: "employee-account",
+    targetId: accountA.id,
+    action: "upsert",
+    role: "Account lead",
+    primary: false,
+    status: "active",
+  });
+  expect(assigned.record.related[0]).toMatchObject({
+    kind: "employee-account",
+    role: "Account lead",
+  });
+  expect(await db.query("SELECT * FROM hs_data_record_grants WHERE tenant_id=$1", [tenant])).toEqual(grantsBefore);
+});
+it("requires edit and link rights on the source plus link rights on a same-tenant typed target", async () => {
+  const relationships = new SharedRecordRelationshipRepository(pages, authority),
+    org = await create(),
+    account = await create("accounts", { parentOrganisationId: org.id }),
+    contact = await create("contacts"),
+    foreign = (await data.create(context(owner, otherTenant, "ws-data-other"), request("organisations"))).record;
+  await expect(
+    relationships.mutateRelationship(context(viewer), contact.id, {
+      operationId: crypto.randomUUID(),
+      expectedVersion: contact.version,
+      kind: "contact-account",
+      targetId: account.id,
+      action: "upsert",
+    }),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(
+    relationships.mutateRelationship(context(), contact.id, {
+      operationId: crypto.randomUUID(),
+      expectedVersion: contact.version,
+      kind: "contact-account",
+      targetId: org.id,
+      action: "upsert",
+    }),
+  ).rejects.toMatchObject({ code: "record_relationship_validation" });
+  await expect(
+    relationships.mutateRelationship(context(), contact.id, {
+      operationId: crypto.randomUUID(),
+      expectedVersion: contact.version,
+      kind: "contact-account",
+      targetId: foreign.id,
+      action: "upsert",
+    }),
+  ).rejects.toMatchObject({ status: 404 });
+});
+it("retains a contract legal party and supports optional account coverage across organisations", async () => {
+  const relationships = new SharedRecordRelationshipRepository(pages, authority),
+    orgA = await create(),
+    orgB = await create(),
+    accountA = await create("accounts", { parentOrganisationId: orgA.id }),
+    accountB = await create("accounts", { parentOrganisationId: orgB.id }),
+    contract = await create("contracts", { legalOrganisationIds: [orgA.id] });
+  const one = await relationships.mutateRelationship(context(), contract.id, {
+      operationId: crypto.randomUUID(),
+      expectedVersion: contract.version,
+      kind: "contract-account",
+      targetId: accountA.id,
+      action: "upsert",
+    }),
+    two = await relationships.mutateRelationship(context(), contract.id, {
+      operationId: crypto.randomUUID(),
+      expectedVersion: one.record.version,
+      kind: "contract-account",
+      targetId: accountB.id,
+      action: "upsert",
+    });
+  expect(two.record.related.filter((link) => link.kind === "contract-account").map((link) => link.target.id)).toEqual(expect.arrayContaining([accountA.id, accountB.id]));
+  const legal = two.record.related.find((link) => link.kind === "contract-legal-party")!;
+  await expect(
+    relationships.mutateRelationship(context(), contract.id, {
+      operationId: crypto.randomUUID(),
+      expectedVersion: two.record.version,
+      kind: "contract-legal-party",
+      targetId: legal.target.id,
+      action: "remove",
+    }),
+  ).rejects.toMatchObject({ code: "record_relationship_required" });
+});
+it("previews account reparent impact, requires an exact confirmation and never rewrites legal parties", async () => {
+  const relationships = new SharedRecordRelationshipRepository(pages, authority),
+    orgA = await create(),
+    orgB = await create(),
+    account = await create("accounts", { parentOrganisationId: orgA.id }),
+    contract = await create("contracts", {
+      legalOrganisationIds: [orgA.id],
+      accountIds: [account.id],
+    });
+  await db.query("INSERT INTO hs_data_references(id,tenant_id,record_id,source_app,source_type,source_id) VALUES($1,$2,$3,$4,$5,$6)", [crypto.randomUUID(), tenant, account.id, "sho", "project", "project-42"]);
+  const preview = await relationships.previewReparent(context(), account.id, {
+    newOrganisationId: orgB.id,
+  });
+  expect(preview).toMatchObject({
+    expectedVersion: account.version,
+    currentOrganisationId: orgA.id,
+    newOrganisationId: orgB.id,
+    legalPartiesWillChange: false,
+    affectedContracts: [{ id: contract.id }],
+    contextReferences: [{ source_app: "sho", source_type: "project", source_id: "project-42" }],
+  });
+  await expect(
+    relationships.reparent(context(), account.id, {
+      operationId: crypto.randomUUID(),
+      expectedVersion: account.version,
+      newOrganisationId: orgB.id,
+      previewToken: "0".repeat(64),
+      confirmed: true,
+    }),
+  ).rejects.toMatchObject({ code: "record_reparent_preview_stale" });
+  const changed = await relationships.reparent(context(), account.id, {
+    operationId: crypto.randomUUID(),
+    expectedVersion: account.version,
+    newOrganisationId: orgB.id,
+    previewToken: preview.previewToken,
+    confirmed: true,
+  });
+  expect(changed.record.parentOrganisation).toEqual({
+    id: orgB.id,
+    name: orgB.name,
+  });
+  expect(changed.affectedContracts).toEqual([{ id: contract.id, name: contract.name }]);
+  expect(changed.legalPartiesChanged).toBe(false);
+  expect((await data.get(context(), contract.id)).related.find((link) => link.kind === "contract-legal-party")?.target.id).toBe(orgA.id);
+});
+it("preserves hidden fields on a partial edit and never logs their values in ordinary audit", async () => {
+  const key = crypto.randomUUID();
+  await field(key, { sensitive: true });
+  await db.query("INSERT INTO hs_data_field_permissions(tenant_id,collection,field_key,user_id,can_view,can_write) VALUES($1,$2,$3,$4,true,true)", [tenant, "organisations", key, owner.id]);
+  const r = await create("organisations", {
+    values: { [key]: "Protected custom value" },
+  });
+  await db.query("INSERT INTO hs_data_record_grants(tenant_id,record_id,user_id,capabilities) VALUES($1,$2,$3,$4)", [tenant, r.id, outsider.id, ["view", "edit"]]);
+  const changed = await data.update(context(outsider), r.id, {
+    operationId: crypto.randomUUID(),
+    expectedVersion: r.version,
+    schemaVersion: 1,
+    name: "Safe visible edit",
+  });
+  expect(changed.record.values[key]).toBeUndefined();
+  expect((await data.get(context(), r.id)).values[key]).toBe("Protected custom value");
+  const audits = JSON.stringify((await db.query("SELECT after_value FROM hs_audit WHERE action LIKE 'shared-record.%' ORDER BY id")).rows);
+  expect(audits).not.toContain("Protected custom value");
+  expect(audits).not.toContain("private@example.org");
+});
+it("checks independent HS page access and links documents without creating grants", async () => {
+  const r = await create(),
+    page = await pages.create(owner, "Independent private document", "space-product"),
+    before = await db.query("SELECT * FROM hs_grants WHERE page_id=$1", [page.id]),
+    op = { operationId: crypto.randomUUID(), expectedVersion: r.version },
+    linked = await data.linkDocument(context(), r.id, page.id, op);
+  expect(linked.record.documents).toEqual([expect.objectContaining({ pageId: page.id, title: page.title })]);
+  expect((await data.linkDocument(context(), r.id, page.id, op)).replayed).toBe(true);
+  expect((await data.get(context(viewer), r.id)).documents).toEqual([]);
+  await expect(pages.get(page.id, viewer)).rejects.toMatchObject({
+    status: 404,
+  });
+  expect(await db.query("SELECT * FROM hs_grants WHERE page_id=$1", [page.id])).toEqual(before);
+});
+it("rolls back record, operation, private event and outbox together if current suite authority is revoked before commit", async () => {
+  const input = request(),
+    ctx = context(),
+    counts = await db.query("SELECT count(*)::int AS n FROM hs_data_records");
+  vi.mocked(authority.verify)
+    .mockResolvedValueOnce(proof(ctx))
+    .mockResolvedValueOnce({ ...proof(ctx), active: false });
+  await expect(data.create(ctx, input)).rejects.toMatchObject({ status: 404 });
+  expect(await db.query("SELECT count(*)::int AS n FROM hs_data_records")).toEqual(counts);
+  for (const table of ["hs_data_operations", "hs_data_events", "hs_data_change_events"]) expect((await db.query("SELECT * FROM " + table + " WHERE operation_id=$1", [input.operationId])).rows).toHaveLength(0);
+});
+it("enforces uniqueness without disclosing the matching inaccessible record", async () => {
+  const key = crypto.randomUUID();
+  await field(key, { unique: true });
+  const first = await create("organisations", {
+    values: { [key]: "Unique typed value" },
+  });
+  await expect(
+    data.create(
+      context(),
+      request("organisations", undefined, {
+        values: { [key]: "Unique typed value" },
+      }),
+    ),
+  ).rejects.toMatchObject({ code: "record_unique_conflict" });
+  expect((await data.get(context(), first.id)).values[key]).toBe("Unique typed value");
+});
+it("denies attachment or relationship field writes without a current reference-authority adapter", async () => {
+  const key = crypto.randomUUID();
+  await db.query("INSERT INTO hs_data_fields(tenant_id,collection,field_key,label,kind,created_by) VALUES($1,$2,$3,$4,$5,$6)", [tenant, "organisations", key, "Related record", "record", owner.id]);
+  await expect(
+    data.create(
+      context(),
+      request("organisations", undefined, {
+        values: { [key]: [crypto.randomUUID()] },
+      }),
+    ),
+  ).rejects.toMatchObject({ code: "record_reference_unavailable" });
+});
+it("uses stable fifty-item pages, scope-bound expiring cursors and no full-dataset browser result", async () => {
+  const prefix = "query" + crypto.randomUUID().replaceAll("-", "");
+  for (let i = 0; i < 53; i++) await data.create(context(), request("organisations", prefix + " " + String(i).padStart(3, "0")));
+  const one = await data.list(context(), {
+    collection: "organisations",
+    query: prefix,
+  });
+  expect(one.results).toHaveLength(50);
+  expect(one.nextCursor).toBeTruthy();
+  const two = await data.list(context(), {
+    collection: "organisations",
+    query: prefix,
+    cursor: one.nextCursor!,
+  });
+  expect(two.results).toHaveLength(3);
+  expect(two.nextCursor).toBeNull();
+  expect(new Set([...one.results, ...two.results].map((r) => r.id)).size).toBe(53);
+  await expect(
+    data.list(context(viewer), {
+      collection: "organisations",
+      query: prefix,
+      cursor: one.nextCursor!,
+    }),
+  ).rejects.toMatchObject({ code: "record_cursor_invalid" });
+  await expect(
+    data.list(context(), {
+      collection: "organisations",
+      query: prefix + " changed",
+      cursor: one.nextCursor!,
+    }),
+  ).rejects.toMatchObject({ code: "record_cursor_invalid" });
+  await db.query("UPDATE hs_data_query_cursors SET expires_at=clock_timestamp()-interval '1 second'");
+  await expect(
+    data.list(context(), {
+      collection: "organisations",
+      query: prefix,
+      cursor: one.nextCursor!,
+    }),
+  ).rejects.toMatchObject({ code: "record_cursor_invalid" });
+});
+it("returns the same immutable record through another explicitly reviewed workspace of its tenant", async () => {
+  const r = await create(),
+    workspace = "same-tenant-" + crypto.randomUUID();
+  await db.query("INSERT INTO hs_workspaces(id,name) VALUES($1,$2)", [workspace, "Second same-tenant fixture"]);
+  await db.query("INSERT INTO hs_members(workspace_id,user_id) VALUES($1,$2)", [workspace, owner.id]);
+  await db.query("INSERT INTO hs_data_workspaces(workspace_id,tenant_id,review_reference) VALUES($1,$2,$3)", [workspace, tenant, "Synthetic reviewed mapping"]);
+  expect((await data.get(context(owner, tenant, workspace), r.id)).id).toBe(r.id);
+});
+it("treats wildcard characters literally and never filters or sorts on an unpermitted sensitive field", async () => {
+  const marker = "literal" + crypto.randomUUID().replaceAll("-", ""),
+    r = await create("organisations", { name: marker + "%_name" });
+  expect(
+    (
+      await data.list(context(), {
+        collection: "organisations",
+        query: marker + "%_",
+      })
+    ).results.map((x) => x.id),
+  ).toEqual([r.id]);
+  await expect(
+    data.list(context(viewer), {
+      collection: "contacts",
+      query: "",
+      sort: "core:email",
+    } as Parameters<SharedRecordRepository["list"]>[1]),
+  ).rejects.toMatchObject({ code: "record_validation" });
+});
