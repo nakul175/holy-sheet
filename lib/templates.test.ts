@@ -13,6 +13,29 @@ async function publish(id:string){return changeTemplate(r,owner,workspace,{kind:
 async function instantiate(id:string,revision=1){return changeTemplate(r,owner,workspace,{kind:'instantiate',operationId:crypto.randomUUID(),id,revision,spaceId:'space-product',title:'Independent page'});}
 beforeAll(async()=>{db=await createDatabase(':memory:');r=new Repository(db);await r.seedLocal();await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[other.id]);await db.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-aplyd',$1)",[other.id]);});afterAll(async()=>{await db.close();});
 describe('private template and starter foundation',()=>{
+ it('publishes an immutable space revision only with reviewed native management authority',async()=>{
+  await db.query("UPDATE hs_members SET role='admin' WHERE workspace_id=$1 AND user_id=$2",[workspace,owner.id]);
+  const id=await personal('Reviewed space template');
+  await expect(changeTemplate(r,owner,workspace,{kind:'publish-space',operationId:crypto.randomUUID(),id,expectedDraftVersion:1,spaceId:'space-product',reviewed:false})).rejects.toMatchObject({code:'template_review_required'});
+  const published=await changeTemplate(r,owner,workspace,{kind:'publish-space',operationId:crypto.randomUUID(),id,expectedDraftVersion:1,spaceId:'space-product',reviewed:true});
+  expect(published).toMatchObject({publishedVersion:1,spaceId:'space-product'});
+  expect((await listTemplates(r,other,workspace,'','space')).templates.map(t=>t.id)).toContain(id);
+  expect((await readTemplate(r,other,workspace,id)).scope).toBe('space');
+  const page=await changeTemplate(r,other,workspace,{kind:'instantiate',operationId:crypto.randomUUID(),id,revision:1,spaceId:'space-product',title:'Member copy'});
+  expect((await r.get(String(page.pageId),other)).role).toBe('owner');
+  await expect(readTemplate(r,other,workspace,id,true)).rejects.toMatchObject({status:404});
+  await db.query("UPDATE hs_members SET role='member' WHERE workspace_id=$1 AND user_id=$2",[workspace,owner.id]);
+  await expect(changeTemplate(r,owner,workspace,{kind:'archive',operationId:crypto.randomUUID(),id,expectedDraftVersion:1})).rejects.toMatchObject({status:404});
+ });
+ it('supports explicit space template managers without granting private template access',async()=>{
+  const personalOther=await changeTemplate(r,other,workspace,{kind:'save',operationId:crypto.randomUUID(),name:'Delegated space draft',description:'',document:document()}),id=String(personalOther.id);
+  await expect(changeTemplate(r,other,workspace,{kind:'publish-space',operationId:crypto.randomUUID(),id,expectedDraftVersion:1,spaceId:'space-product',reviewed:true})).rejects.toMatchObject({code:'management_required'});
+  await db.query("INSERT INTO hs_space_template_managers(workspace_id,space_id,user_id) VALUES('ws-aplyd','space-product',$1)",[other.id]);
+  await changeTemplate(r,other,workspace,{kind:'publish-space',operationId:crypto.randomUUID(),id,expectedDraftVersion:1,spaceId:'space-product',reviewed:true});
+  expect((await readTemplate(r,owner,workspace,id)).scope).toBe('space');
+  const secret=await personal('Still private after delegation');
+  await expect(readTemplate(r,other,workspace,secret)).rejects.toMatchObject({status:404});
+ });
  it('reconciles a lost archive response without duplicating the audit event',async()=>{const id=await personal(),input={kind:'archive' as const,operationId:crypto.randomUUID(),id,expectedDraftVersion:1};await changeTemplate(r,owner,workspace,input);expect((await changeTemplate(r,owner,workspace,input)).replayed).toBe(true);expect((await db.query('SELECT id FROM hs_audit WHERE correlation_id=$1',[input.operationId])).rows).toHaveLength(1);});
  it('redacts private template names for independent page recipients',async()=>{const id=await personal('Private provenance name');await publish(id);const pageId=String((await instantiate(id)).pageId);await db.query("INSERT INTO hs_grants(page_id,subject,role) VALUES($1,$2,'viewer')",[pageId,other.id]);expect((await templateProvenance(r,other,pageId))?.templateName).toBe('Restricted template');expect((await templateProvenance(r,owner,pageId))?.templateName).toBe('Private provenance name');expect(plainText((await r.get(pageId,other)).document)).toContain('careful plan');});
  it('provides three immutable starter structures with no task generation',async()=>{const items=(await listTemplates(r,owner,workspace)).templates.filter(t=>t.scope==='starter');expect(items.map(t=>t.name)).toEqual(['Meeting notes','Project brief','SOP']);const meeting=await readTemplate(r,owner,workspace,items[0].id);expect(plainText(meeting.document)).toContain('Decisions');expect(meeting.document.content!.some(n=>n.type==='taskList')).toBe(true);await expect(command({kind:'archive',id:meeting.id,expectedDraftVersion:1})).rejects.toMatchObject({code:'template_readonly'});});
