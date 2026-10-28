@@ -23,9 +23,10 @@ test('two live editor clients converge and report durable save and presence',asy
     await expect(a.locator('.live-collaborators span')).toHaveCount(1);
     await expect(a.locator('.collaborator-caret')).toHaveCount(1);
     const saved=await request.get(origin+`/api/v1/pages/${id}/document`);expect(saved.status()).toBe(200);expect(JSON.stringify((await saved.json()).page.document)).toContain('LEFTα');expect(JSON.stringify((await saved.json()).page.document)).toContain('RIGHTβ');
-    await editorA.press('Meta+z');
+    const nextSubmit=(page:typeof a)=>page.waitForResponse(response=>response.url()===origin+`/api/v1/pages/${id}/collaboration`&&response.request().method()==='POST'&&response.request().postDataJSON().action==='submit');
+    let submitted=nextSubmit(a);await editorA.press('ControlOrMeta+z');expect((await submitted).status()).toBe(200);
     await expect.poll(async()=>{const values=await texts();return {same:values[0]===values[1],left:values[0]?.includes('LEFTα'),right:values[0]?.includes('RIGHTβ')};}).toEqual({same:true,left:false,right:true});
-    await editorB.press('Meta+z');
+    submitted=nextSubmit(b);await editorB.press('ControlOrMeta+z');expect((await submitted).status()).toBe(200);
     await expect.poll(texts).toEqual(['Shared base','Shared base']);
     await expect(a.getByRole('button',{name:'✓ Saved',exact:true})).toBeVisible();
   }finally{await a.close();await b.close();}
