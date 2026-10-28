@@ -5,11 +5,11 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import dataclasses
+import errno
 import fcntl
 import hashlib
 import os
 import pathlib
-import shutil
 import signal
 import stat
 import subprocess
@@ -30,7 +30,7 @@ PAYLOAD_HASHES = {
     "scripts/test_holy127_bounded_stream.py": "d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44",
     "scripts/test_hs_release_guard.py": "6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40",
     "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md": "2286b1e4d04e69553bdeaefc84b3563ce591b970aa33b0bce545ccd1c726dc5f",
-    "deployment/HOLY-127-RELEASE-PACKET.md": "62f7e290a0ddab55772988e83ff8f437e53f99bd7b956a6697b4bfd62b46920f",
+    "deployment/HOLY-127-RELEASE-PACKET.md": "bcd7993cbb39d8c7dcbd088377e9ef99840e09f0d034f3e19af1a3ed59298336",
     "scripts/holy127_qualifier_entrypoint.sh": "b8a7c8162e8167b7cd35abde7189c7308a0fba15fe9af79ff9add056b1ed1fa7",
     "scripts/holy127_qualifier_receipt_collect.sh": "64b4f1311029bb64b265824c40a541c806ae3955bfe0b1558eff4e7dd6a8b695",
     "scripts/holy127_qualifier_receipt_cleanup.sh": "349297d0f11330568dffaf8c3486ff4e21af962237ba982324020ac76646910a",
@@ -92,6 +92,31 @@ def same_identity(owned: OwnedPath) -> bool:
         return False
     return current.device == owned.device and current.inode == owned.inode and current.is_dir == owned.is_dir and (not owned.is_dir or current.children == owned.children)
 
+def same_path_inode(owned: OwnedPath) -> bool:
+    try:
+        metadata = owned.path.lstat()
+    except FileNotFoundError:
+        return False
+    return metadata.st_dev == owned.device and metadata.st_ino == owned.inode and stat.S_ISDIR(metadata.st_mode) == owned.is_dir
+
+def cleanup_owned_directory(owned: OwnedPath) -> None:
+    if not same_path_inode(owned):
+        return
+    owned.path.chmod(0o700)
+    for name, device, inode in reversed(owned.children):
+        child = owned.path / name
+        try:
+            metadata = child.lstat()
+        except FileNotFoundError:
+            continue
+        if metadata.st_dev == device and metadata.st_ino == inode and stat.S_ISREG(metadata.st_mode):
+            child.unlink()
+    try:
+        owned.path.rmdir()
+    except OSError as error:
+        if error.errno != errno.ENOTEMPTY:
+            raise
+
 @contextlib.contextmanager
 def blocked_signals() -> Iterator[None]:
     previous = signal.pthread_sigmask(signal.SIG_BLOCK, CAUGHT_SIGNALS)
@@ -109,13 +134,16 @@ def rename_noreplace(source: pathlib.Path, target: pathlib.Path) -> None:
         error = ctypes.get_errno()
         raise OSError(error, os.strerror(error), str(target))
 
-def write_all(descriptor: int, content: bytes) -> None:
+def write_all(descriptor: int, content: bytes, operation: Callable[[str], None]) -> None:
     remaining = memoryview(content)
+    index = 0
     while remaining:
         written = os.write(descriptor, remaining)
+        operation(f"write:{index}")
         if written == 0:
             raise OSError("short write while staging installer payload")
         remaining = remaining[written:]
+        index += 1
 
 def verify_directory(path: pathlib.Path, uid: int, gid: int, *, exact_mode: int | None = None) -> None:
     metadata = path.lstat()
@@ -143,8 +171,17 @@ class Installer:
     def phase(self, name: str) -> None:
         self.hook(name)
 
+    def operation(self, name: str) -> None:
+        self.hook(f"io:{name}")
+
     def verify_inputs(self) -> None:
         c = self.config
+        if c.expected_uid == 0:
+            for ancestor in (pathlib.Path("/"), pathlib.Path("/usr"), pathlib.Path("/usr/local"), pathlib.Path("/etc"), pathlib.Path("/run"), pathlib.Path("/var"), pathlib.Path("/opt")):
+                verify_directory(ancestor, 0, 0)
+            temporary = pathlib.Path("/var/tmp").lstat()
+            if not stat.S_ISDIR(temporary.st_mode) or temporary.st_uid != 0 or temporary.st_gid != 0 or stat.S_IMODE(temporary.st_mode) != 0o1777:
+                raise InstallFailure("unsafe directory: /var/tmp")
         verify_directory(c.source_root.parent, c.expected_uid, c.expected_gid, exact_mode=0o700)
         verify_directory(c.source_root, c.expected_uid, c.expected_gid, exact_mode=0o500)
         verify_directory(c.source_root / "scripts", c.expected_uid, c.expected_gid)
@@ -195,28 +232,56 @@ class Installer:
     def create_stage_file(self, path: pathlib.Path, content: bytes, mode: int) -> OwnedPath:
         with blocked_signals():
             descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW, mode)
-            try:
-                write_all(descriptor, content); os.fsync(descriptor); os.fchown(descriptor, self.config.expected_uid, self.config.expected_gid); os.fchmod(descriptor, mode)
-                metadata = os.fstat(descriptor)
-            finally:
-                os.close(descriptor)
+            metadata = os.fstat(descriptor)
             owned = OwnedPath(path, metadata.st_dev, metadata.st_ino, False)
             self.staged.append(owned)
+            try:
+                write_all(descriptor, content, lambda step: self.operation(f"{path.name}:{step}"))
+                os.fsync(descriptor); self.operation(f"{path.name}:fsync")
+                os.fchown(descriptor, self.config.expected_uid, self.config.expected_gid); self.operation(f"{path.name}:fchown")
+                os.fchmod(descriptor, mode); self.operation(f"{path.name}:fchmod")
+                metadata = os.fstat(descriptor)
+            except BaseException:
+                os.close(descriptor)
+                if same_identity(owned):
+                    path.unlink()
+                self.staged.remove(owned)
+                raise
+            finally:
+                if descriptor >= 0:
+                    try: os.close(descriptor)
+                    except OSError: pass
         self.phase(f"stage:{path.parent.name}/{path.name}")
         return owned
 
     def create_bundle_stage(self, path: pathlib.Path) -> OwnedPath:
         with blocked_signals():
-            path.mkdir(mode=0o700); os.chown(path, self.config.expected_uid, self.config.expected_gid); os.chmod(path, 0o700)
-            for installed_name, relative in BUNDLE_FILES.items():
-                target = path / installed_name
-                descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW, 0o444)
-                try:
-                    write_all(descriptor, (self.config.source_root / relative).read_bytes()); os.fsync(descriptor); os.fchown(descriptor, self.config.expected_uid, self.config.expected_gid); os.fchmod(descriptor, 0o444)
-                finally:
-                    os.close(descriptor)
-            os.chmod(path, 0o555)
+            path.mkdir(mode=0o700)
             owned = identity(path, children=True); self.staged.append(owned)
+            try:
+                os.chown(path, self.config.expected_uid, self.config.expected_gid); self.operation(f"{path.name}:chown")
+                os.chmod(path, 0o700); self.operation(f"{path.name}:chmod-staging")
+                for installed_name, relative in BUNDLE_FILES.items():
+                    self.operation(f"{path.name}:iteration:{installed_name}:begin")
+                    target = path / installed_name
+                    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW, 0o444)
+                    metadata = os.fstat(descriptor)
+                    expected_children = tuple(sorted((*owned.children, (installed_name, metadata.st_dev, metadata.st_ino))))
+                    owned = dataclasses.replace(owned, children=expected_children)
+                    self.staged[-1] = owned
+                    try:
+                        write_all(descriptor, (self.config.source_root / relative).read_bytes(), lambda step: self.operation(f"{installed_name}:{step}"))
+                        os.fsync(descriptor); self.operation(f"{installed_name}:fsync")
+                        os.fchown(descriptor, self.config.expected_uid, self.config.expected_gid); self.operation(f"{installed_name}:fchown")
+                        os.fchmod(descriptor, 0o444); self.operation(f"{installed_name}:fchmod")
+                    finally:
+                        os.close(descriptor)
+                    self.operation(f"{path.name}:iteration:{installed_name}:end")
+                os.chmod(path, 0o555); self.operation(f"{path.name}:chmod-final")
+            except BaseException:
+                cleanup_owned_directory(owned)
+                self.staged.remove(owned)
+                raise
         self.phase(f"stage:{path.parent.name}/{path.name}")
         return owned
 
@@ -228,18 +293,26 @@ class Installer:
         self.phase(f"commit:{target.parent.name}/{target.name}")
 
     def validate_sudoers(self, path: pathlib.Path) -> None:
-        subprocess.run([self.config.visudo, "-cf", path], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run([self.config.visudo, "-cf", path], check=True, stdout=subprocess.DEVNULL, timeout=10)
 
     def rollback(self) -> None:
-        for owned in reversed([*self.committed, *self.staged]):
-            if same_identity(owned):
-                if owned.is_dir:
-                    owned.path.chmod(0o700)
-                    shutil.rmtree(owned.path)
-                else:
-                    owned.path.unlink()
-        if self.created_bundle_parent and same_identity(self.created_bundle_parent):
-            self.created_bundle_parent.path.rmdir()
+        failures = []
+        with blocked_signals():
+            for owned in reversed([*self.committed, *self.staged]):
+                try:
+                    if owned.is_dir:
+                        cleanup_owned_directory(owned)
+                    elif same_identity(owned):
+                        owned.path.unlink()
+                except BaseException as error:
+                    failures.append(f"{owned.path}: {error}")
+            try:
+                if self.created_bundle_parent and same_identity(self.created_bundle_parent):
+                    self.created_bundle_parent.path.rmdir()
+            except BaseException as error:
+                failures.append(f"{self.created_bundle_parent.path}: {error}")
+        if failures:
+            raise InstallFailure("rollback failures: " + "; ".join(failures))
 
     def run(self) -> None:
         c = self.config
@@ -270,8 +343,14 @@ def main() -> int:
     if os.getuid() != 0: print("HOLY-127 installer requires the fixed root operator surface", file=sys.stderr); return 77
     subject = Installer(Config()); install_signal_handlers()
     try: subject.run()
-    except InstallInterrupted as error: subject.rollback(); print(str(error), file=sys.stderr); return 128 + error.signum
-    except BaseException as error: subject.rollback(); print(f"HOLY-127 installer refused: {error}", file=sys.stderr); return 1
+    except InstallInterrupted as error:
+        try: subject.rollback()
+        except BaseException as rollback_error: print(f"HOLY-127 rollback also failed: {rollback_error}", file=sys.stderr)
+        print(str(error), file=sys.stderr); return 128 + error.signum
+    except BaseException as error:
+        try: subject.rollback()
+        except BaseException as rollback_error: print(f"HOLY-127 rollback also failed: {rollback_error}", file=sys.stderr)
+        print(f"HOLY-127 installer refused: {error}", file=sys.stderr); return 1
     finally: subject.close()
     print("HOLY-127 fixed qualifier surfaces installed; qualification not executed"); return 0
 

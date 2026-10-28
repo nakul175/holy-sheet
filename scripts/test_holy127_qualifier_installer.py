@@ -102,6 +102,50 @@ class QualifierInstallerFaultTest(unittest.TestCase):
             with self.assertRaises(FileExistsError): subject.run()
             subject.rollback(); subject.close(); self.assertEqual(target.read_text(encoding="utf-8"), "unrelated")
 
+    def test_fault_injection_at_every_internal_io_boundary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            harness = Harness(pathlib.Path(temporary)); operations = []
+            subject = mod.Installer(harness.config(), lambda phase: operations.append(phase) if phase.startswith("io:") else None, test_rename_noreplace)
+            subject.run(); subject.rollback(); subject.close()
+        self.assertGreaterEqual(len(operations), 25)
+        for operation in operations:
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as temporary:
+                harness = Harness(pathlib.Path(temporary))
+                def hook(current):
+                    if current == operation: raise OSError(operation)
+                subject = mod.Installer(harness.config(), hook, test_rename_noreplace)
+                with self.assertRaises(OSError): subject.run()
+                subject.rollback(); subject.close(); self.assert_clean(harness)
+
+    def test_partial_bundle_cleanup_removes_only_owned_children(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            harness = Harness(pathlib.Path(temporary)); foreign = None
+            def hook(current):
+                nonlocal foreign
+                if current == "io:holy127_disposable_staging_qualifier.py:fchmod":
+                    pending = harness.config().bundle.with_name(harness.config().bundle.name + ".holy127-install-rootpath-v2.pending")
+                    foreign = pending / "unrelated"
+                    foreign.write_text("preserve", encoding="utf-8")
+                    raise OSError("injected after foreign collision")
+            subject = mod.Installer(harness.config(), hook, test_rename_noreplace)
+            with self.assertRaises(OSError): subject.run()
+            subject.rollback(); subject.close()
+            self.assertIsNotNone(foreign); self.assertEqual(foreign.read_text(encoding="utf-8"), "preserve")
+            self.assertEqual([path.name for path in foreign.parent.iterdir()], ["unrelated"])
+
+    def test_rollback_masks_signals_and_attempts_every_owned_cleanup(self):
+        source = INSTALLER_PATH.read_text(encoding="utf-8")
+        rollback = source[source.index("    def rollback"):source.index("    def run")]
+        self.assertIn("with blocked_signals()", rollback)
+        self.assertIn("failures.append", rollback)
+        self.assertIn("for owned in reversed", rollback)
+
+    def test_visudo_is_bounded_and_production_ancestors_are_explicit(self):
+        source = INSTALLER_PATH.read_text(encoding="utf-8")
+        self.assertIn("timeout=10", source)
+        for path in ('pathlib.Path("/")', 'pathlib.Path("/usr")', 'pathlib.Path("/usr/local")', 'pathlib.Path("/etc")', 'pathlib.Path("/run")', 'pathlib.Path("/var")', 'pathlib.Path("/opt")', 'pathlib.Path("/var/tmp")'):
+            self.assertIn(path, source)
+
     def test_real_term_hup_int_during_staging_and_every_commit_boundary(self):
         runner = textwrap.dedent(f"""
             import importlib.util,pathlib,sys,time
