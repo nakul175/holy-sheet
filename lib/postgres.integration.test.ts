@@ -102,6 +102,13 @@ describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
     finally{await db.query('UPDATE hs_members SET active=true WHERE user_id=$1',[localActor.id]);}
   });
 
+  it('filters twenty-item Trash pages literally and preserves scoped cursors across PostgreSQL restart',async()=>{
+    const {previewPageDeletion,deletePageTree,listTrash}=await import('./trash'),actor={id:crypto.randomUUID()},workspaceId=crypto.randomUUID(),spaceId=crypto.randomUUID(),query='PG Trash %_ '+crypto.randomUUID();
+    await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$2)',[workspaceId,'Isolated filtered Trash PG']);await db.query("INSERT INTO hs_members(workspace_id,user_id,role) VALUES($1,$2,'admin')",[workspaceId,actor.id]);await db.query('INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)',[spaceId,workspaceId,'Filtered Trash']);
+    for(let i=0;i<21;i++){const p=await r.create(actor,query+' '+i,spaceId),review=await previewPageDeletion(r,actor,workspaceId,p.id);await deletePageTree(r,actor,workspaceId,p.id,{operationId:crypto.randomUUID(),expectedTreeVersion:review.treeVersion,previewDigest:review.digest});}
+    const first=await listTrash(r,actor,workspaceId,undefined,query);expect(first.entries).toHaveLength(20);expect(first.nextCursor).toBeTruthy();await db.close();db=await createDatabase();r=new Repository(db);
+    const second=await listTrash(r,actor,workspaceId,first.nextCursor!,query);expect(second.entries).toHaveLength(1);expect(new Set([...first.entries,...second.entries].map(x=>x.rootId)).size).toBe(21);await expect(listTrash(r,actor,workspaceId,first.nextCursor!,query+' other')).rejects.toMatchObject({code:'trash_cursor_changed'});expect((await listTrash(r,actor,workspaceId,undefined,'%_ nonexistent')).entries).toEqual([]);
+  });
   it('serializes recoverable deletion and competing recovery operations on PostgreSQL',async()=>{
     const {previewPageDeletion,deletePageTree,previewTrashRestore,restoreTrashBatch}=await import('./trash');
     const actor={id:crypto.randomUUID()},workspaceId=crypto.randomUUID(),spaceId=crypto.randomUUID();await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$2)',[workspaceId,'Isolated Trash PG']);await db.query("INSERT INTO hs_members(workspace_id,user_id,role) VALUES($1,$2,'admin')",[workspaceId,actor.id]);await db.query('INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)',[spaceId,workspaceId,'Trash']);

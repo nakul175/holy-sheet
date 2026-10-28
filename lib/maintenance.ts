@@ -53,5 +53,6 @@ export async function maintainStorage(r:Repository,erase:(key:string)=>Promise<v
   await expireRecordImportStaging(r.db);
   await expireRecordExportSnapshots(r.db);
   await r.db.query('DELETE FROM hs_data_query_cursors WHERE expires_at<=clock_timestamp()');
+  await r.db.query('DELETE FROM hs_trash_query_cursors WHERE expires_at<=clock_timestamp()');
   return {considered:candidates.length,removed,failed};
 }

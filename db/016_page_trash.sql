@@ -24,3 +24,10 @@ BEGIN
 END;
 $$;
 CREATE OR REPLACE TRIGGER hs_media_trash_retention BEFORE UPDATE OF state ON hs_media FOR EACH ROW EXECUTE FUNCTION hs_media_trash_retention();
+-- Private, short-lived query cursors. User-entered filter text is never persisted.
+CREATE TABLE IF NOT EXISTS hs_trash_query_cursors(
+ token_hash text PRIMARY KEY,workspace_id text NOT NULL REFERENCES hs_workspaces(id),actor_id text NOT NULL REFERENCES hs_users(id),
+ query_hash text NOT NULL,tree_version integer NOT NULL,access_version integer NOT NULL,
+ last_deleted_at timestamptz NOT NULL,last_id uuid NOT NULL,
+ expires_at timestamptz NOT NULL DEFAULT clock_timestamp()+interval '5 minutes');
+CREATE INDEX IF NOT EXISTS hs_trash_query_cursor_expiry ON hs_trash_query_cursors(expires_at);
