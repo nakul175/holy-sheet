@@ -1,0 +1,8 @@
+{
+  "accountsBeforeSha256": "a7f8f28adfb81afbb0882d1719bc007c7bb6331308b1b1a9d7b79391ea7d828d",
+  "modelsBeforeSha256": "3db0468a9ab74c7d3f4cea0496bf3e457eb51caab30a3b0da178b443971b0eb6",
+  "accountsAfterSha256": "39dffc54924b9241eff9d0f0a18492b05eea561b716d7fa4d4c90bb59ef81d42",
+  "modelsAfterSha256": "aac6b713d30daf07c7e100f1bade58c595b390c9dc8998f21e6694fae625dd63",
+  "liveDeployment": false,
+  "automaticGrants": 0
+}

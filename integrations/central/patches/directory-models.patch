@@ -1,0 +1,27 @@
+--- a/directory/models.py
++++ b/directory/models.py
+@@ -161,3 +161,24 @@
+ 
+     class Meta:
+         constraints = [models.UniqueConstraint(fields=['change', 'actor'], name='one_decision_per_approver')]
++
++
++class TenantAdministrator(models.Model):
++    """Explicit per-tenant app authority, separate from role-assignment scopes.
++
++    Creating a row never grants native collection/record capabilities. Active
++    membership, app access, reviewed mapping and cutover gates also apply.
++    """
++    organisation = models.ForeignKey(Organisation, on_delete=models.PROTECT)
++    person = models.ForeignKey(Person, on_delete=models.PROTECT)
++    application = models.CharField(max_length=30)
++    active = models.BooleanField(default=False)
++    version = models.PositiveIntegerField(default=1)
++    review_reference = models.CharField(max_length=300)
++    updated_at = models.DateTimeField(auto_now=True)
++
++    class Meta:
++        constraints = [
++            models.UniqueConstraint(fields=['organisation', 'person', 'application'], name='tenant_administrator_once'),
++            models.CheckConstraint(condition=models.Q(version__gte=1), name='tenant_administrator_version_positive'),
++        ]
