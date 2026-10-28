@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS hs_workspace_search_terms (
  PRIMARY KEY(page_id,chunk)
 );
 CREATE INDEX IF NOT EXISTS hs_workspace_search_terms_vector ON hs_workspace_search_terms USING gin(search_vector);
+ALTER TABLE hs_workspace_search ADD COLUMN IF NOT EXISTS ascii_only boolean GENERATED ALWAYS AS(length(title)=octet_length(title) AND length(body)=octet_length(body)) STORED;
+CREATE INDEX IF NOT EXISTS hs_workspace_search_unicode_pages ON hs_workspace_search(page_id) WHERE NOT ascii_only;
 CREATE OR REPLACE FUNCTION hs_reindex_search_terms(target text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
  DELETE FROM hs_workspace_search_terms WHERE page_id=target;

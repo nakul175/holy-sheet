@@ -17,12 +17,26 @@ describe.skipIf(!url)('HOLY-2 real PostgreSQL projection and candidate parity',(
  it('keeps email, components, domains, dotted versions and long-word prefixes in the actual SQL candidate set',async()=>{
   const p=await r.create(localActor,'HOLY2 punctuation parity','space-product');
   const long='z'.repeat(300)+'endmarker',astral='a'+'\u{10428}'.repeat(180);
-  const text='foo@example.com service.example.org v1.2.3 version 1.2.3 release-2026_10_28 foo+tag@example.com '+long+' '+astral;
+  const text='foo@example.com service.example.org v1.2.3 version 1.2.3 release-2026_10_28 foo+tag@example.com price² review ΟΣ İreview a\u1c89 '+long+' '+astral;
   const saved=await r.save(p.id,localActor,{operationId:crypto.randomUUID(),baseVersion:1,title:p.title,document:ensureIds({type:'doc',content:[{type:'paragraph',content:[{type:'text',text}]}]})});
-  for(const query of ['foo@example.com','foo','example','example.com','service.example.org','v1.2.3','1.2','release-2026_10_28','foo+tag@example.com','z'.repeat(250),'"foo@example.com"','a'+'\u{10428}'.repeat(150)]){
+  for(const query of ['foo@example.com','foo','example','example.com','service.example.org','v1.2.3','1.2','release-2026_10_28','foo+tag@example.com','z'.repeat(250),'"foo@example.com"','a'+'\u{10428}'.repeat(150),'price²','price² review','ΟΣ','ος','İreview','a\u1c89','a\u1c8a']){
    expect(searchPages([saved.page],query).map(x=>x.id),query).toContain(p.id);
    expect((await workspaceSearch(r,localActor,{workspaceId:p.workspaceId,query})).results.map(x=>x.id),query).toContain(p.id);
   }
+ });
+ it('reclassifies saved text, restore and additive backfill without stale Unicode coverage',async()=>{
+  const p=await r.create(localActor,'HOLY2 classification transition','space-product');
+  const save=async(text:string)=>{const current=await r.get(p.id,localActor);await r.save(p.id,localActor,{operationId:crypto.randomUUID(),baseVersion:current.version,title:current.title,document:ensureIds({type:'doc',content:[{type:'paragraph',content:[{type:'text',text}]}]})});};
+  const flag=async()=>(await db.query<{ascii_only:boolean}>('SELECT ascii_only FROM hs_workspace_search WHERE page_id=$1',[p.id])).rows[0].ascii_only;
+  await save('classificationascii');expect(await flag()).toBe(true);
+  await save('classification² ΟΣ İreview');expect(await flag()).toBe(false);
+  await db.query('UPDATE hs_pages SET deleted_at=now() WHERE id=$1',[p.id]);
+  expect((await workspaceSearch(r,localActor,{workspaceId:p.workspaceId,query:'classification²'})).results.map(x=>x.id)).not.toContain(p.id);
+  await db.query('UPDATE hs_pages SET deleted_at=NULL WHERE id=$1',[p.id]);
+  expect((await workspaceSearch(r,localActor,{workspaceId:p.workspaceId,query:'classification²'})).results.map(x=>x.id)).toContain(p.id);
+  await db.query('DELETE FROM hs_workspace_search WHERE page_id=$1',[p.id]);await db.query(await readFile('db/086_workspace_search.sql','utf8'));
+  expect(await flag()).toBe(false);expect((await workspaceSearch(r,localActor,{workspaceId:p.workspaceId,query:'classification²'})).results.map(x=>x.id)).toContain(p.id);
+  await save('classificationascii');expect(await flag()).toBe(true);
  });
  it('saves and backfills a valid near-limit lexically diverse page without an oversized vector or lost tail coverage',async()=>{
   const words=Array.from({length:180000},(_,i)=>'word'+i.toString(36).padStart(8,'0')+'x'.repeat(116));

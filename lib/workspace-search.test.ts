@@ -1,8 +1,8 @@
-import {beforeAll,afterAll,it,expect} from 'vitest';
+import {beforeAll,afterAll,it,expect,vi} from 'vitest';
 import {createDatabase,type Database} from './database';
 import {Repository} from './repository';
 import {localActor as owner} from './auth';
-import {workspaceSearch} from './workspace-search';
+import {createSearchWork,workspaceSearch} from './workspace-search';
 import {fromLegacy} from './document';
 let db:Database,r:Repository;
 const viewer={id:'holy2-viewer'},other={id:'holy2-other'};
@@ -59,4 +59,47 @@ it('bounds request admission and active snapshots without applying limits from a
  await expect(search('paginationholy')).rejects.toMatchObject({code:'search_snapshot_limit',status:429});
  await db.query("UPDATE hs_search_snapshots SET expires_at=clock_timestamp()-interval '1 second' WHERE user_id=$1",[viewer.id]);
  expect((await search('paginationholy')).results).toHaveLength(20);
+});
+
+it('keeps Unicode number terms accepted by final matching in the SQL candidate superset',async()=>{
+ const p=await page('Unicode ordinary fixture','price² review ΟΣ İreview a\u1c89');
+ for(const term of ['price²','ΟΣ','ος','İreview','a\u1c89','a\u1c8a'])expect((await search(term)).results.map(x=>x.id),term).toContain(p.id);
+ expect((await search('price² review')).results.map(x=>x.id)).toContain(p.id);
+ const ordinary=await page('Plain numeric boundary','price review');
+ for(let i=0;i<21;i++)await page('Superscript boundary '+i,'price² review');
+ expect((await search('price review')).results.map(x=>x.id)).toEqual([ordinary.id]);
+});
+
+it('fails explicitly for an aborted or exhausted shared search deadline',async()=>{
+ const controller=new AbortController();controller.abort();
+ expect(()=>createSearchWork(5000,controller.signal).check()).toThrow();
+ expect(()=>createSearchWork(0).check()).toThrow();
+ await expect(workspaceSearch(r,viewer,{query:'review',workspaceId:'ws-aplyd'},controller.signal)).rejects.toMatchObject({code:'search_busy',status:503});
+});
+it('reclassifies ASCII and Unicode saved text atomically through edit and restore',async()=>{
+ const p=await page('transitionfixture','transitionascii');
+ const flag=async()=>(await db.query<{ascii_only:boolean}>('SELECT ascii_only FROM hs_workspace_search WHERE page_id=$1',[p.id])).rows[0].ascii_only;
+ expect(await flag()).toBe(true);
+ await db.query('UPDATE hs_blocks SET node=$2 WHERE page_id=$1',[p.id,JSON.stringify({type:'paragraph',content:[{type:'text',text:'transition²'}]})]);
+ expect(await flag()).toBe(false);expect((await search('transition²')).results.map(x=>x.id)).toContain(p.id);
+ await db.query('UPDATE hs_pages SET deleted_at=now() WHERE id=$1',[p.id]);
+ expect((await search('transition²')).results.map(x=>x.id)).not.toContain(p.id);
+ await db.query('UPDATE hs_pages SET deleted_at=NULL WHERE id=$1',[p.id]);
+ expect(await flag()).toBe(false);expect((await search('transition²')).results.map(x=>x.id)).toContain(p.id);
+ await db.query('UPDATE hs_blocks SET node=$2 WHERE page_id=$1',[p.id,JSON.stringify({type:'paragraph',content:[{type:'text',text:'transitionascii'}]})]);
+ expect(await flag()).toBe(true);expect((await search('transition²')).results.map(x=>x.id)).not.toContain(p.id);
+});
+
+it('applies native permission and workspace scope to Unicode fallback candidates',async()=>{
+ const visible=await page('Unicode scope²','uniquescope²');
+ await page('Private scope²','uniquescope²',undefined,false);
+ await page('Other workspace²','uniquescope²','s2');
+ expect((await search('uniquescope²')).results.map(x=>x.id)).toEqual([visible.id]);
+});
+it('rolls back a newly allocated snapshot when cancellation occurs during result projection',async()=>{
+ await db.query('DELETE FROM hs_search_snapshots WHERE user_id=$1',[viewer.id]);
+ const controller=new AbortController(),original=r.get.bind(r);
+ const spy=vi.spyOn(r,'get').mockImplementation(async(...args)=>{const result=await original(...args);if(result.title.startsWith('paginationholy'))controller.abort();return result;});
+ try{await expect(workspaceSearch(r,viewer,{query:'paginationholy',workspaceId:'ws-aplyd'},controller.signal)).rejects.toMatchObject({code:'search_busy'});}finally{spy.mockRestore();}
+ expect((await db.query<{count:number}>('SELECT count(*)::integer AS count FROM hs_search_snapshots WHERE user_id=$1',[viewer.id])).rows[0].count).toBe(0);
 });
