@@ -40,15 +40,22 @@ CAUGHT_SIGNALS = {signal.SIGHUP, signal.SIGINT, signal.SIGTERM}
 class BootstrapFailure(RuntimeError):
     pass
 
+class BootstrapInterrupted(BootstrapFailure):
+    def __init__(self, signum: int):
+        super().__init__(f"bootstrap interrupted by signal {signum}")
+        self.signum = signum
+
 @dataclasses.dataclass(frozen=True)
 class Config:
-    incoming_parent: pathlib.Path = pathlib.Path("/var/tmp/holy127-bootstrap-rootpath-v2")
-    archive: pathlib.Path = pathlib.Path("/var/tmp/holy127-bootstrap-rootpath-v2/holy127-payload-d140c7f.tar")
+    incoming_parent: pathlib.Path = pathlib.Path("/root/holy127-transfer-inbox")
+    archive: pathlib.Path = pathlib.Path("/root/holy127-transfer-inbox/holy127-payload-d140c7f.tar")
     source_parent: pathlib.Path = pathlib.Path("/var/tmp/holy127-installer-rootpath-v2")
     source_root: pathlib.Path = pathlib.Path("/var/tmp/holy127-installer-rootpath-v2/source")
     installer: pathlib.Path = pathlib.Path("/usr/local/sbin/holy127-q-f4f5a94-install")
     expected_uid: int = 0
     expected_gid: int = 0
+    invoke_timeout: float = 60
+    stop_timeout: float = 15
 
 @dataclasses.dataclass(frozen=True)
 class Owned:
@@ -94,11 +101,12 @@ class Bootstrap:
     def __init__(self, config: Config):
         self.config = config
         self.created: list[Owned] = []
+        self.installer_succeeded = False
 
     def verify_transfer(self) -> None:
         c = self.config
         if c.expected_uid == 0:
-            for path in (pathlib.Path("/"), pathlib.Path("/usr"), pathlib.Path("/usr/local"), pathlib.Path("/var")):
+            for path in (pathlib.Path("/"), pathlib.Path("/root"), pathlib.Path("/usr"), pathlib.Path("/usr/local"), pathlib.Path("/var")):
                 verify_directory(path, 0, 0)
             temporary = pathlib.Path("/var/tmp").lstat()
             if temporary.st_uid != 0 or temporary.st_gid != 0 or stat.S_IMODE(temporary.st_mode) != 0o1777 or not stat.S_ISDIR(temporary.st_mode):
@@ -173,18 +181,34 @@ class Bootstrap:
             raise BootstrapFailure("bootstrap rollback failures: " + "; ".join(failures))
 
     def invoke_installer(self) -> None:
-        process = subprocess.Popen([self.config.installer])
+        process = subprocess.Popen(
+            ["/usr/bin/python3", "-I", self.config.installer],
+            env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin"},
+            start_new_session=True,
+        )
         try:
-            return_code = process.wait(timeout=60)
-        except subprocess.TimeoutExpired:
-            process.send_signal(signal.SIGTERM)
-            try:
-                process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                process.kill(); process.wait()
-            raise BootstrapFailure("installer exceeded bounded execution time")
+            return_code = process.wait(timeout=self.config.invoke_timeout)
+            with blocked_signals():
+                if return_code == 0: self.installer_succeeded = True
+        except BaseException:
+            with blocked_signals():
+                if process.poll() == 0:
+                    self.installer_succeeded = True
+                else:
+                    self.stop_process_group(process)
+            raise
         if return_code != 0:
             raise BootstrapFailure(f"installer exited {return_code}")
+
+    def stop_process_group(self, process: subprocess.Popen) -> None:
+        with blocked_signals():
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=self.config.stop_timeout)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
 
     def run(self) -> None:
         self.verify_transfer()
@@ -211,12 +235,19 @@ def main() -> int:
         print("HOLY-127 bootstrap accepts no arguments", file=sys.stderr); return 64
     if os.getuid() != 0:
         print("HOLY-127 bootstrap requires the bounded root console", file=sys.stderr); return 77
+    def interrupted(signum: int, _frame: object) -> None:
+        raise BootstrapInterrupted(signum)
+    for signum in CAUGHT_SIGNALS:
+        signal.signal(signum, interrupted)
     subject = Bootstrap(Config())
     try:
         subject.run()
     except BaseException as error:
-        try: subject.rollback()
-        except BaseException as rollback_error: print(f"HOLY-127 bootstrap rollback also failed: {rollback_error}", file=sys.stderr)
+        if not subject.installer_succeeded:
+            try: subject.rollback()
+            except BaseException as rollback_error: print(f"HOLY-127 bootstrap rollback also failed: {rollback_error}", file=sys.stderr)
+        else:
+            print("HOLY-127 installer completed; committed installer outputs and bootstrap inputs are preserved", file=sys.stderr)
         print(f"HOLY-127 bootstrap refused: {error}", file=sys.stderr); return 1
     print(f"HOLY-127 installer invoked from packet source {PACKET_SOURCE_COMMIT}")
     return 0

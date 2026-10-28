@@ -4,19 +4,19 @@
   "packetSourceCommit": "d140c7f951fc1412a5fe3deb3f67727b85b100a2",
   "bootstrap": {
     "source": "scripts/holy127_qualifier_bootstrap.py",
-    "sha256": "8a1f5bb6a6496c61597a9cbfd48bdb5be96668d79708ac1eaf8c3849027c1af1",
-    "transferDestination": "/root/holy127-bootstrap-d140c7f.py",
+    "sha256": "2e4e5f2d51b33168e62c0033408f801e43597b23e02d109e2e24b91d748f3697",
+    "transferDestination": "/root/holy127-transfer-inbox/holy127-bootstrap-d140c7f.py",
     "owner": 0,
     "group": 0,
     "mode": "0500",
     "arguments": 0,
-    "invocation": "/root/holy127-bootstrap-d140c7f.py"
+    "invocation": "/root/holy127-transfer-inbox/holy127-bootstrap-d140c7f.py"
   },
   "payload": {
     "source": "deployment/HOLY-127-BOOTSTRAP-PAYLOAD-d140c7f.tar",
     "sha256": "aad7fbc7d4b44944029536c7fb49a53a0bd70839cd8dfe977c47739c5edb1f45",
     "sizeBytes": 143360,
-    "transferDestination": "/var/tmp/holy127-bootstrap-rootpath-v2/holy127-payload-d140c7f.tar",
+    "transferDestination": "/root/holy127-transfer-inbox/holy127-payload-d140c7f.tar",
     "parentOwner": 0,
     "parentGroup": 0,
     "parentMode": "0700",
@@ -40,9 +40,9 @@
     "identity, fixture or production changes"
   ],
   "operatorSequence": [
-    "Through the existing DigitalOcean console transfer only these two public, secret-free files to their exact transfer destinations and exact root ownership/modes above.",
-    "Verify the two transferred SHA-256 values exactly match this packet before invocation.",
-    "Invoke only /root/holy127-bootstrap-d140c7f.py with zero arguments.",
+    "Through the existing DigitalOcean console, exclusively create root:root mode 0700 /root/holy127-transfer-inbox and transfer only these two public, secret-free files to their exact destinations and exact root ownership/modes above; stop if the directory or either file already exists.",
+    "Run only /usr/bin/sha256sum /root/holy127-transfer-inbox/holy127-bootstrap-d140c7f.py /root/holy127-transfer-inbox/holy127-payload-d140c7f.tar and require the two outputs, in order, to equal the bootstrap and payload hashes in this packet.",
+    "Invoke only /root/holy127-transfer-inbox/holy127-bootstrap-d140c7f.py with zero arguments.",
     "Stop on any ownership, mode, symlink, size, hash, member, collision, timeout, installer or rollback refusal; do not substitute a command or legacy helper.",
     "After a successful fixed installation, obtain a fresh Product serialized slot before invoking the qualifier entrypoint."
   ],
