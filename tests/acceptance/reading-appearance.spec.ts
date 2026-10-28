@@ -2,7 +2,7 @@ import {test,expect,type APIRequestContext,type Page} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import type {Editor} from '@tiptap/core';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
-import {normalizeRichDocument} from '../../lib/editor-document';
+import {normalizeRichDocument,semanticRichDocument} from '../../lib/editor-document';
 import {readingAppearanceKey} from '../../lib/reading-appearance';
 const text=(value:string)=>({type:'text',text:value});
 const content=()=>[
@@ -27,7 +27,7 @@ async function ready(page:Page,request:APIRequestContext,id:string){
  const prose=page.getByRole('textbox',{name:'Document content',exact:true});await expect(prose).toBeVisible();
  // Readiness compares the existing serializer against the saved model; it never changes the fixture.
  // All initial operations remain in Trace. No counter is reset after the appearance window begins.
- await expect.poll(async()=>{return (await(await request.get(`/api/v1/pages/${id}/document`)).json()).page.document;}).toEqual(normalizeRichDocument(await prose.evaluate(node=>(node as HTMLElement&{editor:Editor}).editor.getJSON())));
+ await expect.poll(async()=>semanticRichDocument((await(await request.get(`/api/v1/pages/${id}/document`)).json()).page.document)).toEqual(semanticRichDocument(normalizeRichDocument(await prose.evaluate(node=>(node as HTMLElement&{editor:Editor}).editor.getJSON()))));
  await expect(page.getByRole('button',{name:'✓ Saved',exact:true})).toBeVisible();return (await(await request.get(`/api/v1/pages/${id}/document`)).json()).page;
 }
 async function modelState(page:Page){return page.locator('.rich-prose').evaluate(node=>{const e=(node as HTMLElement&{editor:Editor}).editor,{from,to}=e.state.selection;return {document:e.getJSON(),selection:{from,to,text:e.state.doc.textBetween(from,to)},undo:e.can().undo(),redo:e.can().redo()};});}

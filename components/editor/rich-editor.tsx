@@ -30,7 +30,7 @@ import { applyBlockTransform,planBlockTransform,transformShortcut,type Transform
 import { PasteReviewDialog,PlainPasteDialog } from './paste-dialog';
 import { parseTablePasteSource,type TablePasteSource } from './table-paste-source';
 import { capturePastePoint,applyTablePaste,type PastePoint } from './table-paste-plan';
-import { normalizeRichDocument } from "../../lib/editor-document";
+import { normalizeRichDocument,semanticRichDocument } from "../../lib/editor-document";
 import { captureMediaPlacement,applyReadyMedia,mediaTypeForFile,type MediaPlacement } from "./media-placement";
 import type { RecoveredUpload } from "../../lib/upload-recovery-types";
 import { rehydrateMediaPlacement } from "../../lib/upload-placement-recovery";
@@ -45,7 +45,7 @@ import type { ThreadView } from '../../lib/discussion-types';
 import type { AnchorInput } from '../../lib/comment-anchors';
 
 const noThreads:ThreadView[]=[];
-const comparableDocument=(value:RichNode)=>stableStringify(JSON.parse(JSON.stringify(value,(key,item)=>key==='content'&&Array.isArray(item)&&item.length===0?undefined:item)));
+const comparableDocument=(value:RichNode)=>stableStringify(semanticRichDocument(value));
 const presencePluginKey=new PluginKey<DecorationSet>('holySheetPresence');
 type Collaborator={sessionId:string;actorId:string;name:string;clientId:string;anchorBlockId:string|null;anchorOffset:number|null;headBlockId:string|null;headOffset:number|null};
 type CollaborationStart={sessionId:string;epoch:string;stepVersion:number;pageVersion:number;document:RichNode;collaborators:Collaborator[]};
