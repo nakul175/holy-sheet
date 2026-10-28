@@ -61,6 +61,8 @@ def _safe(value: str, label: str) -> str:
 
 
 def parse_positive_bytes(value: str | int, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        raise GuardFailure("invalid_input", f"{label} must be a positive integer byte count")
     try:
         parsed = int(value)
     except (TypeError, ValueError) as error:
@@ -68,6 +70,18 @@ def parse_positive_bytes(value: str | int, label: str) -> int:
     if parsed <= 0 or parsed > 2**63 - 1:
         raise GuardFailure("invalid_input", f"{label} must be a positive integer byte count")
     return parsed
+
+
+def validate_reserve_bytes(value: str | int) -> int:
+    """Return a valid reserve without allowing callers to weaken the floor."""
+
+    reserve = parse_positive_bytes(value, "reserve")
+    if reserve < DEFAULT_RESERVE_BYTES:
+        raise GuardFailure(
+            "invalid_input",
+            f"reserve must be at least {DEFAULT_RESERVE_BYTES} bytes",
+        )
+    return reserve
 
 
 def resolve_existing_path(path: pathlib.Path) -> pathlib.Path:
@@ -131,7 +145,7 @@ def check_capacity(
     now: dt.datetime | None = None,
 ) -> list[Measurement]:
     budget = parse_positive_bytes(peak_budget_bytes, "peak budget")
-    reserve = parse_positive_bytes(reserve_bytes, "reserve")
+    reserve = validate_reserve_bytes(reserve_bytes)
     if max_age_seconds <= 0:
         raise GuardFailure("invalid_input", "measurement maximum age must be positive")
     checked_at = now or utc_now()
@@ -211,6 +225,8 @@ class ReleaseLock:
         self._file: Any | None = None
 
     def __enter__(self) -> "ReleaseLock":
+        if self._file is not None:
+            raise GuardFailure("release_lock_invalid", "Holy Sheet release lock is already owned by this guard")
         if self.create:
             self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         handle = _open_lock_file(self.path, create=self.create, writable=True, strict_install=self.strict_install)
@@ -237,6 +253,10 @@ class ReleaseLock:
         os.fsync(handle.fileno())
         self._file = handle
         return self
+
+    @property
+    def is_owned(self) -> bool:
+        return self._file is not None and not self._file.closed
 
     def __exit__(self, *_: object) -> None:
         if self._file is None:
@@ -302,7 +322,7 @@ def build_receipt(
         "phase": _safe(phase, "phase"),
         "timestamp": (now or utc_now()).isoformat(),
         "peakBudgetBytes": parse_positive_bytes(peak_budget_bytes, "peak budget"),
-        "reserveBytes": parse_positive_bytes(reserve_bytes, "reserve"),
+        "reserveBytes": validate_reserve_bytes(reserve_bytes),
         "filesystems": [
             {
                 "path": item.path,
@@ -357,7 +377,7 @@ class ReleaseGuard:
         self.environment = _safe(environment, "environment")
         self.source = _safe(source, "source")
         self.peak_budget_bytes = parse_positive_bytes(peak_budget_bytes, "peak budget")
-        self.reserve_bytes = parse_positive_bytes(reserve_bytes, "reserve")
+        self.reserve_bytes = validate_reserve_bytes(reserve_bytes)
         self.paths = list(paths)
         self.lock_path = pathlib.Path(lock_path)
         self.probe = probe
@@ -365,6 +385,8 @@ class ReleaseGuard:
         self.lock = ReleaseLock(self.lock_path, self.environment, self.source, now, create=create_lock, strict_install=strict_lock_install)
 
     def __enter__(self) -> "ReleaseGuard":
+        if self.lock.is_owned:
+            raise GuardFailure("release_lock_invalid", "Holy Sheet release guard is already active")
         self.lock.__enter__()
         try:
             self.check("preflight")
@@ -377,6 +399,8 @@ class ReleaseGuard:
         self.lock.__exit__(*details)
 
     def check(self, phase: str) -> dict[str, Any]:
+        if not self.lock.is_owned:
+            raise GuardFailure("release_lock_required", "Holy Sheet release lock must be owned before a phase check")
         checked_at = self.now()
         measurements = check_capacity(
             self.paths,
@@ -419,9 +443,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         checked_at = utc_now()
         budget = parse_positive_bytes(args.peak_budget_bytes, "peak budget")
-        reserve = parse_positive_bytes(args.reserve_bytes, "reserve")
-        measurements = check_capacity(args.path, budget, reserve_bytes=reserve, now=checked_at)
+        reserve = validate_reserve_bytes(args.reserve_bytes)
         lock_state = probe_lock(args.lock_file)
+        if lock_state.get("filePresent") is False:
+            raise GuardFailure("release_lock_missing", "preinstalled Holy Sheet release lock is missing")
+        if lock_state.get("state") == "held":
+            owner = lock_state.get("environment", "unknown")
+            raise GuardFailure("release_lock_busy", f"Holy Sheet release lock is held by {owner}")
+        measurements = check_capacity(args.path, budget, reserve_bytes=reserve, now=checked_at)
         receipt = build_receipt(
             environment=args.environment,
             source=args.source,

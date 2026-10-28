@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -26,6 +27,8 @@ from hs_release_guard import (
     parse_positive_bytes,
     probe_lock,
     resolve_existing_path,
+    main,
+    validate_reserve_bytes,
     write_receipt,
 )
 
@@ -52,9 +55,22 @@ class CapacityTests(unittest.TestCase):
         self.assertEqual(failure.exception.code, "insufficient_capacity")
 
     def test_invalid_budgets_fail_closed(self):
-        for value in ("", "0", "-1", "1.5", "secret bytes", str(2**63)):
+        for value in ("", "0", "-1", "1.5", "secret bytes", str(2**63), True, 1.5, None):
             with self.subTest(value=value), self.assertRaises(GuardFailure):
                 parse_positive_bytes(value, "peak budget")
+
+    def test_reserve_cannot_be_lowered_below_two_gib(self):
+        self.assertEqual(validate_reserve_bytes(DEFAULT_RESERVE_BYTES), DEFAULT_RESERVE_BYTES)
+        self.assertEqual(validate_reserve_bytes(DEFAULT_RESERVE_BYTES + 1), DEFAULT_RESERVE_BYTES + 1)
+        with self.assertRaisesRegex(GuardFailure, "at least 2147483648") as failure:
+            check_capacity(
+                ["/fixture"],
+                1,
+                reserve_bytes=DEFAULT_RESERVE_BYTES - 1,
+                probe=measured(10**12),
+                now=NOW,
+            )
+        self.assertEqual(failure.exception.code, "invalid_input")
 
     def test_stale_future_and_failed_measurements_reject(self):
         with self.assertRaisesRegex(GuardFailure, "stale"):
@@ -95,6 +111,36 @@ class CapacityTests(unittest.TestCase):
                 with guard:
                     guard.run_phase("build", lambda: mutated.append(True))
         self.assertEqual(mutated, [])
+
+    def test_phase_requires_currently_owned_lock_context(self):
+        mutated: list[bool] = []
+        with tempfile.TemporaryDirectory() as directory:
+            guard = ReleaseGuard(
+                environment="staging",
+                source="abc123",
+                peak_budget_bytes=1,
+                paths=["/fixture"],
+                lock_path=pathlib.Path(directory) / "guard.lock",
+                create_lock=True,
+                strict_lock_install=False,
+                probe=measured(DEFAULT_RESERVE_BYTES + 1),
+                now=lambda: NOW,
+            )
+            for action in (
+                lambda: guard.check("build"),
+                lambda: guard.run_phase("build", lambda: mutated.append(True)),
+            ):
+                with self.assertRaises(GuardFailure) as failure:
+                    action()
+                self.assertEqual(failure.exception.code, "release_lock_required")
+            with guard:
+                with self.assertRaises(GuardFailure) as nested:
+                    guard.__enter__()
+                self.assertEqual(nested.exception.code, "release_lock_invalid")
+            with self.assertRaises(GuardFailure) as after_exit:
+                guard.run_phase("switch", lambda: mutated.append(True))
+            self.assertEqual(after_exit.exception.code, "release_lock_required")
+            self.assertEqual(mutated, [])
 
 
 class LockTests(unittest.TestCase):
@@ -152,6 +198,26 @@ class LockTests(unittest.TestCase):
                 with ReleaseLock(path, "staging", "source", strict_install=False):
                     pass
             self.assertEqual(unsafe.exception.code, "release_lock_invalid")
+
+    def test_cli_rejects_held_or_missing_lock_before_capacity_measurement(self):
+        argv = [
+            "--environment", "staging",
+            "--source", "review",
+            "--peak-budget-bytes", "1",
+            "--path", "/fixture",
+        ]
+        for lock_state, expected_code in (
+            ({"state": "held", "environment": "production"}, "release_lock_busy"),
+            ({"state": "available", "filePresent": False}, "release_lock_missing"),
+        ):
+            with self.subTest(lock_state=lock_state), \
+                 mock.patch("hs_release_guard.probe_lock", return_value=lock_state), \
+                 mock.patch("hs_release_guard.check_capacity") as capacity, \
+                 mock.patch("sys.stderr") as stderr:
+                self.assertEqual(main(argv), 2)
+                capacity.assert_not_called()
+                rendered = "".join(call.args[0] for call in stderr.write.call_args_list if call.args)
+                self.assertIn(expected_code, rendered)
 
 
 class ReceiptTests(unittest.TestCase):

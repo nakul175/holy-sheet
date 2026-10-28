@@ -33,7 +33,8 @@ the release identities. Both entry points must:
    building/pulling images, creating backups, migrating or switching containers;
 3. hold that file descriptor for the complete release and fail immediately when
    another HS staging or production release owns it;
-4. create one `ReleaseGuard` with every affected path and call `check` immediately
+4. create one `ReleaseGuard` with every affected path, enter its context before
+   any phase, and call `check` immediately
    before `source`, `build_or_pull`, `backup`, `migration`, `switch`,
    `rollback_rehearsal` and `finalize` as applicable;
 5. write each returned receipt as mode `0600` beside the existing private release
@@ -41,7 +42,8 @@ the release identities. Both entry points must:
 6. preserve the healthy service and all existing images, containers, databases,
    volumes and backups when any check rejects the next phase.
 
-The reserve is exactly 2,147,483,648 bytes. The whole declared incremental peak
+The reserve has an enforced minimum of 2,147,483,648 bytes; callers may require
+more but cannot lower that floor through the library or CLI. The whole declared incremental peak
 is conservatively required for every affected path and its effective filesystem.
 Measurements are immediate. A path that does not exist is measured
 at its closest existing ancestor. Missing/invalid budgets, resolution/statvfs
@@ -80,6 +82,10 @@ python3 scripts/hs_release_guard.py \
 
 The JSON reports source, target environment, UTC timestamp, phase, resolved
 filesystem, available bytes, peak budget, reserve, gate result and lock state.
+It exits nonzero with a sanitized rejection when the required preinstalled lock
+is missing, invalid or held, so a dry run cannot report a passing gate while a
+release is active. Availability is only a point-in-time observation; the
+release wrapper must still acquire and hold the lock through `ReleaseGuard`.
 It prints no secrets and performs no cleanup, service action, credential change,
 permission change or scheduling.
 
