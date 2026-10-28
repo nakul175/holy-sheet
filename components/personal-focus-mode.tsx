@@ -1,5 +1,5 @@
 'use client';
-import {useLayoutEffect,useRef,useState,type KeyboardEvent} from 'react';
+import {useLayoutEffect,useRef,useState,type KeyboardEvent,type MouseEvent} from 'react';
 import styles from './personal-focus-mode.module.css';
 
 export function usePersonalFocusMode(actorId:string,pageId:string,available:boolean){
@@ -24,7 +24,11 @@ export function usePersonalFocusMode(actorId:string,pageId:string,available:bool
   const target=event.target;if(target instanceof Element&&target.closest('[role="dialog"],[role="menu"],[role="listbox"],[role="combobox"],select,input'))return;
   event.preventDefault();event.stopPropagation();exit();
  }
- return {active,permitted,launcher,exitButton,enter,exit,onKeyDown,className:active?styles.focused:''};
+ function onClickCapture(event:MouseEvent<HTMLElement>){
+  // Passage markers stop bubbling themselves. Reveal their existing panel before it attempts focus.
+  if(active&&event.target instanceof Element&&event.target.closest('.discussion-marker'))exit();
+ }
+ return {active,permitted,launcher,exitButton,enter,exit,onKeyDown,onClickCapture,className:active?styles.focused:''};
 }
 export function FocusModeLauncher({model}:{model:ReturnType<typeof usePersonalFocusMode>}){
  return <button ref={model.launcher} type="button" disabled={!model.permitted} aria-pressed={model.active} onMouseDown={event=>event.preventDefault()} onClick={model.enter}>Enter focus mode</button>;

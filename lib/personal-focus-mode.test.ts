@@ -6,7 +6,7 @@ import {FocusModeExit,FocusModeLauncher,usePersonalFocusMode} from '../component
 let root:Root,container:HTMLDivElement;
 function Host({actor='A',page='page1',available=true}:{actor?:string;page?:string;available?:boolean}){
  const model=usePersonalFocusMode(actor,page,available);
- return createElement('div',{className:model.className,onKeyDown:model.onKeyDown},createElement('details',{open:true},createElement('summary',null,'Page options'),createElement(FocusModeLauncher,{model})),createElement('header',null,createElement(FocusModeExit,{model})),createElement('article',null,createElement('p',null,'Existing draft')),createElement('input',{'aria-label':'Nested control'}),createElement('div',{role:'dialog'},createElement('button',null,'Nested dialog control')),createElement('button',{onKeyDown:e=>e.preventDefault()},'Consumes Escape'));
+ return createElement('div',{className:model.className,onKeyDown:model.onKeyDown,onClickCapture:model.onClickCapture},createElement('details',{open:true},createElement('summary',null,'Page options'),createElement(FocusModeLauncher,{model})),createElement('header',null,createElement(FocusModeExit,{model})),createElement('article',null,createElement('p',null,'Existing draft')),createElement('input',{'aria-label':'Nested control'}),createElement('div',{role:'dialog'},createElement('button',null,'Nested dialog control')),createElement('button',{onKeyDown:e=>e.preventDefault()},'Consumes Escape'),createElement('button',{className:'discussion-marker',onClick:e=>{e.stopPropagation();e.currentTarget.dataset.invoked='yes';}},'Passage discussion'));
 }
 beforeEach(()=>{vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);vi.spyOn(window,'scrollTo').mockImplementation(()=>{});container=document.createElement('div');document.body.append(container);root=createRoot(container);});
 afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
@@ -25,4 +25,7 @@ it('immediately clears mode on actor page or access changes without restoring st
 });
 it('never reads or writes browser storage during entry exit or scope changes',async()=>{
  const read=vi.spyOn(Storage.prototype,'getItem'),write=vi.spyOn(Storage.prototype,'setItem'),remove=vi.spyOn(Storage.prototype,'removeItem');await render();await enter();await escape(container.querySelector('article')!);await render({actor:'B'});expect(read).not.toHaveBeenCalled();expect(write).not.toHaveBeenCalled();expect(remove).not.toHaveBeenCalled();
+});
+it('exits before a passage marker opens its panel without consuming the marker action',async()=>{
+ await render();await enter();await act(async()=>button('Passage discussion').click());expect(button('Exit focus mode')).toBeUndefined();expect(button('Passage discussion').dataset.invoked).toBe('yes');
 });

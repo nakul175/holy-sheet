@@ -2,7 +2,7 @@ import {test,expect,type APIRequestContext,type Page} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import type {Editor} from '@tiptap/core';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
-import {normalizeRichDocument} from '../../lib/editor-document';
+import {normalizeRichDocument,semanticRichDocument} from '../../lib/editor-document';
 const text=(value:string)=>({type:'text',text:value});
 const content=()=>[
  {type:'heading',attrs:{id:'heading',level:1},content:[text('Writing without distractions — مرحبا 世界 '+ '界'.repeat(30))]},
@@ -24,9 +24,10 @@ type Trace={phase:string;operations:{phase:string;at:number;body:unknown}[];draf
 function trace(page:Page):Trace{const value:Trace={phase:'load',operations:[],draftRequests:[]};page.on('request',r=>{if(r.method()!=='POST')return;if(r.url().includes('/operations'))value.operations.push({phase:value.phase,at:Date.now(),body:r.postDataJSON()});if(r.url().endsWith('/drafts'))value.draftRequests.push({phase:value.phase,at:Date.now()});});return value;}
 async function ready(page:Page,request:APIRequestContext,id:string){
  const prose=page.getByRole('textbox',{name:'Document content',exact:true});await expect(prose).toBeVisible();
- // Readiness compares the existing serializer against the saved model; it never changes the fixture.
+ // Read-only readiness uses current merged HOLY130 production equivalence, exactly as the upstream reading suite.
+ // Fixture JSON and all initial request traces stay untouched; post-focus model/document/version comparisons remain exact.
  // All initial operations remain in Trace. No counter is reset after the focus window begins.
- await expect.poll(async()=>{return (await(await request.get(`/api/v1/pages/${id}/document`)).json()).page.document;}).toEqual(normalizeRichDocument(await prose.evaluate(node=>(node as HTMLElement&{editor:Editor}).editor.getJSON())));
+ await expect.poll(async()=>semanticRichDocument((await(await request.get(`/api/v1/pages/${id}/document`)).json()).page.document)).toEqual(semanticRichDocument(normalizeRichDocument(await prose.evaluate(node=>(node as HTMLElement&{editor:Editor}).editor.getJSON()))));
  await expect(page.getByRole('button',{name:'✓ Saved',exact:true})).toBeVisible();return (await(await request.get(`/api/v1/pages/${id}/document`)).json()).page;
 }
 async function modelState(page:Page){return page.locator('.rich-prose').evaluate(node=>{const e=(node as HTMLElement&{editor:Editor}).editor,{from,to}=e.state.selection;return {document:e.getJSON(),selection:{from,to,text:e.state.doc.textBetween(from,to)},undo:e.can().undo(),redo:e.can().redo()};});}
@@ -62,6 +63,9 @@ test('an owned page reference leaves focus mode behind on navigation',async({pag
 });
 test('unpinned open toolbox is restored exactly after focus mode',async({page,request,baseURL})=>{
  const data=await fixture(request,baseURL!);await page.goto('/pages/'+data.page.id);await ready(page,request,data.page.id);await page.getByRole('button',{name:'Unpin toolbox',exact:true}).click();const before=await page.getByLabel('Editor toolbox',{exact:true}).getAttribute('class');await enterFocus(page);await expect(page.getByLabel('Editor toolbox',{exact:true})).toBeHidden();await page.getByRole('button',{name:'Exit focus mode',exact:true}).click();await expect(page.getByLabel('Editor toolbox',{exact:true})).toBeVisible();expect(await page.getByLabel('Editor toolbox',{exact:true}).getAttribute('class')).toBe(before);
+});
+test('discussion drafts restore and invoking a passage discussion never leaves its panel hidden',async({page,request,baseURL})=>{
+ const data=await fixture(request,baseURL!),id=data.page.id;const made=await request.post(`/api/v1/pages/${id}/discussions`,{headers:{Origin:baseURL!},data:{kind:'create',operationId:crypto.randomUUID(),body:'Owned local focus discussion fixture',mentionIds:[],baseVersion:data.page.version,anchors:[{blockId:id+'-intro',start:0,end:5}]}});expect(made.status()).toBe(200);await page.goto('/pages/'+id);await ready(page,request,id);const panel=page.getByLabel('Page discussions',{exact:true});await page.getByRole('button',{name:/^Discussions/}).click();await panel.getByRole('textbox',{name:'Write a comment',exact:true}).fill('Unsent discussion draft retained through focus');await enterFocus(page);await expect(panel).toBeHidden();await page.getByRole('button',{name:'Exit focus mode',exact:true}).click();await expect(panel).toBeVisible();await expect(panel.getByRole('textbox',{name:'Write a comment',exact:true})).toHaveValue('Unsent discussion draft retained through focus');await panel.getByRole('button',{name:'Close discussions',exact:true}).click();await enterFocus(page);await page.getByRole('button',{name:'Open discussion for this passage',exact:true}).click();await expect(panel).toBeVisible();await expect(page.getByRole('button',{name:'Exit focus mode',exact:true})).toHaveCount(0);await panel.getByRole('button',{name:'New page discussion',exact:true}).click();await expect(panel.getByRole('textbox',{name:'Write a comment',exact:true})).toHaveValue('Unsent discussion draft retained through focus');
 });
 test('controlled read-only media remains bounded and unchanged in focus mode',async({page,request,baseURL})=>{
  const data=await fixture(request,baseURL!),id=data.page.id,imageId='00000000-0000-4000-8000-000000000131',fileId='00000000-0000-4000-8000-000000000132';await page.setViewportSize({width:320,height:900});
