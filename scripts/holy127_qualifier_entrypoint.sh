@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 0 ]; then
+  echo "HOLY-127 qualifier accepts no arguments" >&2
+  exit 64
+fi
+
+bundle=/opt/holy-sheet-staging/qualification/holy127-c483a5557dcc03ca961350f07937cecc74a101cd
+test "$(id -u)" -eq 0
+test ! -L "$bundle"
+test "$(stat -c %u:%g:%a "$bundle")" = "0:0:555"
+
+verify_file() {
+  expected=$1
+  path=$2
+  test ! -L "$path"
+  test "$(stat -c %u:%g:%a "$path")" = "0:0:444"
+  actual=$(/usr/bin/sha256sum "$path")
+  actual=${actual%% *}
+  test "$actual" = "$expected"
+}
+
+verify_file 8e6cd93ad616d631b5242d372a265e0b80c65684bae75dd96f226b104aaccd63 "$bundle/holy127_disposable_staging_qualifier.py"
+verify_file f1f4655f0129167ae9a2c85e5165780674ad5272aacb59e457eaa8e81ee1d79c "$bundle/holy127_backup_orchestrator.py"
+verify_file 2732a41da67239772b5232c4a616638f22d5de947763e142f1a95a32644c8495 "$bundle/hs_release_guard.py"
+
+umask 077
+exec /usr/bin/python3 -I -c 'import runpy,sys;sys.path.insert(0,"/opt/holy-sheet-staging/qualification/holy127-c483a5557dcc03ca961350f07937cecc74a101cd");runpy.run_path("/opt/holy-sheet-staging/qualification/holy127-c483a5557dcc03ca961350f07937cecc74a101cd/holy127_disposable_staging_qualifier.py",run_name="__main__")'

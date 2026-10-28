@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "helperSourceCommit": "c483a5557dcc03ca961350f07937cecc74a101cd",
+  "helperSourceTree": "3df1cbdd5bab188ab0798382c2da318b856efb6e",
+  "qualifiedApplicationSource": "f4f5a94fb16380021b501ab1da85e888994c0172",
+  "bundleDirectory": {
+    "path": "/opt/holy-sheet-staging/qualification/holy127-c483a5557dcc03ca961350f07937cecc74a101cd",
+    "owner": 0,
+    "group": 0,
+    "mode": "0555"
+  },
+  "bundleFiles": [
+    {
+      "source": "scripts/holy127_disposable_staging_qualifier.py",
+      "installedName": "holy127_disposable_staging_qualifier.py",
+      "sha256": "8e6cd93ad616d631b5242d372a265e0b80c65684bae75dd96f226b104aaccd63",
+      "owner": 0,
+      "group": 0,
+      "mode": "0444"
+    },
+    {
+      "source": "scripts/holy127_backup_orchestrator.py",
+      "installedName": "holy127_backup_orchestrator.py",
+      "sha256": "f1f4655f0129167ae9a2c85e5165780674ad5272aacb59e457eaa8e81ee1d79c",
+      "owner": 0,
+      "group": 0,
+      "mode": "0444"
+    },
+    {
+      "source": "scripts/hs_release_guard.py",
+      "installedName": "hs_release_guard.py",
+      "sha256": "2732a41da67239772b5232c4a616638f22d5de947763e142f1a95a32644c8495",
+      "owner": 0,
+      "group": 0,
+      "mode": "0444"
+    }
+  ],
+  "reviewOnlyFiles": [
+    {"source": "scripts/holy127_bounded_stream.py", "sha256": "8c874d97c9f6e86be0581ed82c4fff5ab1e539bf57b562c598c5c846040077e2"},
+    {"source": "scripts/test_holy127_disposable_staging_qualifier.py", "sha256": "47862296ec8950876ed12c6d74f36c641f739e8fbcaeb16f9da7e2650381b74d"},
+    {"source": "scripts/test_holy127_backup_orchestrator.py", "sha256": "8e56992b0d2f71292b3295f592f7a03766e374b9f659239abf8c8c9b73906724"},
+    {"source": "scripts/test_holy127_bounded_stream.py", "sha256": "d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44"},
+    {"source": "scripts/test_hs_release_guard.py", "sha256": "6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40"},
+    {"source": "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md", "sha256": "d397badaaac497d0482709a866fa67d8f349125df4de7e7a3e5304d40a50fcb8"},
+    {"source": "deployment/HOLY-127-RELEASE-PACKET.md", "sha256": "415d4bd1fd1d848ac87822f794237c835452ffd8fd190edd166f1d47c66c9ac8"}
+  ],
+  "rootOwnedEntrypoints": [
+    {
+      "source": "scripts/holy127_qualifier_entrypoint.sh",
+      "installedPath": "/usr/local/sbin/holy127-q-f4f5a94",
+      "sha256": "9e908712a80dbb20067be8f2ec74b850db86b255f5e5bd98e68bbb0cb3cbc238",
+      "owner": 0,
+      "group": 0,
+      "mode": "0555",
+      "allowedInvocation": "sudo -n /usr/local/sbin/holy127-q-f4f5a94"
+    },
+    {
+      "source": "scripts/holy127_qualifier_receipt_collect.sh",
+      "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-receipt",
+      "sha256": "8b3f919678dd5a2493a123a488789007c74ce7876835d3febd44b387e5a20982",
+      "owner": 0,
+      "group": 0,
+      "mode": "0555",
+      "allowedInvocation": "sudo -n /usr/local/sbin/holy127-q-f4f5a94-receipt"
+    },
+    {
+      "source": "scripts/holy127_qualifier_receipt_cleanup.sh",
+      "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-cleanup",
+      "sha256": "938d04232f73d732952eaa4a93dfaf187c85f0488f852b793dfd3c59aa78c95e",
+      "owner": 0,
+      "group": 0,
+      "mode": "0555",
+      "allowedInvocation": "sudo -n /usr/local/sbin/holy127-q-f4f5a94-cleanup"
+    }
+  ],
+  "pythonIsolation": {
+    "executable": "/usr/bin/python3",
+    "flags": ["-I"],
+    "importPath": "/opt/holy-sheet-staging/qualification/holy127-c483a5557dcc03ca961350f07937cecc74a101cd",
+    "environmentIgnored": true
+  },
+  "operatorAccount": "deploy",
+  "sudoPolicy": "Permit only the three exact no-argument installed entrypoints above; do not permit shells, Python, Docker, cat, rm, arbitrary paths or arguments.",
+  "orderedOperatorSteps": [
+    "Acquire a Product-issued serialized staging slot and fresh preflight approval.",
+    "Invoke only sudo -n /usr/local/sbin/holy127-q-f4f5a94.",
+    "Collect the retained receipt with sudo -n /usr/local/sbin/holy127-q-f4f5a94-receipt and save it off-host.",
+    "Verify the off-host receipt parses, records post-cleanup gates and matches the run output.",
+    "Invoke sudo -n /usr/local/sbin/holy127-q-f4f5a94-cleanup; compare its printed SHA-256 with the off-host receipt hash and verify the fixed receipt directory is absent."
+  ],
+  "authorization": "Manifest publication is not installation or execution authority. Installation, sudo policy, slot, run, receipt collection and cleanup require direct bounded human approval."
+}
