@@ -2,10 +2,38 @@
 CREATE TABLE IF NOT EXISTS hs_workspace_search (
  page_id text PRIMARY KEY REFERENCES hs_pages(id) ON DELETE CASCADE,
  body text NOT NULL DEFAULT '',
- title text NOT NULL DEFAULT '',
- search_vector tsvector GENERATED ALWAYS AS(to_tsvector('simple',title||E'\n'||body)) STORED
+ title text NOT NULL DEFAULT ''
 );
-CREATE INDEX IF NOT EXISTS hs_workspace_search_vector ON hs_workspace_search USING gin(search_vector);
+-- Replace the earlier full-page vector safely if the draft migration was rehearsed.
+DROP INDEX IF EXISTS hs_workspace_search_vector;
+ALTER TABLE hs_workspace_search DROP COLUMN IF EXISTS search_vector;
+CREATE TABLE IF NOT EXISTS hs_workspace_search_terms (
+ page_id text NOT NULL REFERENCES hs_workspace_search(page_id) ON DELETE CASCADE,
+ chunk integer NOT NULL, search_vector tsvector NOT NULL,
+ PRIMARY KEY(page_id,chunk)
+);
+CREATE INDEX IF NOT EXISTS hs_workspace_search_terms_vector ON hs_workspace_search_terms USING gin(search_vector);
+CREATE OR REPLACE FUNCTION hs_reindex_search_terms(target text) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+ DELETE FROM hs_workspace_search_terms WHERE page_id=target;
+ -- Literal canonical words bypass PostgreSQL's email/domain/version parser.
+ -- Each vector has at most 256 words of 128 characters (<=512 UTF-8 bytes),
+ -- safely below 1 MiB. Prefix-only candidates preserve longer query coverage;
+ -- authoritative full saved text is retained and checked separately.
+ INSERT INTO hs_workspace_search_terms(page_id,chunk,search_vector)
+ SELECT target,chunk,array_to_tsvector(array_agg(word ORDER BY word)) FROM (
+  SELECT word,((row_number() OVER(ORDER BY word)-1)/256)::integer AS chunk FROM (
+   SELECT DISTINCT left(word,128) AS word FROM hs_workspace_search p,
+   LATERAL regexp_split_to_table(lower(p.title||E'\n'||p.body),'[^[:alnum:]]+') AS word
+   WHERE p.page_id=target AND word<>''
+  ) words
+ ) chunks GROUP BY chunk;
+END $$;
+CREATE OR REPLACE FUNCTION hs_search_projection_change() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN PERFORM hs_reindex_search_terms(NEW.page_id); RETURN NULL; END $$;
+DROP TRIGGER IF EXISTS hs_search_projection ON hs_workspace_search;
+CREATE TRIGGER hs_search_projection AFTER INSERT OR UPDATE OF title,body ON hs_workspace_search
+FOR EACH ROW EXECUTE FUNCTION hs_search_projection_change();
 CREATE OR REPLACE FUNCTION hs_search_text(node jsonb) RETURNS text
 LANGUAGE plpgsql IMMUTABLE AS $$
 DECLARE result text;
@@ -65,3 +93,10 @@ SELECT p.id,COALESCE(string_agg(hs_search_text(b.node),E'\n' ORDER BY b.position
 FROM hs_pages p LEFT JOIN hs_blocks b ON b.page_id=p.id AND b.parent_id IS NULL
 WHERE NOT EXISTS(SELECT 1 FROM hs_workspace_search x WHERE x.page_id=p.id)
 GROUP BY p.id ON CONFLICT DO NOTHING;
+
+-- Cover existing projections from a previous draft/backfill without truncation.
+DO $$ DECLARE target text; BEGIN
+ FOR target IN SELECT p.page_id FROM hs_workspace_search p WHERE NOT EXISTS(
+  SELECT 1 FROM hs_workspace_search_terms t WHERE t.page_id=p.page_id
+ ) LOOP PERFORM hs_reindex_search_terms(target); END LOOP;
+END $$;

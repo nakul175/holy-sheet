@@ -20,7 +20,11 @@ export default function SearchDialog({spaces,workspaceId,workspaceName,onClose,o
    const data=await requestJson<Response>('/api/search?'+p,{signal:abort.signal});
    if(version!==generation.current||abort.signal.aborted)return;
    setResults(old=>next?[...old,...data.results.filter(item=>!old.some(existing=>existing.id===item.id))]:data.results);setCursor(data.nextCursor);
-  }catch{if(version===generation.current&&!abort.signal.aborted)setError('Search is temporarily unavailable. Retry to refresh results.');}
+  }catch(error){if(version===generation.current&&!abort.signal.aborted){
+   const code=error&&typeof error==='object'&&'code' in error?String(error.code):'';
+   const messages:Record<string,string>={search_too_broad:'Too many pages match. Refine your query or choose a space.',search_rate_limited:'Search request limit reached. Retry after one minute.',search_snapshot_limit:'Too many active searches. Retry when an earlier search expires.'};
+   setError(messages[code]??'Search is temporarily unavailable. Retry to refresh results.');
+  }}
   finally{if(version===generation.current&&!abort.signal.aborted)setBusy(false);}
  };
  useEffect(()=>{const version=++generation.current;request.current?.abort();setResults([]);setCursor(null);setSelected(0);setError('');setBusy(false);

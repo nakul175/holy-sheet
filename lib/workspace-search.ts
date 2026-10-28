@@ -12,7 +12,17 @@ const invalid=()=>new DocumentError('Search changed or expired. Retry from the f
 const escapeRegex=(value:string)=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 
 export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSearchInput){
+ // Commit admission separately so rejected searches cannot reset their own limit.
+ const admitted=await r.db.transaction(async tx=>{
+  await tx.query('INSERT INTO hs_search_rate(user_id) SELECT id FROM hs_users WHERE id=$1 ON CONFLICT DO NOTHING',[actor.id]);
+  return (await tx.query<{requests:number}>(`UPDATE hs_search_rate SET requests=CASE WHEN window_started<=clock_timestamp()-interval '1 minute' THEN 1 ELSE LEAST(requests+1,61) END,window_started=CASE WHEN window_started<=clock_timestamp()-interval '1 minute' THEN clock_timestamp() ELSE window_started END WHERE user_id=$1 RETURNING requests`,[actor.id])).rows[0];
+ });
+ if(!admitted)throw missing();
+ if(admitted.requests>60)throw new DocumentError('Search request limit reached. Retry after one minute.','search_rate_limited',429);
  return r.db.transaction(async tx=>{
+  await tx.query("SET LOCAL statement_timeout='5s'");
+  // Serialize this actor's snapshot allocation, including searches in other workspaces.
+  await tx.query('SELECT user_id FROM hs_search_rate WHERE user_id=$1 FOR UPDATE',[actor.id]);
   // Serialize with native grant/move/delete transactions. Never trust cursor ACLs.
   const member=(await tx.query<{name:string}>(`SELECT w.name FROM hs_workspaces w JOIN hs_members m ON m.workspace_id=w.id WHERE w.id=$1 AND m.user_id=$2 AND m.active=true FOR SHARE OF w,m`,[input.workspaceId,actor.id])).rows[0];
   if(!member)throw missing();
@@ -29,21 +39,28 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
   const titleMatch=matches('p.title'),allMatch=matches("p.title||E'\\n'||COALESCE(x.body,'')"),exact=bind(input.query.trim().toLocaleLowerCase());
   // The index only narrows candidates; exact matching and current ACLs remain authoritative.
   const lexemes=[...parsed.phrases.flatMap(p=>p.match(/[\p{L}\p{N}]+/gu)??[]),...parsed.terms];
-  const tsquery=lexemes.map((word,i)=>"'"+word.replace(/'/g,"''")+"'"+(parsed.prefix&&i===lexemes.length-1?':*':'')).join(' & ');
-  const indexMatch=tsquery?`x.search_vector @@ to_tsquery('simple',${bind(tsquery)})`:'true';
+  const indexMatch=[...new Set(lexemes.map(word=>Array.from(word).slice(0,128).join('')))].map(word=>
+   `EXISTS(SELECT 1 FROM hs_workspace_search_terms t WHERE t.page_id=p.id AND t.search_vector @@ ${bind("'"+word.replace(/'/g,"''")+"':*")}::tsquery)`
+  ).join(' AND ')||'true';
   // A single scoped permission closure avoids one document/ACL query per page.
   const permitted=`WITH RECURSIVE permitted(id) AS (
    SELECT p.id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$2 AND m.active=true
    WHERE p.workspace_id=$1 AND p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR p.owner_id=$2 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$2 OR (p.visibility='space' AND g.subject='space'))))
    UNION SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.parent_id WHERE p.workspace_id=$1 AND p.deleted_at IS NULL
   )`;
-  const ranked=(await tx.query<{id:string}>(`${permitted} SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.id LEFT JOIN hs_workspace_search x ON x.page_id=p.id WHERE ($3::text IS NULL OR p.space_id=$3) AND (${indexMatch}) AND (${allMatch}) ORDER BY CASE WHEN lower(p.title)=${exact} THEN 0 WHEN ${titleMatch} THEN 1 ELSE 2 END,p.updated_at DESC,p.id COLLATE "C"`,values)).rows.map(row=>row.id);
+  const ranked=(await tx.query<{id:string}>(`${permitted} SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.id LEFT JOIN hs_workspace_search x ON x.page_id=p.id WHERE ($3::text IS NULL OR p.space_id=$3) AND (${indexMatch}) AND (${allMatch}) ORDER BY CASE WHEN lower(p.title)=${exact} THEN 0 WHEN ${titleMatch} THEN 1 ELSE 2 END,p.updated_at DESC,p.id COLLATE "C" LIMIT 20001`,values)).rows.map(row=>row.id);
+  if(ranked.length>20000)throw new DocumentError('Too many pages match. Refine your query or choose a space.','search_too_broad',422);
   let ids=ranked,position=0;let snapshotId:string=randomUUID();
   if(input.cursor){
    const snapshot=(await tx.query<{id:string;page_ids:string[];next_position:number;query_hash:string;user_id:string;workspace_id:string}>(`SELECT s.*,c.next_position FROM hs_search_cursors c JOIN hs_search_snapshots s ON s.id=c.snapshot_id WHERE c.token_hash=$1 AND s.expires_at>clock_timestamp()`,[hash(input.cursor)])).rows[0];
    if(!snapshot||snapshot.user_id!==actor.id||snapshot.workspace_id!==input.workspaceId||snapshot.query_hash!==queryHash)throw invalid();
    ids=snapshot.page_ids;position=snapshot.next_position;snapshotId=snapshot.id;
-  }else if(ids.length>20)await tx.query('INSERT INTO hs_search_snapshots(id,user_id,workspace_id,query_hash,space_id,page_ids) VALUES($1,$2,$3,$4,$5,$6)',[snapshotId,actor.id,input.workspaceId,queryHash,input.spaceId??null,JSON.stringify(ids)]);
+  }else if(ids.length>20){
+   await tx.query('DELETE FROM hs_search_snapshots WHERE id IN(SELECT id FROM hs_search_snapshots WHERE user_id=$1 AND expires_at<=clock_timestamp() LIMIT 100)',[actor.id]);
+   const active=(await tx.query<{count:number}>('SELECT count(*)::integer AS count FROM hs_search_snapshots WHERE user_id=$1 AND expires_at>clock_timestamp()',[actor.id])).rows[0].count;
+   if(active>=32)throw new DocumentError('Too many active searches. Retry when an earlier search expires.','search_snapshot_limit',429);
+   await tx.query('INSERT INTO hs_search_snapshots(id,user_id,workspace_id,query_hash,space_id,page_ids) VALUES($1,$2,$3,$4,$5,$6)',[snapshotId,actor.id,input.workspaceId,queryHash,input.spaceId??null,JSON.stringify(ids)]);
+  }
   const current=new Set(ranked),selected:string[]=[];
   while(position<ids.length&&selected.length<20){const id=ids[position++];if(current.has(id))selected.push(id);}
   const results:SearchResult[]=[];

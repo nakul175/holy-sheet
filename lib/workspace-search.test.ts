@@ -49,3 +49,14 @@ it('omits restricted parent metadata while including inherited accessible ancest
  const result=await search('visiblechildneedle');expect(result.results[0].path).toEqual(['Product']);expect(JSON.stringify(result)).not.toContain('HIDDEN');
  await db.query("INSERT INTO hs_grants(page_id,subject,role) VALUES($1,$2,'viewer')",[parent.id,viewer.id]);expect((await search('visiblechildneedle')).results[0].path).toEqual(['Product','HIDDEN PARENT']);
 });
+it('bounds request admission and active snapshots without applying limits from another actor',async()=>{
+ await db.query("INSERT INTO hs_search_rate(user_id,requests) VALUES($1,60) ON CONFLICT(user_id) DO UPDATE SET requests=60,window_started=clock_timestamp()",[viewer.id]);
+ await expect(search('paginationholy')).rejects.toMatchObject({code:'search_rate_limited',status:429});
+ expect((await search('paginationholy',{},other)).results).toHaveLength(0);
+ await db.query('DELETE FROM hs_search_rate WHERE user_id=$1',[viewer.id]);
+ await db.query('DELETE FROM hs_search_snapshots WHERE user_id=$1',[viewer.id]);
+ for(let i=0;i<32;i++)await db.query('INSERT INTO hs_search_snapshots(id,user_id,workspace_id,query_hash,page_ids) VALUES($1,$2,$3,$4,$5)',[crypto.randomUUID(),viewer.id,'ws-aplyd','synthetic-'+i,'[]']);
+ await expect(search('paginationholy')).rejects.toMatchObject({code:'search_snapshot_limit',status:429});
+ await db.query("UPDATE hs_search_snapshots SET expires_at=clock_timestamp()-interval '1 second' WHERE user_id=$1",[viewer.id]);
+ expect((await search('paginationholy')).results).toHaveLength(20);
+});
