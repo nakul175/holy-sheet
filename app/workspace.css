@@ -81,7 +81,8 @@ body { font-family:var(--font-public-sans),system-ui,sans-serif; -webkit-font-sm
 .page-io-actions { display:flex; justify-content:flex-end; gap:4px; margin:-18px 0 16px; }
 .page-io-actions button { min-height:44px; padding:8px 10px; border:0; border-radius:8px; background:transparent; color:#596174; font-size:11px; }
 .page-io-actions button:hover { background:#f0f1f7; color:var(--navy); }
-.editor-actions { position:absolute; right:0; bottom:-68px; margin:0; padding:0; border:0; background:transparent; color:#687084; gap:2px; }
+.rich-editor[data-editable=true] { padding-bottom:56px; }
+.editor-actions { position:absolute; right:0; bottom:0; margin:0; padding:6px 0 0; border:0; background:transparent; color:#687084; gap:2px; }
 .editor-actions button,.editor-actions summary { min-height:44px; min-width:44px; padding:8px; color:#566075; font-size:12px; }
 .editor-actions button:hover,.editor-actions summary:hover { background:#eeeff8; color:var(--navy); }
 .editor-actions .find-button { margin-left:0; }
@@ -98,10 +99,10 @@ body { font-family:var(--font-public-sans),system-ui,sans-serif; -webkit-font-sm
 .toolbox-label { display:block; margin-bottom:10px; color:#555d70; font-size:10px; font-weight:700; letter-spacing:.11em; text-transform:uppercase; }
 .toolbox-section-heading { display:flex; justify-content:space-between; align-items:center; }
 .toolbox-section-heading kbd { margin-top:-8px; color:#7c8394; }
-.editor-toolbox .format-tools { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; padding:0; border:0; box-shadow:none; }
-.editor-toolbox .format-tools button { min-width:0; height:38px; border:1px solid #e6e8ee; border-radius:8px; background:#fafbfc; }
+.editor-toolbox .format-tools { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); align-items:start; gap:6px; padding:0; border:0; box-shadow:none; }
+.editor-toolbox .format-tools button { grid-column:span 2; min-width:0; height:38px; border:1px solid #e6e8ee; border-radius:8px; background:#fafbfc; }
 .editor-toolbox .format-tools button:hover,.editor-toolbox .format-tools button[aria-pressed=true] { border-color:#cfd2e1; background:#eff0f8; color:var(--navy); }
-.editor-toolbox .colour-control { grid-column:span 2; margin:4px 0 0; font-size:9px; }
+.editor-toolbox .colour-control { grid-column:span 3; margin:6px 0 0; gap:6px; font-size:10px; line-height:1.2; }
 .editor-toolbox .colour-control select { max-width:none; width:100%; min-height:44px; border:1px solid #e6e8ee; background:#fafbfc; }
 .toolbox-insert-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
 .toolbox-insert-grid button { display:grid; place-items:center; gap:4px; min-height:60px; padding:7px 3px; border:1px solid #e6e8ee; border-radius:9px; background:#fafbfc; color:#4e566b; font-weight:650; }
@@ -120,7 +121,7 @@ body { font-family:var(--font-public-sans),system-ui,sans-serif; -webkit-font-sm
 .rich-prose a { color:var(--navy); }
 .rich-editor .add-block { color:#626876; font-size:12px; min-height:44px; }
 .rich-editor .add-block span { color:#5f6675; }
-.page-footer { font-size:11px; color:var(--muted); margin-top:40px; border-color:var(--line); }
+.page-footer { font-size:11px; color:var(--muted); margin-top:18px; padding-top:16px; border-color:var(--line); }
 .format-tools { border-color:var(--line); box-shadow:none; }
 .shell :is(button,summary,a,select,input):focus-visible { outline:2px solid var(--navy); outline-offset:3px; }
 .suite-bar :is(button,summary,a):focus-visible { outline-color:#f6ce76; }
@@ -166,7 +167,8 @@ body { font-family:var(--font-public-sans),system-ui,sans-serif; -webkit-font-sm
  .page-kicker { margin-bottom:14px; }
  .editor-actions { margin-bottom:20px; }
  .editor-actions .find-button { margin-left:0; }
- .editor-actions { position:static; justify-content:flex-end; margin-bottom:16px; }
+ .rich-editor[data-editable=true] { padding-bottom:0; }
+ .editor-actions { position:static; justify-content:flex-end; margin-bottom:16px; padding-top:0; }
  .editor-toolbox { position:fixed; top:auto; bottom:12px; left:12px; right:12px; width:auto; max-height:min(58dvh,520px); border-radius:14px; z-index:6; }
  .editor-toolbox.is-collapsed { left:auto; width:48px; }
  .editor-toolbox>header { min-height:46px; }
