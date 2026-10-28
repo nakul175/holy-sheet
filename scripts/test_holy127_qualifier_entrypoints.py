@@ -1,8 +1,12 @@
+import hashlib
+import json
+import re
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
+REPO = ROOT.parent
 
 
 class QualifierEntrypointContractTest(unittest.TestCase):
@@ -36,6 +40,22 @@ class QualifierEntrypointContractTest(unittest.TestCase):
             self.assertIn('"$#" -ne 0', source) if name == "holy127_qualifier_entrypoint.sh" else self.assertIn('test "$#" -eq 0', source)
             self.assertIn('test ! -L "$0"', source)
             self.assertIn('"0:0:555"', source)
+
+    def test_run_entrypoint_hashes_match_manifest_and_actual_frozen_bundle(self):
+        source = self.read("holy127_qualifier_entrypoint.sh")
+        manifest = json.loads((REPO / "deployment/HOLY-127-QUALIFIER-INSTALL-MANIFEST.json").read_text(encoding="utf-8"))
+        expected = {row["installedName"]: row["sha256"] for row in manifest["bundleFiles"]}
+        self.assertEqual({name: digest for digest, name in re.findall(r'^verify_file ([0-9a-f]{64}) "\$bundle/([^\"]+)"$', source, re.MULTILINE)}, expected)
+        for row in manifest["bundleFiles"]:
+            digest = hashlib.sha256((REPO / row["source"]).read_bytes()).hexdigest()
+            self.assertEqual(digest, row["sha256"])
+
+    def test_receipt_lock_is_validated_before_open_and_all_nonsticky_ancestors_deny_group_write(self):
+        for name in ("holy127_qualifier_receipt_collect.sh", "holy127_qualifier_receipt_cleanup.sh"):
+            source = self.read(name)
+            self.assertLess(source.index('test ! -L "$lock"'), source.index('exec 9<>"$lock"'))
+            self.assertLess(source.index('"0:660:regular file"'), source.index('exec 9<>"$lock"'))
+            self.assertGreaterEqual(source.count("0$mode & 0022"), 2)
 
 
 if __name__ == "__main__":

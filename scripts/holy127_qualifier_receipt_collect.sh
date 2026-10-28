@@ -7,13 +7,21 @@ test "$#" -eq 0
 directory=/var/tmp/holy127-q-f4f5a94-20261029a
 receipt=$directory/qualification.json
 lock=/run/lock/holy-sheet-release/release.lock
+for ancestor in /run /run/lock /run/lock/holy-sheet-release; do
+  test ! -L "$ancestor"
+  test "$(/usr/bin/stat -c %u:%g "$ancestor")" = "0:0"
+  mode=$(/usr/bin/stat -c %a "$ancestor")
+  test $((0$mode & 0022)) -eq 0
+done
+test ! -L "$lock"
+test "$(/usr/bin/stat -c %u:%a:%F "$lock")" = "0:660:regular file"
 exec 9<>"$lock"
 /usr/bin/flock -n 9
 for ancestor in /var /usr/local /usr/local/sbin; do
   test ! -L "$ancestor"
   test "$(/usr/bin/stat -c %u:%g "$ancestor")" = "0:0"
   mode=$(/usr/bin/stat -c %a "$ancestor")
-  test $((0$mode & 0002)) -eq 0
+  test $((0$mode & 0022)) -eq 0
 done
 test "$(/usr/bin/stat -c %u:%g:%a /var/tmp)" = "0:0:1777"
 test ! -L "$0"
