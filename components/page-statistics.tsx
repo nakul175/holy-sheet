@@ -8,7 +8,9 @@ declare const __HS_PAGE_STATISTICS_PACKAGE_BASE__:string;
 
 export default function PageStatistics({document:body,supportedSchema,available=true}:{document:unknown;supportedSchema:boolean;available?:boolean}){
  const [open,setOpen]=useState(false),[result,setResult]=useState<{body:unknown;supportedSchema:boolean;value:StatisticsResult}|null>(null);
- const opener=useRef<HTMLButtonElement>(null);
+ const opener=useRef<HTMLButtonElement>(null),wasOpen=useRef(false);
+ // Restore after Dialog cleanup, including browsers whose pointer clicks do not focus buttons.
+ useEffect(()=>{if(wasOpen.current&&!open&&available&&opener.current?.isConnected)opener.current.focus();wasOpen.current=open;},[open,available]);
  useEffect(()=>{
   if(!available){setOpen(false);setResult(null);return;}
   let alive=true,finished=false,fallbackStarted=false,worker:Worker|undefined;
