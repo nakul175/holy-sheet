@@ -5,13 +5,13 @@ import {Dialog} from './editor/dialog';
 import {defaultReadingAppearance,readingAppearanceKey,readReadingAppearance,writeReadingAppearance,resetReadingAppearance,validReadingAppearance,type ReadingAppearance,type ReadingStorageFactory} from '../lib/reading-appearance';
 import styles from './reading-appearance.module.css';
 const browserStorage:ReadingStorageFactory=()=>window.localStorage;
-export function useReadingAppearance(actorId:string,available:boolean,storage:ReadingStorageFactory=browserStorage){
+export function useReadingAppearance(actorId:string,available:boolean,storage?:ReadingStorageFactory){
  const [state,setState]=useState({actor:'',values:{...defaultReadingAppearance},persistent:true,invalid:false});
  const permitted=available&&readingAppearanceKey(actorId)!==null;
- useLayoutEffect(()=>{if(!permitted){setState({actor:'',values:{...defaultReadingAppearance},persistent:true,invalid:false});return;}setState({actor:actorId,...readReadingAppearance(actorId,storage)});},[actorId,permitted,storage]);
+ useLayoutEffect(()=>{if(!permitted){setState({actor:'',values:{...defaultReadingAppearance},persistent:true,invalid:false});return;}setState({actor:actorId,...readReadingAppearance(actorId,storage??browserStorage)});},[actorId,permitted,storage]);
  const ready=permitted&&state.actor===actorId,values=ready?state.values:{...defaultReadingAppearance};
- function change(key:keyof ReadingAppearance,value:string){if(!ready)return;const next={...values,[key]:value};if(!validReadingAppearance(next))return;const persistent=state.persistent&&writeReadingAppearance(actorId,next,storage);setState({actor:actorId,values:next,persistent,invalid:false});}
- function reset(){if(!ready)return;const removed=resetReadingAppearance(actorId,storage);setState({actor:actorId,values:{...defaultReadingAppearance},persistent:state.persistent&&removed,invalid:false});}
+ function change(key:keyof ReadingAppearance,value:string){if(!ready)return;const next={...values,[key]:value};if(!validReadingAppearance(next))return;const persistent=state.persistent&&writeReadingAppearance(actorId,next,storage??browserStorage);setState({actor:actorId,values:next,persistent,invalid:false});}
+ function reset(){if(!ready)return;const removed=resetReadingAppearance(actorId,storage??browserStorage);setState({actor:actorId,values:{...defaultReadingAppearance},persistent:state.persistent&&removed,invalid:false});}
  const articleClassName=ready?[styles.surface,values.textSize==='large'?styles.sizeLarge:values.textSize==='extra-large'?styles.sizeExtraLarge:'',values.lineSpacing==='relaxed'?styles.spacingRelaxed:'',values.pageWidth==='wide'?styles.widthWide:''].filter(Boolean).join(' '):'';
  return {ready,values,change,reset,articleClassName,scope:actorId+':'+permitted,notice:!state.persistent?'Changes apply to this session only. Browser storage is unavailable.':state.invalid?'Saved choices were not valid. Defaults are shown until you choose a setting.':'Choices stay with your account on this browser.'};
 }
