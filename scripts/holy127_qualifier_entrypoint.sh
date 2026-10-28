@@ -9,7 +9,7 @@ if [ "$#" -ne 0 ]; then
   exit 64
 fi
 
-bundle=/opt/holy-sheet-staging/qualification/holy127-c483a5557dcc03ca961350f07937cecc74a101cd
+bundle=/opt/holy-sheet-staging/qualification/holy127-4c1fdbda6becaf76
 test "$(/usr/bin/id -u)" -eq 0
 
 verify_ancestor() {
@@ -41,4 +41,4 @@ verify_file f1f4655f0129167ae9a2c85e5165780674ad5272aacb59e457eaa8e81ee1d79c "$b
 verify_file 2732a41da67239772b5232c4a616638f22d5de947763e142f1a95a32644c8495 "$bundle/hs_release_guard.py"
 
 umask 077
-exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin DOCKER_HOST=unix:///var/run/docker.sock /usr/bin/python3 -I -c 'import runpy,sys;sys.path.insert(0,"/opt/holy-sheet-staging/qualification/holy127-c483a5557dcc03ca961350f07937cecc74a101cd");runpy.run_path("/opt/holy-sheet-staging/qualification/holy127-c483a5557dcc03ca961350f07937cecc74a101cd/holy127_disposable_staging_qualifier.py",run_name="__main__")'
+exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin DOCKER_HOST=unix:///var/run/docker.sock /usr/bin/python3 -I -c 'import runpy,sys;sys.path.insert(0,"/opt/holy-sheet-staging/qualification/holy127-4c1fdbda6becaf76");runpy.run_path("/opt/holy-sheet-staging/qualification/holy127-4c1fdbda6becaf76/holy127_disposable_staging_qualifier.py",run_name="__main__")'
