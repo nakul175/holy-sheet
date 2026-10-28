@@ -38,9 +38,9 @@ export function installSectionPreferences(root:HTMLElement,keyPrefix:string){
   root.addEventListener('click',click);
   return()=>{disposed=true;observer.disconnect();root.removeEventListener('click',click);};
 }
-export function openSectionsForNavigation(target:Element|null,keyPrefix:string,entries:TemporarySection[]){
+export function openSectionsForNavigation(target:Element|null,keyPrefix:string,entries:TemporarySection[],boundary?:HTMLElement){
   let parent=target?.parentElement;
-  while(parent){if(parent.getAttribute('data-type')==='details'&&!parent.classList.contains('is-open')){const key=`hs-collapse:${keyPrefix}:${parent.getAttribute('data-id')}`;entries.push({element:parent,key,preference:preference(key),interaction:interactions.get(parent)??0});setSectionOpen(parent,true);}parent=parent.parentElement;}
+  while(parent&&(!boundary||boundary.contains(parent))){if(parent.getAttribute('data-type')==='details'&&!parent.classList.contains('is-open')){const key=`hs-collapse:${keyPrefix}:${parent.getAttribute('data-id')}`;entries.push({element:parent,key,preference:preference(key),interaction:interactions.get(parent)??0});setSectionOpen(parent,true);}parent=parent.parentElement;}
 }
 export function restoreTemporarySections(entries:TemporarySection[]):TemporarySection[]{
   const retained:TemporarySection[]=[];
