@@ -3,6 +3,7 @@ import {z} from 'zod';
 import {DocumentError} from './document';
 import {SharedRecordRepository,type RecordContext} from './shared-records';
 import {recordHash,recordWhitespaceSql,typedRecordValue,type RecordField} from './shared-record-types';
+import {editableLayoutField,type RecordLayoutDefinition} from './record-layout-definition';
 import type {Sql} from './database';
 const uuid=z.string().uuid();
 const definition=z.object({
@@ -49,6 +50,7 @@ export class SharedRecordSchemaRepository extends SharedRecordRepository {
    if(proposed.required&&!before?.required&&impact.missingCount)impact.blockers.push('Existing records have missing values. Backfill them through permitted record edits first.');
    if(incompatible&&dependencies.length)impact.blockers.push('Resolve the listed views, import mappings or integrations before this change.');
    if(dependencies.length>200)impact.blockers.push('Too many dependencies for this bounded review.');
+   if(proposed.required&&!proposed.deprecated){const layout=(await tx.query<{definition:RecordLayoutDefinition}>('SELECT v.definition FROM hs_data_layouts l JOIN hs_data_layout_versions v ON v.tenant_id=l.tenant_id AND v.collection=l.collection AND v.version=l.published_version WHERE l.tenant_id=$1 AND l.collection=$2',[ctx.tenantId,c.collection])).rows[0];if(layout&&!editableLayoutField(layout.definition,proposed.key))impact.blockers.push('Place the optional field in the published editable layout before making it required.');}
    if(proposed.deprecated&&proposed.required)impact.blockers.push('A deprecated field cannot remain required for new records.');
    if(proposed.unique&&!before?.unique&&impact.populatedCount>5000)impact.blockers.push('Uniqueness backfill above 5,000 populated records requires a separately qualified bounded migration.');
    if(proposed.unique){const duplicates=await tx.query<{n:string}>(`SELECT count(*)::text AS n FROM (SELECT field_values->$3 AS v FROM hs_data_records WHERE tenant_id=$1 AND collection=$2 AND state<>'trashed' AND merged_into_id IS NULL AND field_values ? $3 AND field_values->$3 <> 'null'::jsonb AND field_values->$3 <> '""'::jsonb AND field_values->$3 <> '[]'::jsonb AND NOT(jsonb_typeof(field_values->$3)='string' AND btrim(field_values->>$3,${recordWhitespaceSql})='') GROUP BY field_values->$3 HAVING count(*)>1) q`,[ctx.tenantId,c.collection,proposed.key]);impact.duplicateValues=Number(duplicates.rows[0].n);if(impact.duplicateValues)impact.blockers.push('Resolve duplicate values before enabling uniqueness.');}

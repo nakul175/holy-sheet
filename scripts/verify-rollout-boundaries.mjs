@@ -11,6 +11,7 @@ async function check(name,path,status,options={}){
   checks.push({name,status,durationMs:Math.round(performance.now()-started)});return response;
 }
 await check('Public landing','/',200);
+await check('Local-only synthetic record preview','/qualification/record-layout',404);
 const documentShell=await check('Standalone public shell','/pages/welcome',200),embedShell=await check('Embedded public shell','/embed/pages/11111111-1111-4111-8111-111111111111',200);
 if(framing){
   assert.match(documentShell.headers.get('content-security-policy')??'',/frame-ancestors 'none'/);
