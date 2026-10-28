@@ -16,7 +16,7 @@ export class SharedRecordTemplateRepository extends SharedRecordRepository {
    for(const field of await this.fields(tx,ctx,collection)){
     if(field.deprecated||!await this.fieldAllowed(tx,ctx,collection,field,'view'))continue;
     const canWrite=await this.fieldAllowed(tx,ctx,collection,field,'write');
-    fields.push({key:field.key,label:field.label,kind:field.kind,required:field.required,canWrite,choices:field.choices.map(value=>({id:value,label:value}))});
+    fields.push({key:field.key,label:field.label,kind:field.kind,required:field.required,canWrite,choices:field.referenceList?field.referenceList.items.filter(item=>!item.deprecated).map(item=>({id:item.id,label:item.label})):field.choices.map(value=>({id:value,label:value}))});
    }
    return {schemaVersion:t.schema_version,canCreate:capabilities.includes('create'),canManage:capabilities.includes('manage-templates'),fields};
   });
