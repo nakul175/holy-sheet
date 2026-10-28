@@ -8,6 +8,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:release-guard": "python3 -m unittest -v scripts/test_hs_release_guard.py",
     "build:editor": "node scripts/build-editor-package.mjs",
     "pretest": "npm run build:editor && npm run build:import && npm run build:export && npm run build:record-import && npm run build:record-export && npm run build:tenant-authority",
     "pretypecheck": "npm run build:editor && npm run build:import && npm run build:export && npm run build:record-import && npm run build:record-export && npm run build:tenant-authority",

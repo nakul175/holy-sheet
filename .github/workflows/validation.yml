@@ -52,6 +52,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Qualify fail-closed Holy Sheet release guard
+        run: npm run test:release-guard
       - name: Qualify synthetic PDF layout and preserve rendered pages
         run: |
           python -m pip install --disable-pip-version-check --no-input -r requirements-export-qa.txt
