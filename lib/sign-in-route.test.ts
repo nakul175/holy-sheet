@@ -8,7 +8,7 @@ describe('Holy Sheet sign-in entry',()=>{
   expect(response.status).toBe(200);
   expect(response.headers.get('cache-control')).toBe('no-store');
   expect(response.headers.get('content-security-policy')).toMatch(/style-src 'nonce-[^']+'/);
-  expect(body).toContain('Everything finds its place.');
+  expect(body).toContain('Give every idea a place to belong.');
   expect(body).toContain('Continue with Aplyd');
   expect(body).toContain('/auth/sign-in?continue=1&amp;next=%2Fpages%2Fwelcome');
  });
