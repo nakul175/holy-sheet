@@ -1,0 +1,9 @@
+{
+  "scope": "Synthetic models, identities and grants only; no live database read",
+  "django": "5.2.18",
+  "sourceModelsSha256": "3db0468a9ab74c7d3f4cea0496bf3e457eb51caab30a3b0da178b443971b0eb6",
+  "roleMigrationSha256": "5141f287b9ddcbafbb196516fce4b207e0b921b3110ccd2e4f986b1ec98f042a",
+  "roleModelSha256": "f00a27a11e7e0d52b54436d80ee2d49cf244cd063d96c98f6222a93b03dbbfb2",
+  "sqlSha256": "d6f2da7840af70f59a5ff99aae12ee8411bfd2486afa1115632dc31a27528950",
+  "modelMigrationParity": true
+}
