@@ -25,7 +25,8 @@ if(picker){
   await check('Picker actor hint cannot authenticate','/api/v1/integrations/sho/picker',401,{headers:{'x-hs-actor':'local-owner'}});
   await check('Picker creation requires verified identity','/api/v1/integrations/sho/picker',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json','x-hs-actor':'local-owner'},body:'{}'});
 }
-const login=await check('Sign-in bridge readiness','/auth/sign-in',bridge?303:503);
+await check('Sign-in entry page','/auth/sign-in',200);
+const login=await check('Sign-in bridge readiness','/auth/sign-in?continue=1',bridge?303:503);
 if(bridge){
   assert.equal(new URL(login.headers.get('location')).origin,'https://accounts.aplyd.org');
   const cookie=login.headers.get('set-cookie')??'';
