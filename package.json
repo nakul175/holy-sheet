@@ -9,11 +9,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build:editor": "node scripts/build-editor-package.mjs",
-    "pretest": "npm run build:editor && npm run build:import && npm run build:export",
-    "pretypecheck": "npm run build:editor && npm run build:import && npm run build:export",
-    "prebuild": "npm run build:editor && npm run build:import && npm run build:export",
+    "pretest": "npm run build:editor && npm run build:import && npm run build:export && npm run build:record-import",
+    "pretypecheck": "npm run build:editor && npm run build:import && npm run build:export && npm run build:record-import",
+    "prebuild": "npm run build:editor && npm run build:import && npm run build:export && npm run build:record-import",
     "build:import": "node scripts/build-import-worker.mjs",
-    "build:export": "node scripts/build-export-worker.mjs"
+    "build:export": "node scripts/build-export-worker.mjs",
+    "build:record-import": "node scripts/build-record-import-worker.mjs"
   },
   "dependencies": {
     "@aplyd/holy-sheet-editor": "file:packages/editor",
