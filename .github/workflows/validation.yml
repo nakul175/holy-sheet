@@ -52,6 +52,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Qualify fail-closed Holy Sheet release guard
+        run: npm run test:release-guard
       - name: Qualify synthetic PDF layout and preserve rendered pages
         run: |
           python -m pip install --disable-pip-version-check --no-input -r requirements-export-qa.txt
@@ -160,9 +162,15 @@ jobs:
         env:
           PW_CHROMIUM: /usr/bin/google-chrome
         run: npx playwright test -c playwright.accessibility.config.ts
+      - name: Real-browser live collaboration convergence and Undo
+        env:
+          PW_CHROMIUM: /usr/bin/google-chrome
+        run: npx playwright test -c playwright.collaboration.config.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: editor-accessibility-results
-          path: test-results/accessibility/
+          path: |
+            test-results/accessibility/
+            test-results/collaboration/
           retention-days: 7

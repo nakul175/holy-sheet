@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import "./globals.css";
+import "@aplyd/holy-sheet-editor/styles.css";
 import "./workspace.css";
 import SessionBoundary from '../components/session-boundary';
 

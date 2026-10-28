@@ -11,7 +11,7 @@ export type SuiteTenantProof={subject:string;tenantId:string;workspaceId:string;
  * or fallback to emails, JWT roles or a workspace-as-tenant assumption. */
 export interface CurrentSuiteTenantAuthority {verify(context:RecordContext):Promise<SuiteTenantProof>;}
 export interface RecordValueAuthority {verify(context:RecordContext,field:RecordField,ids:string[],action:'read-and-link'):Promise<void>;}
-type Tenant={id:string;schema_version:number;policy_version:number};
+type Tenant={id:string;schema_version:number;policy_version:number;data_revision:string|number};
 export type Stored={id:string;tenant_id:string;collection:string;name:string;name_search:string;field_values:Record<string,unknown>;parent_organisation_id:string|null;merged_into_id:string|null;state:'active'|'archived'|'trashed';version:number;created_at:string;updated_at:string;created_by:string;updated_by:string};
 export type RecordView={id:string;tenantId:string;collection:string;name:string;values:Record<string,unknown>;state:Stored['state'];version:number;schemaVersion:number;updatedAt:string;capabilities:RecordCapability[];parentOrganisation:{id:string;name:string}|{unavailable:true}|null;related:{id:string;kind:string;role:string;primary:boolean;status:string;target:{id:string;name:string;collection:string}}[];documents:{id:string;pageId:string;title:string}[]};
 const id=z.string().uuid(),collection=z.string().min(1).max(100),values=z.record(z.string(),z.unknown());
