@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey,type JWTPayload } from "jose";
 import { DocumentError } from "./document";
 import { requireActiveSuiteSession } from './suite-session';
+import {requireSuiteApplicationAccess} from './suite-application-access';
 
 export type Actor = { id: string; name?: string };
 export const localActor: Actor = {id:"00000000-0000-4000-8000-000000000001",name:"Your workspace"};
@@ -31,7 +32,7 @@ export function identityTokenFromRequest(request:Request,requireProtectedCookie=
   if(requireProtectedCookie&&!protectedValues.length)return;
   return protectedValues[0]??legacy[0];
 }
-export async function authenticate(request: Request): Promise<Actor> {
+export async function authenticate(request: Request, onVerifiedSuiteSession?: (subject:string,uid:string)=>void): Promise<Actor> {
   if(localPreview(request)) return localActor;
   const issuer=process.env.HS_IDENTITY_ISSUER, jwks=process.env.HS_IDENTITY_JWKS_URL;
   if(!issuer || !jwks) throw new DocumentError("Suite identity is not configured", "identity_unavailable", 503);
@@ -40,7 +41,13 @@ export async function authenticate(request: Request): Promise<Actor> {
   if(!token) throw new DocumentError("Sign in to open this page", "authentication_required",401);
   try {
     let keyset=keys.get(jwks);if(!keyset){keyset=createRemoteJWKSet(new URL(jwks));keys.set(jwks,keyset);}
-    const checkSession=process.env.HS_OIDC_ENABLED==='1'?(payload:JWTPayload)=>requireActiveSuiteSession(payload.sub!,payload.aplyd_session_uid,issuer,process.env.HS_OIDC_CLIENT_SECRET):undefined;
+    const checkSession=process.env.HS_OIDC_ENABLED==='1'?async(payload:JWTPayload)=>{
+      await requireActiveSuiteSession(payload.sub!,payload.aplyd_session_uid,issuer,process.env.HS_OIDC_CLIENT_SECRET);
+      await requireSuiteApplicationAccess(payload.sub!,payload.aplyd_session_uid as string,issuer,process.env.HS_OIDC_CLIENT_SECRET);
+      // This server-only callback runs after JWT and current source-session checks.
+      // The public Actor and all existing API responses still contain no session UID.
+      onVerifiedSuiteSession?.(payload.sub!,payload.aplyd_session_uid as string);
+    }:undefined;
     return await verifyIdentityToken(token,keyset,issuer,process.env.HS_IDENTITY_AUDIENCE??'holy-sheet',checkSession);
   } catch(error) { if(error instanceof DocumentError)throw error;throw new DocumentError("Session is invalid or expired", "authentication_required",401); }
 }

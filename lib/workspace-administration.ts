@@ -4,7 +4,7 @@ import type { Sql } from './database';
 import type { Repository } from './repository';
 import { DocumentError,stableStringify } from './document';
 
-export type WorkspaceRole='member'|'admin';
+export type WorkspaceRole='owner'|'admin'|'member'|'observer';
 export type MemberState={id:string;name:string;role:WorkspaceRole;active:boolean};
 export type WorkspaceAccess={id:string;name:string;version:number;role:WorkspaceRole;canManage:boolean;members:MemberState[]};
 export type MemberChange={subjectId:string;role:WorkspaceRole;active:boolean};
@@ -18,28 +18,30 @@ async function authority(tx:Sql,id:string,actor:Actor,lock=false){
 export async function workspaceAccess(r:Repository,actor:Actor,id:string):Promise<WorkspaceAccess>{
  return r.db.transaction(async tx=>{
  const w=await authority(tx,id,actor,true);
- const members=await tx.query<MemberState>(`SELECT u.id,u.name,m.role,m.active FROM hs_members m JOIN hs_users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND ($2::boolean OR m.user_id=$3) ORDER BY u.name,u.id`,[id,w.role==='admin',actor.id]);
- return {...w,canManage:w.role==='admin',members:members.rows};
+ const canManage=['owner','admin'].includes(w.role),members=await tx.query<MemberState>(`SELECT u.id,u.name,m.role,m.active FROM hs_members m JOIN hs_users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND ($2::boolean OR m.user_id=$3) ORDER BY u.name,u.id`,[id,canManage,actor.id]);
+ return {...w,canManage,members:members.rows};
  });
 }
 async function preview(tx:Sql,id:string,actor:Actor,input:MemberChange,lock=false):Promise<AccessPreview>{
  const w=await authority(tx,id,actor,lock);
- if(w.role!=='admin')throw new DocumentError('Workspace administrator access required','admin_required',403);
+ if(!['owner','admin'].includes(w.role))throw new DocumentError('Workspace administrator access required','admin_required',403);
  const q=await tx.query<MemberState>('SELECT u.id,u.name,m.role,m.active FROM hs_members m JOIN hs_users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.user_id=$2'+(lock?' FOR UPDATE OF m':''),[id,input.subjectId]);
  if(!q.rows.length)throw unavailable();const before=q.rows[0],after={...before,role:input.role,active:input.active};
- if(before.role==='admin'&&before.active&&(!after.active||after.role!=='admin')){
-  const others=await tx.query('SELECT user_id FROM hs_members WHERE workspace_id=$1 AND role=\'admin\' AND active=true AND user_id!=$2',[id,input.subjectId]);
+ if(input.role==='owner'&&w.role!=='owner')throw new DocumentError('Only a workspace owner can appoint another owner','owner_required',403);
+ if(before.role==='owner'&&before.active&&(!after.active||after.role!=='owner'))throw new DocumentError('An accepted ownership transfer is required before an owner can leave','ownership_transfer_required',409);
+ if(['owner','admin'].includes(before.role)&&before.active&&(!after.active||!['owner','admin'].includes(after.role))){
+  const others=await tx.query("SELECT user_id FROM hs_members WHERE workspace_id=$1 AND role IN ('owner','admin') AND active=true AND user_id!=$2",[id,input.subjectId]);
   if(!others.rows.length)throw new DocumentError('Keep at least one active workspace administrator','last_admin',409);
  }
  if(!after.active){const owned=await tx.query('SELECT id FROM hs_pages WHERE workspace_id=$1 AND owner_id=$2 LIMIT 1',[id,input.subjectId]);if(owned.rows.length)throw new DocumentError('Transfer page ownership before deactivating this member','ownership_transfer_required',409);}
- const data={version:w.version,before,after,contentAccess:after.role==='admin'?'all-workspace-content' as const:'page-grants' as const,preservesPageGrants:true as const,warning:after.role==='admin'&&after.active?'Administrators can read and edit every active page in this workspace, including private pages.':!after.active?'Workspace access will stop. Content, attribution and existing grants are preserved.':before.role==='admin'?'Administrator access ends. Direct and inherited page grants still apply.':null};
+ const elevated=['owner','admin'].includes(after.role),wasElevated=['owner','admin'].includes(before.role),data={version:w.version,before,after,contentAccess:elevated?'all-workspace-content' as const:'page-grants' as const,preservesPageGrants:true as const,warning:elevated&&after.active?'Owners and administrators can read and edit every active page in this workspace, including private pages.':after.role==='observer'?'Observers remain read-only wherever they have an effective grant.':!after.active?'Workspace access will stop. Content, attribution and existing grants are preserved.':wasElevated?'Workspace-wide content access ends. Direct and inherited page grants still apply.':null};
  return {...data,digest:hash(data)};
 }
 export async function previewMemberChange(r:Repository,actor:Actor,id:string,input:MemberChange){return r.db.transaction(tx=>preview(tx,id,actor,input,true));}
 export async function changeWorkspaceMember(r:Repository,actor:Actor,id:string,input:MemberChange&{operationId:string;expectedVersion:number;previewDigest:string}){
  const requestHash=hash(input);
  return r.db.transaction(async tx=>{
-  const w=await authority(tx,id,actor,true);if(w.role!=='admin')throw new DocumentError('Workspace administrator access required','admin_required',403);
+  const w=await authority(tx,id,actor,true);if(!['owner','admin'].includes(w.role))throw new DocumentError('Workspace administrator access required','admin_required',403);
   const prior=await tx.query<{actor_id:string;request_hash:string;applied_version:number}>('SELECT actor_id,request_hash,applied_version FROM hs_workspace_operations WHERE workspace_id=$1 AND operation_id=$2',[id,input.operationId]);
   if(prior.rows.length){const p=prior.rows[0];if(p.actor_id!==actor.id||p.request_hash!==requestHash)throw new DocumentError('Operation was reused with different changes','operation_mismatch',409);return {appliedVersion:p.applied_version,replayed:true};}
   if(w.version!==input.expectedVersion)throw new DocumentError('Workspace access changed. Refresh and review again.','access_conflict',409);

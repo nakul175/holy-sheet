@@ -1,0 +1,41 @@
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -3,6 +3,7 @@
+ import * as client from 'openid-client';
+ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+ import { Store } from './store.mjs';
++import { applicationStatusHandler, tenantStatusHandler } from './tenant-authority.mjs';
+ 
+ const sha=(s)=>createHash('sha256').update(s).digest();
+ const same=(a,b)=>typeof a==='string'&&typeof b==='string'&&timingSafeEqual(sha(a),sha(b));
+@@ -134,16 +135,24 @@
+       next();
+     } catch(error) { next(error); }
+   });
++  async function currentClientSession(clientId,sub,uid) {
++    const account=store.account(sub),session=await provider.Session.findByUid(uid),local=store.link(clientId,sub);
++    const binding=store.get('SourceSession',uid);
++    const active=!!(account&&session?.accountId===sub&&session.grantIdFor(clientId)&&local&&binding?.accountId===sub&&await sourceActive(account,binding.sourceSessionId));
++    return {active,...(active?{sub,local_id:local}:{})};
++  }
+   app.post('/internal/session/status',express.json({limit:'4kb'}),async(req,res)=>{
+     const c=config.clients.find(c=>c.client_id===req.body.client_id);
+     if(!c||!same(c.client_secret,req.body.client_secret))return res.sendStatus(401);
+     const {sub,uid}=req.body;
+     if(typeof sub!=='string'||typeof uid!=='string'||sub.length>200||uid.length>200)return res.sendStatus(400);
+-    const account=store.account(sub),session=await provider.Session.findByUid(uid),local=store.link(c.client_id,sub);
+-    const binding=store.get('SourceSession',uid);
+-    const active=!!(account&&session?.accountId===sub&&session.grantIdFor(c.client_id)&&local&&binding?.accountId===sub&&await sourceActive(account,binding.sourceSessionId));
+-    return res.json({active,...(active?{sub,local_id:local}:{})});
++    return res.json(await currentClientSession(c.client_id,sub,uid));
+   });
++  const directoryAuthority={
++    enabled:process.env.APLYD_TENANT_AUTHORITY_ENABLED==='1',
++    directoryFile:process.env.APLYD_TENANT_DIRECTORY_DB,
++    issuer:config.issuer,clients:config.clients,verifySession:currentClientSession,
++  };
++  app.post('/internal/application/status',express.json({limit:'4kb'}),applicationStatusHandler(directoryAuthority));
++  app.post('/internal/tenant/status',express.json({limit:'4kb'}),tenantStatusHandler(directoryAuthority));
+   // The provider owns RP-initiated logout and validates the registered post-logout destination.
+   app.use(provider.callback());
+   app.use((error,_req,res,_next)=>{console.error('accounts_request_failed',error.name);if(!res.headersSent)res.status(503).send('Sign-in is temporarily unavailable. Your existing app access has not changed.');});
