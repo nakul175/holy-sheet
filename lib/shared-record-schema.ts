@@ -20,7 +20,7 @@ type Revisions={schema_version:number;policy_version:number;data_revision:string
 type Impact={recordCount:number;populatedCount:number;missingCount:number;duplicateValues:number;dependencies:{kind:string;label:string;version:number}[];blockers:string[];changes:string[];defaultBehavior:string};
 type Preview={id:string;tenant_id:string;actor_id:string;workspace_id:string;collection:string;field_key:string;proposed:RecordField;review_hash:string;schema_version:number;policy_version:number;data_revision:string|number;dependency_revision:string|number;authority_revision:string;before_schema:RecordField|null;impact:Impact;expires_at:string;request_hash:string};
 const fail=(message:string,code='record_schema_conflict',status=409)=>new DocumentError(message,code,status);
-export function makeRecordField(input:unknown,key:string,version=1,reference?:RecordField['referenceList']):RecordField {
+export function makeRecordField(input:unknown,key:string,version=1,reference?:RecordField['referenceList'],historicalDefault=false):RecordField {
  const parsed=definition.safeParse(input);if(!parsed.success)throw fail('Review the custom-field definition.','record_schema_validation',400);
  const proposed:RecordField={...parsed.data,key,core:false,version};
  const select=['single-select','multi-select'].includes(proposed.kind);
@@ -29,9 +29,17 @@ export function makeRecordField(input:unknown,key:string,version=1,reference?:Re
   if(!reference||reference.id!==proposed.referenceListId)throw fail('Resolve the current permitted reference list first.','record_reference_unavailable',503);
   proposed.referenceList=reference;proposed.choices=reference.items.map(i=>i.id);
  }else if(new Set(proposed.choices).size!==proposed.choices.length||(select?!proposed.choices.length:!!proposed.choices.length))throw fail('Use distinct choices for select fields only.','record_schema_validation',400);
- if(proposed.defaultValue!==undefined)proposed.defaultValue=typedRecordValue(proposed,proposed.defaultValue);
+ if(proposed.defaultValue!==undefined)proposed.defaultValue=typedRecordValue(proposed,proposed.defaultValue,{historical:historicalDefault});
  if(['attachment','record'].includes(proposed.kind)&&proposed.defaultValue!==undefined&&proposed.defaultValue!==null)throw fail('Reference defaults require a qualified reference-policy adapter.','record_reference_unavailable',503);
  return proposed;
+}
+/** Resolve trusted current catalogue metadata before constructing a field.
+ * historicalDefault is only for reconstructing an existing retry's identity;
+ * callers must validate defaults normally before committing a fresh command. */
+export async function prepareRecordField(tx:Sql,ctx:RecordContext,input:unknown,key:string,version=1,historicalDefault=false){
+ const parsed=definition.safeParse(input);if(!parsed.success)throw fail('Review the custom-field definition.','record_schema_validation',400);
+ const d=parsed.data,reference=d.referenceListId?(await resolveRecordReferenceFields(tx,ctx,[{...d,key,core:false,version}]))[0].referenceList:undefined;
+ return makeRecordField(d,key,version,reference,historicalDefault);
 }
 export class SharedRecordSchemaRepository extends SharedRecordRepository {
  private async permission(tx:Sql,ctx:RecordContext,key:string,admin:boolean){
@@ -51,8 +59,7 @@ export class SharedRecordSchemaRepository extends SharedRecordRepository {
    if(c.fieldKey&&!before)throw fail('The custom field is unavailable.','schema_field_unavailable',404);
    if(!before&&fields.filter(f=>!f.core).length>=100)throw fail('A collection supports at most 100 custom fields.','schema_field_limit',400);
    const fieldKey=before?.key??randomUUID();
-   const reference=c.definition.referenceListId?(await resolveRecordReferenceFields(tx,ctx,[{...c.definition,key:fieldKey,core:false,version:1}]))[0].referenceList:undefined;
-   const proposed=makeRecordField(c.definition,fieldKey,(before?.version??0)+1,reference);
+   const proposed=await prepareRecordField(tx,ctx,c.definition,fieldKey,(before?.version??0)+1);
    const stats=(await tx.query<{total:string;populated:string;missing:string}>(`SELECT count(*)::text AS total,count(*) FILTER(WHERE field_values ? $3 AND field_values->$3 <> 'null'::jsonb AND field_values->$3 <> '""'::jsonb AND field_values->$3 <> '[]'::jsonb AND NOT(jsonb_typeof(field_values->$3)='string' AND btrim(field_values->>$3,${recordWhitespaceSql})=''))::text AS populated,count(*) FILTER(WHERE NOT(field_values ? $3) OR field_values->$3 = 'null'::jsonb OR field_values->$3 = '""'::jsonb OR field_values->$3 = '[]'::jsonb OR (jsonb_typeof(field_values->$3)='string' AND btrim(field_values->>$3,${recordWhitespaceSql})=''))::text AS missing FROM hs_data_records WHERE tenant_id=$1 AND collection=$2`,[ctx.tenantId,c.collection,proposed.key])).rows[0];
    const dependencies=before?(await tx.query<{kind:string;label:string;version:number}>('SELECT kind,label,version FROM hs_data_schema_dependencies WHERE tenant_id=$1 AND collection=$2 AND field_key=$3 AND active=true ORDER BY id LIMIT 201',[ctx.tenantId,c.collection,proposed.key])).rows:[];
    const impact:Impact={recordCount:Number(stats.total),populatedCount:Number(stats.populated),missingCount:Number(stats.missing),duplicateValues:0,dependencies:dependencies.slice(0,200),blockers:[],changes:[],defaultBehavior:'Defaults apply to future creates only. Existing records are not rewritten.'};
