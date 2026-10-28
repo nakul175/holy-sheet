@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
+import { Extension } from "@tiptap/core";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import { TextStyle, Color } from "@tiptap/extension-text-style";
@@ -15,6 +16,8 @@ import { Details, DetailsSummary, DetailsContent } from "@tiptap/extension-detai
 import UniqueID from "@tiptap/extension-unique-id";
 import { sanitizePaste } from "../../lib/editor-paste";
 import { NodeSelection, TextSelection } from "@tiptap/pm/state";
+import { Step } from "@tiptap/pm/transform";
+import { collab, getVersion, receiveTransaction, sendableSteps } from "prosemirror-collab";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { ensureIds, highlights, idTypes, languages, palette, plainText, safeUrl, stableStringify, type RichNode } from "../../lib/document";
 import { Callout, FileBlock, FindExtension, PageLink, TableOfContents, findKey } from "./extensions";
@@ -41,6 +44,9 @@ import type { ThreadView } from '../../lib/discussion-types';
 import type { AnchorInput } from '../../lib/comment-anchors';
 
 const noThreads:ThreadView[]=[];
+type Collaborator={sessionId:string;actorId:string;name:string;clientId:string;anchorBlockId:string|null;anchorOffset:number|null;headBlockId:string|null;headOffset:number|null};
+type CollaborationStart={sessionId:string;epoch:string;stepVersion:number;pageVersion:number;document:RichNode;collaborators:Collaborator[]};
+type RichEditorProps={document:RichNode;editable:boolean;onChange:(doc:RichNode)=>void;onCollaborativeChange?:(doc:RichNode,pageVersion:number,pending:boolean)=>void;pageId:string;preferenceKey:string;onComment?:(anchors:AnchorInput[],quote:string)=>void;onOpenComments?:()=>void;onOpenHistory?:()=>void;onCreateSubpage?:()=>void;commentsReady?:boolean;threads?:ThreadView[];activeThreadId?:string|null;onOpenThread?:(id:string)=>void;navigateThread?:number;mediaEnabled?:boolean;recoveryActorId?:string;resumeUpload?:RecoveredUpload|null;onRecoveryClosed?:()=>void};
 const ProtectedImage=Image.extend({
   addAttributes(){return {...this.parent?.(),attachmentId:{default:null},caption:{default:""},width:{default:640}};},
   renderHTML({HTMLAttributes}){const {caption,...attrs}=HTMLAttributes;return ["figure",{"data-hs-image":""},["img",attrs],...(caption?[["figcaption",{},String(caption)]]:[])];},
@@ -69,21 +75,34 @@ function blockRange(editor:Editor){
   return {node:$from.node(depth),from:$from.before(depth),to:$from.after(depth),parent:$from.node(depth-1),index:$from.index(depth-1),parentStart:depth===1?0:$from.start(depth-1)};
 }
 
-export default function RichEditor({document,editable,onChange,pageId,preferenceKey,onComment,onOpenComments,onOpenHistory,onCreateSubpage,commentsReady=true,threads=noThreads,activeThreadId=null,onOpenThread,navigateThread=0,mediaEnabled=true,recoveryActorId,resumeUpload,onRecoveryClosed}:{document:RichNode;editable:boolean;onChange:(doc:RichNode)=>void;pageId:string;preferenceKey:string;onComment?:(anchors:AnchorInput[],quote:string)=>void;onOpenComments?:()=>void;onOpenHistory?:()=>void;onCreateSubpage?:()=>void;commentsReady?:boolean;threads?:ThreadView[];activeThreadId?:string|null;onOpenThread?:(id:string)=>void;navigateThread?:number;mediaEnabled?:boolean;recoveryActorId?:string;resumeUpload?:RecoveredUpload|null;onRecoveryClosed?:()=>void}){
+export default function RichEditor(props:RichEditorProps){
+  const {editable,pageId}=props,[start,setStart]=useState<CollaborationStart|null>(null),[fallback,setFallback]=useState(!editable),[failure,setFailure]=useState(''),clientId=useRef('');
+  if(!clientId.current)clientId.current=crypto.randomUUID();
+  useEffect(()=>{let live=true;if(!editable){setStart(null);setFallback(true);return;}setStart(null);setFallback(false);setFailure('');
+    requestJson<CollaborationStart>(`/api/v1/pages/${encodeURIComponent(pageId)}/collaboration`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'start',clientId:clientId.current})}).then(value=>{if(live)setStart(value);}).catch(error=>{if(!live)return;if(error instanceof Error&&'status' in error&&(error as {status:number}).status===503)setFallback(true);else setFailure(error instanceof Error?error.message:'Live editing could not start.');});
+    return()=>{live=false;};
+  },[editable,pageId]);
+  if(failure)return <div className="document-warning" role="alert">{failure} <button onClick={()=>location.reload()}>Retry</button></div>;
+  if(editable&&!fallback&&!start)return <div className="editor-skeleton" role="status" aria-label="Starting live editor">Starting live editor…</div>;
+  return <RichEditorCore {...props} document={start?.document??props.document} collaboration={start?{...start,clientId:clientId.current}:undefined}/>;
+}
+
+function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId,preferenceKey,onComment,onOpenComments,onOpenHistory,onCreateSubpage,commentsReady=true,threads=noThreads,activeThreadId=null,onOpenThread,navigateThread=0,mediaEnabled=true,recoveryActorId,resumeUpload,onRecoveryClosed,collaboration}:{collaboration?:(CollaborationStart&{clientId:string})}&RichEditorProps){
   const [insertOpen,setInsertOpen]=useState(false),[query,setQuery]=useState(""),[active,setActive]=useState(0),[notice,setNotice]=useState(""),[linkOpen,setLinkOpen]=useState(false),[pageOpen,setPageOpen]=useState(false),[media,setMedia]=useState<"image"|"file"|null>(null),[findOpen,setFindOpen]=useState(false),[findQuery,setFindQuery]=useState(""),[matchCase,setMatchCase]=useState(false),[matchIndex,setMatchIndex]=useState(0);
   const [transformOpen,setTransformOpen]=useState(false),[transformPlan,setTransformPlan]=useState<TransformPlan|null>(null);
   const [toolboxOpen,setToolboxOpen]=useState(true),[toolboxPinned,setToolboxPinned]=useState(true),[moreBlocks,setMoreBlocks]=useState(false);
   const [pasteReview,setPasteReview]=useState<{source:TablePasteSource;point:PastePoint}|null>(null),[plainPoint,setPlainPoint]=useState<PastePoint|null>(null);
-  const plainPasteUntil=useRef(0),findButton=useRef<HTMLButtonElement>(null);
+  const plainPasteUntil=useRef(0),findButton=useRef<HTMLButtonElement>(null),collaborationWake=useRef<(()=>void)|null>(null);
   const [mediaFile,setMediaFile]=useState<File|null>(null),[mediaTarget,setMediaTarget]=useState<MediaPlacement|null>(null),[mediaRecovered,setMediaRecovered]=useState<RecoveredUpload|null>(null);
   useEffect(()=>{const logout=()=>{closeMedia();setTransformOpen(false);setTransformPlan(null);setPasteReview(null);setPlainPoint(null);};window.addEventListener('holy-sheet:logout',logout);return()=>window.removeEventListener('holy-sheet:logout',logout);},[]);
   const slash=useRef(false),insertAt=useRef<number|null>(null),onChangeRef=useRef(onChange),lastEmitted=useRef(stableStringify(document)),restoring=useRef(false),savedFindSelection=useRef<FindSelection|null>(null),temporaryOpen=useRef<TemporarySection[]>([]),discussionOpen=useRef<TemporarySection[]>([]);
   onChangeRef.current=onChange;
+  const collaborationExtension=useRef(collaboration?Extension.create({name:'holySheetCollaboration',addProseMirrorPlugins(){return [collab({version:collaboration.stepVersion,clientID:collaboration.clientId})];}}):null);
   const editor=useEditor({immediatelyRender:false,editable,content:document,extensions:[
     StarterKit.configure({heading:{levels:[1,2,3]},codeBlock:false,undoRedo:{depth:100,newGroupDelay:750},link:{openOnClick:false,autolink:false,linkOnPaste:false,isAllowedUri:url=>safeUrl(url),HTMLAttributes:{target:"_blank",rel:"noopener noreferrer"}}}),
     TextStyle,Color,Highlight.configure({multicolor:true}),TaskList,TaskItem.configure({nested:true}),TableKit.configure({table:{resizable:true,allowTableNodeSelection:true}}),
     LazyCodeBlock.configure({defaultLanguage:"plaintext"}),ProtectedImage.configure({allowBase64:false}),Details.configure({persist:false}),DetailsSummary,DetailsContent,Callout,TableOfContents,PageLink.configure({sourcePageId:pageId}),FileBlock,FindExtension,DiscussionAnchors.configure({onOpen:id=>onOpenThread?.(id)}),
-    UniqueID.configure({types:idTypes,attributeName:"id",generateID:()=>crypto.randomUUID()}),
+    UniqueID.configure({types:idTypes,attributeName:"id",generateID:()=>crypto.randomUUID()}),...(collaborationExtension.current?[collaborationExtension.current]:[]),
   ],editorProps:{attributes:{class:"rich-prose",role:"textbox",tabindex:"0","aria-label":"Document content","aria-multiline":"true",spellcheck:"true"},transformPastedHTML:sanitizePaste,
     handleDOMEvents:{keydown:(view,event)=>{if(view.editable||event.isComposing)return false;if(editor&&handleTableKeyDown(editor,event,()=>findButton.current?.focus(),setNotice))return true;if(isPageFindShortcut(event)){event.preventDefault();if(editor)savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);return true;}return false;}},
     handleKeyDown:(view,event)=>{
@@ -113,7 +132,15 @@ export default function RichEditor({document,editable,onChange,pageId,preference
       if(/<table[\s>]/i.test(html)||text.includes('\t')){event.preventDefault();try{const point=capturePastePoint(editor),source=parseTablePasteSource(editor,html,text);setPasteReview({source,point});}catch(e){setNotice(e instanceof Error?e.message:'Paste could not be prepared; existing content is unchanged.');}return true;}
       if(html&&new Blob([html]).size>25_000_000){event.preventDefault();setPasteReview({point:capturePastePoint(editor),source:{grids:[],text,warnings:['The rich source is too large. Review literal text or split the source first.']}});return true;}return false;},
     handleDrop:(view,event)=>{if(event.dataTransfer?.files.length){event.preventDefault();openFileIntent(Array.from(event.dataTransfer.files),view.posAtCoords({left:event.clientX,top:event.clientY})?.pos);return true;}return false;},
-  },onTransaction:({transaction})=>{if(transaction.docChanged&&savedFindSelection.current)savedFindSelection.current=mapFindSelection(savedFindSelection.current,transaction);},onUpdate:({editor:e,transaction})=>{if(restoring.current||!e.isEditable)return;if(transaction.docChanged)markSectionInteraction(e.view.domAtPos(e.state.selection.from).node);const value=normalizeRichDocument(e.getJSON() as RichNode);lastEmitted.current=stableStringify(value);onChangeRef.current(value);}});
+  },onTransaction:({transaction})=>{if(transaction.docChanged&&savedFindSelection.current)savedFindSelection.current=mapFindSelection(savedFindSelection.current,transaction);if(transaction.docChanged&&collaboration)queueMicrotask(()=>collaborationWake.current?.());},onUpdate:({editor:e,transaction})=>{if(restoring.current||!e.isEditable)return;if(transaction.docChanged)markSectionInteraction(e.view.domAtPos(e.state.selection.from).node);const value=normalizeRichDocument(e.getJSON() as RichNode);lastEmitted.current=stableStringify(value);if(!collaboration)onChangeRef.current(value);}});
+  useEffect(()=>{if(!editor||!collaboration)return;let live=true,running=false,again=false,pageVersion=collaboration.pageVersion,timer:ReturnType<typeof setInterval>|null=null;
+    const body=(value:unknown)=>({method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(value)} as RequestInit);
+    const apply=(records:{step:unknown;clientId:string}[],version:number)=>{if(!records.length)return;const schema=editor.schema,steps=records.map(record=>Step.fromJSON(schema,record.step));editor.view.dispatch(receiveTransaction(editor.state,steps,records.map(record=>record.clientId)));if(getVersion(editor.state)!==version)throw new Error('Live edit version did not converge.');};
+    const pull=async()=>{const afterVersion=getVersion(editor.state),value=await requestJson<{stepVersion:number;pageVersion:number;steps:{step:unknown;clientId:string}[]}>(`/api/v1/pages/${encodeURIComponent(pageId)}/collaboration`,body({action:'pull',sessionId:collaboration.sessionId,epoch:collaboration.epoch,clientId:collaboration.clientId,afterVersion}));apply(value.steps,value.stepVersion);pageVersion=value.pageVersion;};
+    const run=async()=>{if(!live)return;if(running){again=true;return;}running=true;try{do{again=false;let pending=sendableSteps(editor.state);if(pending){try{const value=await requestJson<{stepVersion:number;pageVersion:number;steps:{step:unknown;clientId:string}[]}>(`/api/v1/pages/${encodeURIComponent(pageId)}/collaboration`,body({action:'submit',sessionId:collaboration.sessionId,epoch:collaboration.epoch,clientId:collaboration.clientId,operationId:crypto.randomUUID(),baseStepVersion:pending.version,steps:pending.steps.map(step=>step.toJSON())}));apply(value.steps,value.stepVersion);pageVersion=value.pageVersion;}catch(error){if(error instanceof Error&&'code' in error&&(error as {code:string}).code==='collaboration_out_of_date'){await pull();again=true;continue;}throw error;}}else await pull();const current=normalizeRichDocument(editor.getJSON() as RichNode),stillPending=!!sendableSteps(editor.state);onCollaborativeChange?.(current,pageVersion,stillPending);if(stillPending)again=true;}while(live&&again);}catch(error){if(live){onCollaborativeChange?.(normalizeRichDocument(editor.getJSON() as RichNode),pageVersion,true);console.error('Holy Sheet collaboration paused',error);}}finally{running=false;}};
+    collaborationWake.current=()=>void run();timer=setInterval(()=>void run(),1000);void run();
+    return()=>{live=false;collaborationWake.current=null;if(timer)clearInterval(timer);void fetch(`/api/v1/pages/${encodeURIComponent(pageId)}/collaboration`,{...body({action:'leave',sessionId:collaboration.sessionId,epoch:collaboration.epoch,clientId:collaboration.clientId}),keepalive:true}).catch(()=>{});};
+  },[editor,collaboration,onCollaborativeChange,pageId]);
   useEffect(()=>{if(!editor||!resumeUpload)return;let active=true,handed=false;void(async()=>{try{const target=resumeUpload.newPlacement?captureMediaPlacement(editor,resumeUpload.payload.type):await rehydrateMediaPlacement(editor,resumeUpload.payload.target);if(!active){await resumeUpload.release?.();return;}setMediaTarget(target);setMediaFile(null);setMediaRecovered(resumeUpload);setMedia(resumeUpload.payload.type);handed=true;}catch(e){if(active){setNotice(e instanceof Error?e.message:'The upload placement needs review.');onRecoveryClosed?.();}await resumeUpload.release?.();}})();return()=>{active=false;if(!handed)void resumeUpload.release?.();};},[editor,resumeUpload]);
   const state=useEditorState({editor,selector:({editor:e})=>e?{selection:e.state.selection.from,selectionEnd:e.state.selection.to,find:findKey.getState(e.state),undo:e.can().undo(),redo:e.can().redo(),table:e.isActive("table"),code:e.isActive("codeBlock"),image:e.isActive("image"),file:e.isActive("file"),callout:e.isActive("callout"),format:selectionFormat(e.state)}:null});
   useEffect(()=>{if(editor){editor.setEditable(editable);editor.view.dom.setAttribute('aria-readonly',String(!editable));}},[editor,editable]);
