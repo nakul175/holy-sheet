@@ -15,7 +15,7 @@ async function scope(r:Repository,tx:Sql,pageId:string,actor:Actor){
  const root=await r.access(tx,pageId,actor,false,true);
  if(root.owner_id!==actor.id)throw new DocumentError('Only the page owner can move this page','owner_required',403);
  const member=await tx.query<{role:string}>('SELECT role FROM hs_members WHERE workspace_id=$1 AND user_id=$2 AND active=true',[root.workspace_id,actor.id]);
- if(member.rows[0]?.role!=='admin')throw new DocumentError('Source and destination management authority is required','management_required',403);
+ if(!['owner','admin'].includes(member.rows[0]?.role??''))throw new DocumentError('Source and destination management authority is required','management_required',403);
  const w=await tx.query<{tree_version:number}>('SELECT tree_version FROM hs_workspaces WHERE id=$1',[root.workspace_id]);
  return {root,workspaceId:root.workspace_id,treeVersion:w.rows[0].tree_version};
 }
