@@ -1,0 +1,10 @@
+import {beforeAll,afterAll,it,expect} from 'vitest';
+import {createDatabase,type Database} from './database';
+import {Repository} from './repository';
+import {localActor} from './auth';
+import {listWorkspaces} from './workspace-navigation';
+let db:Database,r:Repository;
+beforeAll(async()=>{db=await createDatabase(':memory:');r=new Repository(db);await r.seedLocal();await db.query("INSERT INTO hs_workspaces(id,name) VALUES('empty','Empty'),('inactive','Inactive'),('foreign','Foreign')");await db.query("INSERT INTO hs_members(workspace_id,user_id,active) VALUES('empty',$1,true),('inactive',$1,false)",[localActor.id]);});
+afterAll(async()=>db.close());
+it('includes an accessible workspace before its first space/page and withholds other memberships',async()=>{expect(await listWorkspaces(r,localActor)).toEqual([{id:'ws-aplyd',name:'Aplyd'},{id:'empty',name:'Empty'}]);expect(await listWorkspaces(r,{id:'outsider'})).toEqual([]);});
+it('rechecks active membership rather than retaining a stale navigation grant',async()=>{await db.query("UPDATE hs_members SET active=false WHERE workspace_id='empty' AND user_id=$1",[localActor.id]);expect((await listWorkspaces(r,localActor)).map(w=>w.id)).toEqual(['ws-aplyd']);});
