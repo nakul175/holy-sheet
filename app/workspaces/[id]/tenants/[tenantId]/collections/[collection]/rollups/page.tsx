@@ -1,0 +1,1 @@
+import RollupManager from '../../../../../../../../components/rollup-manager';export default async function Page({params}:{params:Promise<{id:string;tenantId:string;collection:string}>}){const {id,tenantId,collection}=await params;return <RollupManager workspaceId={id} tenantId={tenantId} collection={collection}/>;}
