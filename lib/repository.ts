@@ -9,9 +9,10 @@ import { revisionDigest } from './revision';
 import { usableMedia } from './media-authorization';
 import { canEdit,type Page,type PageRole } from './types';
 import { validateNewPageReferences } from './page-references';
+import { publishedDocument } from './document-publishing';
 
 type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
-export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole};
+export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole;publicationFingerprint?:string};
 export class Repository {
   constructor(public db:Database) {}
   async seedLocal() {
@@ -47,8 +48,12 @@ export class Repository {
   async get(id:string,actor:Actor,tx:Sql=this.db):Promise<DocumentPage> {
     const p=await this.access(tx,id,actor);
     const {rows}=await tx.query<{node:RichNode}>("SELECT node FROM hs_blocks WHERE page_id=$1 AND parent_id IS NULL ORDER BY position",[id]);
-    const document:RichNode={type:"doc",content:rows.map(r=>r.node)};
-    return {id:p.id,workspaceId:p.workspace_id,workspaceName:p.workspace_name,spaceId:p.space_id,spaceName:p.space_name,parentPageId:p.parent_id,parentTitle:p.parent_title,title:p.title,visibility:p.visibility,position:p.position,version:p.version,updatedAt:new Date(p.updated_at).toISOString(),schemaVersion:p.schema_version,role:p.role,document,blocks:(document.content ?? []).map((n,i)=>({id:String(n.attrs?.id),pageId:id,parentBlockId:null,type:n.type==="heading"?"heading":"paragraph",text:plainText(n),position:i}))};
+    let document:RichNode={type:"doc",content:rows.map(r=>r.node)},publicationFingerprint:string|undefined;
+    if(!canEdit(p.role)){
+      const published=await publishedDocument(this,tx,actor,id);
+      if(published){document=published.document;p.title=published.title;p.version=published.version;p.updated_at=published.publishedAt;publicationFingerprint=published.publicationId+':'+revisionDigest(published.title,published.document);}
+    }
+    return {id:p.id,workspaceId:p.workspace_id,workspaceName:p.workspace_name,spaceId:p.space_id,spaceName:p.space_name,parentPageId:p.parent_id,parentTitle:p.parent_title,title:p.title,visibility:p.visibility,position:p.position,version:p.version,updatedAt:new Date(p.updated_at).toISOString(),schemaVersion:p.schema_version,role:p.role,publicationFingerprint,document,blocks:(document.content ?? []).map((n,i)=>({id:String(n.attrs?.id),pageId:id,parentBlockId:null,type:n.type==="heading"?"heading":"paragraph",text:plainText(n),position:i}))};
   }
   async list(actor:Actor) {
     const {rows}=await this.db.query<{id:string}>(`WITH RECURSIVE permitted AS (

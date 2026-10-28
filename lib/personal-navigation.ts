@@ -15,7 +15,8 @@ export async function personalNavigation(r:Repository,actor:Actor,workspaceId?:s
  ), permitted AS (SELECT DISTINCT id,workspace_id FROM reachable) SELECT p.id,p.title,p.workspace_id AS "workspaceId",w.name AS "workspaceName",p.space_id AS "spaceId",s.name AS "spaceName",parent.title AS "parentTitle"
  FROM ${table} n JOIN permitted a ON a.id=n.page_id JOIN hs_pages p ON p.id=n.page_id JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
  LEFT JOIN hs_pages parent ON parent.id=p.parent_id AND parent.id IN (SELECT id FROM permitted)
- WHERE n.user_id=$1 AND p.deleted_at IS NULL AND ($2::text IS NULL OR p.workspace_id=$2) ORDER BY ${order}`,[actor.id,workspaceId??null]);return rows;};
+ WHERE n.user_id=$1 AND p.deleted_at IS NULL AND ($2::text IS NULL OR p.workspace_id=$2) ORDER BY ${order}`,[actor.id,workspaceId??null]);
+ const visible:NavigationEntry[]=[];for(const row of rows){try{const page=await r.get(row.id,actor);visible.push({...row,title:page.title,parentTitle:page.parentTitle??null});}catch(e){if(!(e instanceof DocumentError)||e.status!==404)throw e;}}return visible;};
  // Read current page metadata only after access checks. No stale titles or activity are stored in these tables.
  return {version:version.rows[0]?.version??0,favourites:await read('hs_favourites','n.position,n.page_id'),recents:await read('hs_recents','n.opened_at DESC,n.page_id')};
 }

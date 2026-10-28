@@ -36,7 +36,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
     };
     const stop=monitorAccess(async signal=>{
       try{
-        const value=await requestJson<{actorId:string;role:PageRole}>(`/api/v1/pages/${pageId}/access`,{signal});
+        const value=await requestJson<{actorId:string;role:PageRole;publicationFingerprint?:string}>(`/api/v1/pages/${pageId}/access`,{signal});
         if(!['owner','editor','commenter','viewer'].includes(value.role)||typeof value.actorId!=='string')throw new Error('Invalid access response');
         return {...value,signIn:false};
       }catch(e){if(e instanceof ApiError&&[401,404].includes(e.status))return {actorId:observedActor,role:null,signIn:e.status===401};throw e;}
@@ -44,7 +44,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
       if(value.actorId!==observedActor){invalidate('Your account changed. Sign in again before opening this page.',true);return;}
       if(value.role===null){invalidate(value.signIn?'Sign in to reopen this page.':'Access revoked. This page is no longer available.',value.signIn);return;}
       const p=current.current;
-      if(p&&p.role===value.role){
+      if(p&&p.role===value.role&&p.publicationFingerprint===('publicationFingerprint' in value?value.publicationFingerprint:undefined)){
         const paused=!accessReady.current;accessReady.current=true;setAccessUnverified(false);
         if(paused){setError('');setStatus(editableDocument(p)?dirty.current?'unsaved':'saved':'readonly');if(dirty.current&&!blocked.current)void saveFunction.current();}
         return;
