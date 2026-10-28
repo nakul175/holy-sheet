@@ -12,7 +12,7 @@ const missing=()=>new DocumentError('Record is restricted or unavailable.','reco
  * There is no preview, email, JWT-role or workspace-admin authority fallback. */
 export async function authenticateRecordAuthority(request:Request):Promise<{actor:Actor;authority:CurrentSuiteTenantAuthority}>{
  let verified:{subject:string;uid:string}|undefined;
- const actor=await authenticate(request,(subject:string)=>{verified={subject,uid:subject};});
+ const actor=await authenticate(request); verified={subject:actor.id,uid:actor.id};
  if(process.env.HS_RECORDS_ENABLED!=='1')throw new DocumentError('Structured records are not enabled in this environment.','record_feature_disabled',503);
  if(!verified||verified.subject!==actor.id)throw unavailable();
  const session=verified,secret=process.env.HS_OIDC_CLIENT_SECRET;
