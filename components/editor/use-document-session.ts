@@ -9,7 +9,7 @@ import { decryptDraft, discardDraft, importDraftKey, recoveryDrafts, storeDraft,
 export class ApiError extends Error { constructor(message:string,public status:number,public code:string,public retryAfter=0){super(message);} }
 export async function requestJson<T>(url:string,options?:RequestInit):Promise<T>{const r=await fetch(url,{cache:"no-store",...options});const data=await r.json();if(!r.ok)throw new ApiError(data.error??"Request failed",r.status,data.code,Number(r.headers.get("retry-after")??0));return data;}
 const post=(body:unknown):RequestInit=>({method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
-const signature=(title:string,document:RichNode)=>stableStringify([title,document]);
+const signature=(title:string,document:RichNode)=>stableStringify([title,JSON.parse(JSON.stringify(document,(key,value)=>key==='content'&&Array.isArray(value)&&value.length===0?undefined:value))]);
 const editableDocument=(page:DocumentPage)=>canEdit(page.role)&&page.schemaVersion===schemaVersion;
 type SavePayload = {operationId:string;baseVersion:number;title:string;document:RichNode};
 export type SaveStatus="loading"|"saved"|"saving"|"unsaved"|"offline"|"error"|"conflict"|"readonly";
