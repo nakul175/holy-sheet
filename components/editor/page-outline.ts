@@ -24,11 +24,11 @@ function labelFor(heading:HTMLElement,root:HTMLElement,cache:Map<HTMLElement,boo
  while((node=walker.nextNode())&&read<8192&&++visits<8192){if(node instanceof HTMLElement){if(node.tagName==='BR'&&readable(node,root,cache)){text+=' ';read++;}continue;}const parent=node.parentElement;if(!parent||!readable(parent,root,cache))continue;const value=(node.nodeValue??'').slice(0,8192-read);read+=value.length;text+=value;if(text.replace(/\s+/gu,' ').trim().length>256)break;}
  const value=text.replace(/\s+/gu,' ').trim();const characters=Array.from(value);return characters.length>256?characters.slice(0,256).join('')+'…':value||'Untitled heading';
 }
-export function collectOutline(root:HTMLElement):OutlineHeading[]{
- const counts=new Map<string,number>();for(const node of root.querySelectorAll<HTMLElement>('[data-id]')){if(node.closest('.rich-prose')!==root)continue;const id=node.dataset.id!;counts.set(id,(counts.get(id)??0)+1);}
+export function collectOutline(root:HTMLElement,onlyId?:string):OutlineHeading[]{
+ const counts=new Map<string,number>();for(const node of root.querySelectorAll<HTMLElement>('[data-id]')){if(node.closest('.rich-prose')!==root)continue;const id=node.dataset.id!;if(onlyId!==undefined&&id!==onlyId)continue;counts.set(id,(counts.get(id)??0)+1);}
  const cache=new Map<HTMLElement,boolean>(),headings:OutlineHeading[]=[];
  for(const target of root.querySelectorAll<HTMLElement>('h1[data-id],h2[data-id],h3[data-id]')){
-  const id=target.dataset.id!;if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id)||counts.get(id)!==1||target.closest('.rich-prose')!==root||!readable(target,root,cache))continue;
+  const id=target.dataset.id!;if(onlyId!==undefined&&id!==onlyId)continue;if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id)||counts.get(id)!==1||target.closest('.rich-prose')!==root||!readable(target,root,cache))continue;
   headings.push({id,level:Number(target.tagName[1]) as 1|2|3,label:labelFor(target,root,cache),target});
  }
  return headings;
