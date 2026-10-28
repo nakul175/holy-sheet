@@ -9,7 +9,7 @@ export async function backlinks(r:Repository,actor:Actor,targetId:string,after?:
  const target=await r.access(r.db,targetId,actor);
  const {rows}=await r.db.query<{id:string;title:string;occurrences:number;spaceName:string}>(`WITH RECURSIVE reachable AS (
   SELECT p.id,p.workspace_id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
-  WHERE p.deleted_at IS NULL AND p.workspace_id=$2 AND (m.role='admin' OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
+  WHERE p.deleted_at IS NULL AND p.workspace_id=$2 AND (m.role IN ('owner','admin') OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
   UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN reachable a ON c.parent_id=a.id AND c.workspace_id=a.workspace_id WHERE c.deleted_at IS NULL
  ), permitted AS (SELECT DISTINCT id,workspace_id FROM reachable) SELECT p.id,p.title,count(*)::integer AS occurrences,s.name AS "spaceName"
  FROM hs_blocks b JOIN hs_pages p ON p.id=b.page_id JOIN permitted a ON a.id=p.id JOIN hs_spaces s ON s.id=p.space_id

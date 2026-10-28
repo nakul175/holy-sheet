@@ -4,7 +4,7 @@
  import * as client from 'openid-client';
  import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
  import { Store } from './store.mjs';
-+import { tenantStatusHandler } from './tenant-authority.mjs';
++import { applicationStatusHandler, tenantStatusHandler } from './tenant-authority.mjs';
  
  const sha=(s)=>createHash('sha256').update(s).digest();
  const same=(a,b)=>typeof a==='string'&&typeof b==='string'&&timingSafeEqual(sha(a),sha(b));
@@ -29,11 +29,13 @@
 -    return res.json({active,...(active?{sub,local_id:local}:{})});
 +    return res.json(await currentClientSession(c.client_id,sub,uid));
    });
-+  app.post('/internal/tenant/status',express.json({limit:'4kb'}),tenantStatusHandler({
++  const directoryAuthority={
 +    enabled:process.env.APLYD_TENANT_AUTHORITY_ENABLED==='1',
 +    directoryFile:process.env.APLYD_TENANT_DIRECTORY_DB,
 +    issuer:config.issuer,clients:config.clients,verifySession:currentClientSession,
-+  }));
++  };
++  app.post('/internal/application/status',express.json({limit:'4kb'}),applicationStatusHandler(directoryAuthority));
++  app.post('/internal/tenant/status',express.json({limit:'4kb'}),tenantStatusHandler(directoryAuthority));
    // The provider owns RP-initiated logout and validates the registered post-logout destination.
    app.use(provider.callback());
    app.use((error,_req,res,_next)=>{console.error('accounts_request_failed',error.name);if(!res.headersSent)res.status(503).send('Sign-in is temporarily unavailable. Your existing app access has not changed.');});

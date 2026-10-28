@@ -33,6 +33,7 @@ it('allows a native admin to discover and edit a private page without taking own
   expect((await r.get(p.id,localActor)).role).toBe('owner');
   await expect(r.get(p.id,member)).rejects.toMatchObject({status:404});
 });
+it('keeps an Observer read-only even when an older direct Editor grant remains',async()=>{const observer={id:'observer-role'};await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[observer.id]);await db.query("INSERT INTO hs_members(workspace_id,user_id,role) VALUES('ws-aplyd',$1,'observer')",[observer.id]);const page=await r.create(localActor,'Observer fixture','space-product');await db.query("INSERT INTO hs_grants(page_id,subject,role) VALUES($1,$2,'editor')",[page.id,observer.id]);expect((await r.get(page.id,observer)).role).toBe('viewer');await expect(r.save(page.id,observer,{operationId:crypto.randomUUID(),baseVersion:page.version,title:page.title,document:page.document})).rejects.toMatchObject({code:'read_only'});});
 it('uses admin access consistently for backlinks and personal navigation',async()=>{
   const target=await r.create(localActor,'Private target','space-product');
   const source=await r.create(localActor,'Private source','space-product');

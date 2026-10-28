@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey,type JWTPayload } from "jose";
 import { DocumentError } from "./document";
 import { requireActiveSuiteSession } from './suite-session';
+import {requireSuiteApplicationAccess} from './suite-application-access';
 
 export type Actor = { id: string; name?: string };
 export const localActor: Actor = {id:"00000000-0000-4000-8000-000000000001",name:"Your workspace"};
@@ -42,6 +43,7 @@ export async function authenticate(request: Request, onVerifiedSuiteSession?: (s
     let keyset=keys.get(jwks);if(!keyset){keyset=createRemoteJWKSet(new URL(jwks));keys.set(jwks,keyset);}
     const checkSession=process.env.HS_OIDC_ENABLED==='1'?async(payload:JWTPayload)=>{
       await requireActiveSuiteSession(payload.sub!,payload.aplyd_session_uid,issuer,process.env.HS_OIDC_CLIENT_SECRET);
+      await requireSuiteApplicationAccess(payload.sub!,payload.aplyd_session_uid as string,issuer,process.env.HS_OIDC_CLIENT_SECRET);
       // This server-only callback runs after JWT and current source-session checks.
       // The public Actor and all existing API responses still contain no session UID.
       onVerifiedSuiteSession?.(payload.sub!,payload.aplyd_session_uid as string);

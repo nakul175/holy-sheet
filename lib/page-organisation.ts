@@ -23,7 +23,7 @@ function subtree(nodes:Node[],rootId:string){const ids=new Set([rootId]);let cha
 function effective(nodes:Map<string,Node>,grants:Map<string,Grant[]>,member:Member,id:string,cache:Map<string,PageRole|null>,seen=new Set<string>()):PageRole|null{
  if(cache.has(id))return cache.get(id)!;
  if(!member.active)return null;const root=nodes.get(id);if(!root||root.deleted_at)return null;
- if(root.owner_id===member.id)return 'owner';if(member.role==='admin')return 'editor';
+ if(root.owner_id===member.id)return 'owner';if(['owner','admin'].includes(member.role))return 'editor';
  if(seen.has(id))throw new DocumentError('The existing hierarchy contains a cycle. No pages were moved.','move_cycle',422);
  seen.add(id);let result:PageRole|null=null;
  for(const g of grants.get(id)??[])if((g.subject===member.id||(g.subject==='space'&&root.visibility==='space'))&&rank(g.role)>rank(result))result=g.role;

@@ -11,18 +11,30 @@ the membership's workspace; neither JWT role strings nor suite roles implicitly
 grant it. Membership deactivation or demotion removes implicit access on the
 next server check. Trashed pages remain outside ordinary reads.
 
-This is a bounded content-access foundation, not completed HOLY-5. No promotion
-endpoint, suite writer, invitation UI, real-account promotion, or staging config
-change is included. Content access does not yet grant ownership transfer,
-sharing administration, export, or Trash recovery capabilities. Those actions
-need explicit capabilities and their own audited workflows.
+The completed candidate expands the workspace model to Owner, Administrator,
+Member and Observer and adds explicit Leader, Editor and Viewer space roles.
+Every role mutation is previewed, version checked, idempotent and audited.
+Owners and Administrators receive workspace-wide content access; an Observer is
+read-only even when an older direct editor grant remains. Ordinary Members only
+receive explicit space or page access.
 
-Remaining acceptance work includes suite/native role mapping, delegated grant
-authority, before/after capability previews, versioned/idempotent audited role
-mutations, last-administrator protection under concurrency, invitations,
-deactivation reconciliation, and integrated BugOff qualification. Any future
-role mutation must take the same workspace lock as document mutations before
-changing membership, to serialize revocation against commits.
+Seven-day invitations bind a central invitation identifier to the exact immutable
+suite subject. Email equality is never an identity merge. Acceptance applies the
+reviewed native workspace and space roles atomically; resend, revoke and accept
+remain separate audited operations. The UI lets a signed-in user inspect and
+accept their invitations and lets authorized administrators create/revoke them.
+
+Ownership transfer is a separate seven-day acceptance workflow. The existing
+Owner remains in place until an eligible active Administrator/Owner accepts.
+Acceptance transfers page ownership without changing page IDs, links, revisions
+or historical actor attribution and demotes the previous Owner to Administrator.
+
+The Accounts integration adds a hash-pinned, read-only application-entitlement
+authority. With `HS_APP_AUTHORITY_ENABLED=1`, every authenticated Holy Sheet
+request verifies the current upstream session and current `holy-sheet`
+ApplicationAccess for the exact subject. Unknown, revoked, disabled or unavailable
+authority fails closed. The rollout gate stays off until the reviewed central
+adapter, Directory parity snapshot and revocation checks are installed.
 
 Focused regression tests cover private reads and edits, search discovery,
 backlinks, personal navigation, demotion, inactive membership, workspace
@@ -32,4 +44,8 @@ isolation, unchanged ownership, claim spoofing, and ordinary Trash exclusion.
 
 Adds the native Workspace access dialog, self-only membership inspection, explicit before/after previews, version-checked and digest-bound changes, atomic operation deduplication and audit, last-active-admin protection under a workspace lock, and refusal to deactivate an account that still owns pages. All existing memberships remain ordinary members after migration; no real account is promoted. Native reactivation is an explicit reviewed action preserving existing scope-only grants. Global app entitlement and account deactivation have separate semantics and are not implemented by this workspace endpoint.
 
-Central writer/invitations, space roles, identity-binding inventory/parity and ownership transfer remain open HOLY-5 scope. This batch must not be represented as the full story being Done. No background schedule is added.
+Existing workspaces remain on access-model version 1 until parity is explicitly
+verified; version 2 activation is never automatic. No background schedule is
+added. Staging must verify central/native parity, entitlement revocation, each
+role, invitation expiry/acceptance/revoke, ownership acceptance and rollback
+before the same accepted revision can move to production.

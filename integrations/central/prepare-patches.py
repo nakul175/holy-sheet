@@ -42,14 +42,16 @@ replacement = '''  async function currentClientSession(clientId,sub,uid) {
     if(typeof sub!=='string'||typeof uid!=='string'||sub.length>200||uid.length>200)return res.sendStatus(400);
     return res.json(await currentClientSession(c.client_id,sub,uid));
   });
-  app.post('/internal/tenant/status',express.json({limit:'4kb'}),tenantStatusHandler({
+  const directoryAuthority={
     enabled:process.env.APLYD_TENANT_AUTHORITY_ENABLED==='1',
     directoryFile:process.env.APLYD_TENANT_DIRECTORY_DB,
     issuer:config.issuer,clients:config.clients,verifySession:currentClientSession,
-  }));
+  };
+  app.post('/internal/application/status',express.json({limit:'4kb'}),applicationStatusHandler(directoryAuthority));
+  app.post('/internal/tenant/status',express.json({limit:'4kb'}),tenantStatusHandler(directoryAuthority));
 '''
 modified = original[:start] + replacement + original[end:]
-modified = modified.replace("import { Store } from './store.mjs';", "import { Store } from './store.mjs';\nimport { tenantStatusHandler } from './tenant-authority.mjs';", 1)
+modified = modified.replace("import { Store } from './store.mjs';", "import { Store } from './store.mjs';\nimport { applicationStatusHandler, tenantStatusHandler } from './tenant-authority.mjs';", 1)
 model_before = models.read_text()
 model_after = model_before + (local / 'tenant-administrator-model.py').read_text()
 out.mkdir(parents=True, exist_ok=True)
