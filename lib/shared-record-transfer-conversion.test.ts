@@ -22,3 +22,9 @@ it('runs a valid XLSX through the permission-limited bundled worker',async()=>{
 it('parses a synthetic 10,000 by 100-cell XLSX within the isolated worker bounds',async()=>{
  const columns=Array.from({length:100},(_,i)=>{let n=i+1,s='';while(n){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26);}return s;}),rows=['<row r="1">'+columns.map((c,i)=>inline(c+'1','H'+i)).join('')+'</row>'];for(let row=2;row<=10001;row++)rows.push(`<row r="${row}">`+columns.map(c=>`<c r="${c}${row}"><v>1</v></c>`).join('')+'</row>');const source=await workbook(sheet(rows.join('')));expect(source.length).toBeLessThanOrEqual(20*1024*1024);const result=await parseRecordImport(source,'xlsx');expect(result.rows).toHaveLength(10000);expect(result.rows.at(-1)?.cells).toHaveLength(100);expect(result.rows.at(-1)?.cells[99]).toBe('1');
 },30000);
+it('keeps phonetic annotations out of visible text and distinguishes an empty formula cache from a missing one',async()=>{
+ const source=await workbook(sheet(`<row r="1">${inline('A1','Name')}</row><row r="2"><c r="A2" t="s"><v>0</v></c></row><row r="3"><c r="A3" t="inlineStr"><is><t>東京</t><rPh sb="0" eb="2"><t>とうきょう</t></rPh></is></c></row><row r="4"><c r="A4" t="str"><f>""</f><v/></c></row>`),{'xl/sharedStrings.xml':'<sst><si><t>漢字</t><rPh sb="0" eb="2"><t>かんじ</t></rPh></si></sst>'}),r=await convertRecordTransfer(source,'xlsx');expect(r.rows[0].cells[0]).toBe('漢字');expect(r.rows[1].cells[0]).toBe('東京');expect(r.rows[2].cells[0]).toBe('');expect(r.rows[2].errors).not.toContain('formula_cache_missing');
+});
+it('rejects legacy macro-sheet parts even when the primary manifest claims ordinary XLSX',async()=>{
+ await expect(convertRecordTransfer(await workbook(sheet(`<row r="1">${inline('A1','Name')}</row>`),{'xl/macrosheets/sheet1.xml':'<macrosheet/>'}),'xlsx')).rejects.toBeInstanceOf(RecordTransferError);
+});
