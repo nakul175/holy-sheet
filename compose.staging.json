@@ -55,6 +55,7 @@
         "NODE_ENV": "production",
         "HS_LOCAL_PREVIEW": "0",
         "HS_RICH_EDITOR_ENABLED": "${HS_RICH_EDITOR_ENABLED:-0}",
+        "HS_COLLABORATION_ENABLED": "${HS_COLLABORATION_ENABLED:-0}",
         "HS_ORIGIN": "${HS_ORIGIN:?Set the exact staging HTTPS origin}",
         "DATABASE_URL": "postgresql://holy_sheet:${POSTGRES_PASSWORD:?Required}@database:5432/holy_sheet",
         "HS_IDENTITY_ISSUER": "${HS_IDENTITY_ISSUER:?Set the trusted suite issuer}",
