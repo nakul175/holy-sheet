@@ -1,10 +1,10 @@
 import {z} from 'zod';import {DocumentError} from './document';import {typedRecordValue,type RecordField} from './shared-record-types';
 const column=z.number().int().min(0).max(99);
-export const recordImportMapping=z.object({mode:z.enum(['create','update']),nameColumn:column.optional(),idColumn:column.optional(),parentOrganisationColumn:column.optional(),legalOrganisationColumn:column.optional(),accountColumn:column.optional(),fields:z.array(z.object({column,fieldKey:z.string().min(1).max(100),currency:z.object({code:z.string().regex(/^[A-Z]{3}$/),scale:z.number().int().min(0).max(4)}).strict().optional()}).strict()).max(100)}).strict();
+export const recordImportMapping=z.object({mode:z.enum(['create','update']),nameColumn:column.optional(),idColumn:column.optional(),parentOrganisationColumn:column.optional(),legalOrganisationColumn:column.optional(),accountColumn:column.optional(),fields:z.array(z.object({column,fieldKey:z.string().min(1).max(100),referenceLookup:z.enum(['id','code','label']).optional(),currency:z.object({code:z.string().regex(/^[A-Z]{3}$/),scale:z.number().int().min(0).max(4)}).strict().optional()}).strict()).max(100)}).strict();
 export type RecordImportMapping=z.output<typeof recordImportMapping>;
 export type ImportRowIssue={code:string;fieldKey?:string};
 export function importIds(value:string){const trimmed=value.trim();let list:unknown;if(!trimmed)return [];try{list=trimmed.startsWith('[')?JSON.parse(trimmed):trimmed.split(';').map(v=>v.trim());}catch{throw new DocumentError('Use immutable relationship IDs.','record_import_relationship');}const parsed=z.array(z.string().uuid()).max(100).safeParse(list);if(!parsed.success||new Set(parsed.data).size!==parsed.data.length)throw new DocumentError('Use distinct immutable relationship IDs.','record_import_relationship');return parsed.data;}
-export function coerceRecordImportValue(field:RecordField,raw:string,currency?:{code:string;scale:number}){
+export function coerceRecordImportValue(field:RecordField,raw:string,currency?:{code:string;scale:number},referenceLookup:'id'|'code'|'label'='id'){
  const text=raw.trim();if(!text)return typedRecordValue(field,null);let value:unknown=raw;
  switch(field.kind){
   case 'number':if(!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(text))throw new DocumentError('Use an unambiguous number.','record_import_number');value=Number(text);break;
@@ -18,5 +18,11 @@ export function coerceRecordImportValue(field:RecordField,raw:string,currency?:{
    if(!code||!match||scale>4||(match[3]?.length??0)>scale||qualified&&currency&&qualified[1]!==currency.code)throw new DocumentError('Use CODE:minorUnits:scale or an explicit currency mapping.','record_import_currency');const digits=match[2]+(match[3]??'').padEnd(scale,'0'),minor=BigInt((match[1]??'')+digits).toString();value={currency:code,minorUnits:minor,scale};break;
   }
  }
+ if(field.referenceList){
+  const resolve=(entry:unknown)=>{if(typeof entry!=='string')throw new DocumentError('Use an explicit reference item identity.','record_import_reference');const v=referenceLookup==='label'?entry.trim().normalize('NFC'):entry;
+   const matches=field.referenceList!.items.filter(i=>i[referenceLookup]===v);
+   if(matches.length!==1||matches[0].deprecated)throw new DocumentError('Reference item is unavailable or ambiguous.','record_import_reference');return matches[0].id;};
+  value=field.kind==='multi-select'&&Array.isArray(value)?value.map(resolve):resolve(value);
+ }else if(referenceLookup!=='id')throw new DocumentError('Reference lookup requires a bound reference list.','record_import_reference');
  return typedRecordValue(field,value);
 }
