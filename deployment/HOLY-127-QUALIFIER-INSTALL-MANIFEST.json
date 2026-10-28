@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "helperSourceCommit": "c483a5557dcc03ca961350f07937cecc74a101cd",
-  "helperSourceTree": "3df1cbdd5bab188ab0798382c2da318b856efb6e",
+  "helperSourceCommit": "8ddbe5c34b91eac0553f55608e7820544e553e26",
+  "helperSourceTree": "61c7d2190792fb60aa0a73e88b9cc89f9bac7bc0",
   "qualifiedApplicationSource": "f4f5a94fb16380021b501ab1da85e888994c0172",
   "bundleDirectory": {
-    "path": "/opt/holy-sheet-staging/qualification/holy127-c483a5557dcc03ca961350f07937cecc74a101cd",
+    "path": "/opt/holy-sheet-staging/qualification/holy127-4c1fdbda6becaf76",
     "owner": 0,
     "group": 0,
     "mode": "0555"
@@ -13,7 +13,7 @@
     {
       "source": "scripts/holy127_disposable_staging_qualifier.py",
       "installedName": "holy127_disposable_staging_qualifier.py",
-      "sha256": "8e6cd93ad616d631b5242d372a265e0b80c65684bae75dd96f226b104aaccd63",
+      "sha256": "4c1fdbda6becaf76b7ca33698737074b50af5d0884d845f1a1c52ff3c0fa8b86",
       "owner": 0,
       "group": 0,
       "mode": "0444"
@@ -37,7 +37,8 @@
   ],
   "reviewOnlyFiles": [
     {"source": "scripts/holy127_bounded_stream.py", "sha256": "8c874d97c9f6e86be0581ed82c4fff5ab1e539bf57b562c598c5c846040077e2"},
-    {"source": "scripts/test_holy127_disposable_staging_qualifier.py", "sha256": "47862296ec8950876ed12c6d74f36c641f739e8fbcaeb16f9da7e2650381b74d"},
+    {"source": "scripts/test_holy127_disposable_staging_qualifier.py", "sha256": "a93f11d5d7455bc812a292ee41f135f0dbe6e42fb704d16b79714fe27492ac01"},
+    {"source": "scripts/test_holy127_qualifier_entrypoints.py", "sha256": "5f7b05c6c5f8c4d5787427319b887c0d1fb6c578726c21decc6d0314555c3a37"},
     {"source": "scripts/test_holy127_backup_orchestrator.py", "sha256": "8e56992b0d2f71292b3295f592f7a03766e374b9f659239abf8c8c9b73906724"},
     {"source": "scripts/test_holy127_bounded_stream.py", "sha256": "d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44"},
     {"source": "scripts/test_hs_release_guard.py", "sha256": "6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40"},
@@ -48,7 +49,7 @@
     {
       "source": "scripts/holy127_qualifier_entrypoint.sh",
       "installedPath": "/usr/local/sbin/holy127-q-f4f5a94",
-      "sha256": "9e908712a80dbb20067be8f2ec74b850db86b255f5e5bd98e68bbb0cb3cbc238",
+      "sha256": "ebf8bb4e62d253fcf468bd2462d8f093d2849c727d15604e01434df9bc2c1292",
       "owner": 0,
       "group": 0,
       "mode": "0555",
@@ -57,7 +58,7 @@
     {
       "source": "scripts/holy127_qualifier_receipt_collect.sh",
       "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-receipt",
-      "sha256": "8b3f919678dd5a2493a123a488789007c74ce7876835d3febd44b387e5a20982",
+      "sha256": "7188d9926c868dfcc37999359ff5b453805470e08281ab7076accbffdcf34dc9",
       "owner": 0,
       "group": 0,
       "mode": "0555",
@@ -66,7 +67,7 @@
     {
       "source": "scripts/holy127_qualifier_receipt_cleanup.sh",
       "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-cleanup",
-      "sha256": "938d04232f73d732952eaa4a93dfaf187c85f0488f852b793dfd3c59aa78c95e",
+      "sha256": "01ae09806b51085624b48f70b65bf4dccc3aec6dc1759d572ffb6973d9131969",
       "owner": 0,
       "group": 0,
       "mode": "0555",
@@ -76,9 +77,18 @@
   "pythonIsolation": {
     "executable": "/usr/bin/python3",
     "flags": ["-I"],
-    "importPath": "/opt/holy-sheet-staging/qualification/holy127-c483a5557dcc03ca961350f07937cecc74a101cd",
+    "importPath": "/opt/holy-sheet-staging/qualification/holy127-4c1fdbda6becaf76",
     "environmentIgnored": true
   },
+  "processEnvironment": {
+    "cleanEnvironment": true,
+    "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
+    "DOCKER_HOST": "unix:///var/run/docker.sock",
+    "forbiddenInheritedVariables": ["DOCKER_CONTEXT", "DOCKER_CONFIG", "PYTHONPATH", "PYTHONHOME"],
+    "absoluteExecutables": ["/usr/bin/docker", "/usr/bin/pgrep", "/usr/bin/python3"],
+    "dockerSocketRequirements": {"path": "/var/run/docker.sock", "type": "socket", "owner": 0, "symlink": false}
+  },
+  "ancestorPolicy": "Every bundle and entrypoint ancestor must be root-owned and not group/other writable. /var/tmp must be root-owned mode 1777; its sticky bit plus the root-owned 0700 receipt directory protects the fixed receipt path.",
   "operatorAccount": "deploy",
   "sudoPolicy": "Permit only the three exact no-argument installed entrypoints above; do not permit shells, Python, Docker, cat, rm, arbitrary paths or arguments.",
   "orderedOperatorSteps": [
