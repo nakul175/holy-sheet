@@ -32,6 +32,7 @@ import {ReadingAppearanceControls,useReadingAppearance} from './reading-appearan
 import outlineStyles from './page-outline.module.css';
 import ShortcutHelpDialog from './shortcut-help-dialog';
 import {FocusModeLauncher,FocusModeExit,usePersonalFocusMode} from './personal-focus-mode';
+import PageStatistics from './page-statistics';
 
 export default function HolySheetApp({initialPageId,embedded=false}:{initialPageId:string;embedded?:boolean}){
   const router=useRouter(),[pages,setPages]=useState<(Page & {role?:string})[]>([]),[spaces,setSpaces]=useState<Space[]>([]),[createMode,setCreateMode]=useState<'page'|'subpage'|null>(null),[sharingOpen,setSharingOpen]=useState(false),[searchOpen,setSearchOpen]=useState(false),[navigationError,setNavigationError]=useState(''),[linkNotice,setLinkNotice]=useState('');
@@ -86,7 +87,7 @@ export default function HolySheetApp({initialPageId,embedded=false}:{initialPage
       <PendingUploads key={`uploads:${page.id}:${session.actorId}`} pageId={page.id} actorId={session.actorId} role={page.role} confirmedVersion={status==='saved'?page.version:null} onResume={setRecoveredUpload}/>
       <RichEditor key={`${page.id}:${session.editorRevision}`} recoveryActorId={session.actorId} resumeUpload={recoveredUpload} onRecoveryClosed={()=>setRecoveredUpload(null)} document={page.document} editable={canEdit(page.role)&&status!=='readonly'&&!session.accessUnverified&&!session.snapshotPending} pageId={page.id} preferenceKey={`${session.actorId}:${page.workspaceId}:${page.id}`} onChange={document=>session.change({document})} onCollaborativeChange={session.acceptCollaborative} threads={discussionThreads} activeThreadId={activeDiscussion} onOpenThread={openDiscussion} navigateThread={navigateDiscussion} onOpenComments={()=>setDiscussionOpen(true)} onOpenHistory={canEdit(page.role)?()=>setHistoryOpen(true):undefined} onCreateSubpage={()=>setCreateMode('subpage')} commentsReady={status==='saved'||status==='readonly'} onComment={canComment(page.role)?(anchors,quote)=>{setSelectedPassage({anchors,quote,baseVersion:page.version});setActiveDiscussion(null);setDiscussionOpen(true);}:undefined}/></>}
       {!supportedSchema&&<SchemaFallback title={page.title} schemaVersion={page.schemaVersion} document={page.document}/>}
-      <footer className="page-footer"><span>{!supportedSchema||!canEdit(page.role)?'View only':'Changes save automatically'}</span><span>{(supportedSchema?plainText(page.document):documentPreviewText(page.document)).trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words</span></footer>
+      <footer className="page-footer"><span>{!supportedSchema||!canEdit(page.role)?'View only':'Changes save automatically'}</span><PageStatistics key={`${session.actorId}:${page.workspaceId}:${page.id}:${page.role}:${session.accessUnverified}`} document={page.document} supportedSchema={supportedSchema} available={!session.accessUnverified&&!session.authRequired&&page.id===initialPageId}/></footer>
       </article>
     </main>
     {templatesOpen&&(!templateSnapshot||supportedSchema)&&<TemplatesDialog workspaceId={page.workspaceId} initialSpaceId={page.spaceId} sourcePage={page} spaces={spaces} snapshot={templateSnapshot} onClose={()=>setTemplatesOpen(false)} onCreated={id=>{setTemplatesOpen(false);void open(id);}}/>}
