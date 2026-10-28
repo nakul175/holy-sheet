@@ -1,10 +1,13 @@
 # HOLY-126 Bug Off acceptance map
 
-The external Bug Off scenario/case/script IDs are assigned when these prepared
-cases are created in the Holy Sheet repository. A local passing test is recorded
-as local evidence, not as a staging or production result.
+The mapped cases are in the Holy Sheet Bug Off repository under folder
+`HOLY-126 — Release capacity and serialization guard` (folder node `139`). A
+local passing test is recorded as local evidence, not as a staging or production
+result.
 
 ## F01 — Guard every real release entry point and filesystem (AC1)
+
+**Bug Off:** [TC-HOLY-126-F01 (case 2371)](https://bugoff.aplyd.org/en-US/projects/repository/3/2371)
 
 **Scenario:** Inspect staging and production release entry points, enumerate every
 affected source/build/backup/restore/rollback/Docker path, and verify the reviewed
@@ -27,6 +30,8 @@ live wrapper integration remains gated on authorized installation.
 
 ## F02 — Explicit peak budget and exact 2 GiB boundary (AC2)
 
+**Bug Off:** [TC-HOLY-126-F02 (case 2372)](https://bugoff.aplyd.org/en-US/projects/repository/3/2372)
+
 **Scenario:** Missing, malformed, stale, failed or insufficient measurements fail
 closed; exact `available = peak + 2,147,483,648` passes and one byte less fails.
 
@@ -38,6 +43,8 @@ pass only at or above the exact reserve.
 **Current result:** Passed locally at `d0949c8`; live budget is not yet approved.
 
 ## F03 — One atomic HS lock and safe lifecycle (AC3)
+
+**Bug Off:** [TC-HOLY-126-F03 (case 2373)](https://bugoff.aplyd.org/en-US/projects/repository/3/2373)
 
 **Scenario:** Staging and production contend on the same kernel lock; stale text
 never steals a live lock; normal, exception, SIGTERM and crash paths release it.
@@ -51,6 +58,8 @@ available. Missing/symlink/unsafe installation rejects.
 **Current result:** Passed locally at `d0949c8`; cross-wrapper host proof pending.
 
 ## F04 — Revalidate before every material phase (AC4)
+
+**Bug Off:** [TC-HOLY-126-F04 (case 2374)](https://bugoff.aplyd.org/en-US/projects/repository/3/2374)
 
 **Scenario:** Capacity is consumed between phases and the next phase rejects
 before its operation callback, leaving the healthy service and recovery material
@@ -70,6 +79,8 @@ bytes without secrets. Document unrelated-host-consumption residual risk.
 
 ## F05 — Read-only sanitized preflight (AC5)
 
+**Bug Off:** [TC-HOLY-126-F05 (case 2375)](https://bugoff.aplyd.org/en-US/projects/repository/3/2375)
+
 **Scenario:** CLI reports exact source/environment/time/path/filesystem/available,
 budget/reserve/result/lock state and performs no privileged or service mutation.
 
@@ -82,6 +93,8 @@ sanitized JSON only. Wrapper-written receipts use mode `0600`.
 **Current result:** Passed locally at `d0949c8`.
 
 ## F06 — Filesystem, concurrency and fault qualification (AC6)
+
+**Bug Off:** [TC-HOLY-126-F06 (case 2376)](https://bugoff.aplyd.org/en-US/projects/repository/3/2376)
 
 **Scenario:** Exercise actual local statvfs/flock behavior plus threshold, input,
 path, stat failure, concurrent process, crash and signal faults without filling
@@ -96,6 +109,8 @@ scripts/hs_release_guard.py scripts/test_hs_release_guard.py`.
 **Current result:** 11/11 passed locally at `d0949c8`; compilation passed.
 
 ## F07 — Staging then production install and rollback (AC7)
+
+**Bug Off:** [TC-HOLY-126-F07 (case 2377)](https://bugoff.aplyd.org/en-US/projects/repository/3/2377)
 
 **Scenario:** Install the exact reviewed guard through existing authorized
 mechanisms in one serialized slot per environment, prove pass/reject/contender
@@ -116,6 +131,8 @@ container/image/database/volume/backup loss or unrelated feature release.
 **Current result:** Not Run — requires Product slot and authorized wrapper path.
 
 ## F08 — Evidence and truthful closure (AC8)
+
+**Bug Off:** [TC-HOLY-126-F08 (case 2378)](https://bugoff.aplyd.org/en-US/projects/repository/3/2378)
 
 **Scenario:** Every AC has a mapped case/script/result with exact revision,
 environment and sanitized evidence; incomplete live gates remain open.
