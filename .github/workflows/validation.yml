@@ -162,9 +162,15 @@ jobs:
         env:
           PW_CHROMIUM: /usr/bin/google-chrome
         run: npx playwright test -c playwright.accessibility.config.ts
+      - name: Real-browser live collaboration convergence and Undo
+        env:
+          PW_CHROMIUM: /usr/bin/google-chrome
+        run: npx playwright test -c playwright.collaboration.config.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: editor-accessibility-results
-          path: test-results/accessibility/
+          path: |
+            test-results/accessibility/
+            test-results/collaboration/
           retention-days: 7
