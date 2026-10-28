@@ -374,3 +374,4 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
   .doc-header{position:sticky;top:58px;z-index:3;}
   .persistent-format{top:114px;}
 }
+.live-collaborators{display:flex;justify-content:flex-end;gap:.25rem;min-height:1.75rem;margin-bottom:.35rem}.live-collaborators span{display:grid;place-items:center;width:1.75rem;height:1.75rem;border:2px solid var(--surface,#fff);border-radius:999px;background:#e8e3ff;color:#372b67;font-size:.72rem;font-weight:750}
