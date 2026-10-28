@@ -9,12 +9,14 @@ import ExportPolicyDialog from './export-policy-dialog';
 import TrashDialog from './trash-dialog';
 import WorkspaceAccessDialog from './workspace-access-dialog';
 import CreatePage from './create-page-dialog';
+import CreateWorkspaceDialog from './create-workspace-dialog';
 import {SignInLink,SignOutButton,continueToSignIn} from './session-boundary';
 import {ApiError,requestJson} from './editor/use-document-session';
 
 export default function WorkspaceHome({chooseWorkspace=false}:{chooseWorkspace?:boolean}){
  const router=useRouter();
  const [workspaces,setWorkspaces]=useState<WorkspaceSummary[]>([]),[workspaceId,setWorkspaceId]=useState(''),[spaces,setSpaces]=useState<Space[]>([]),[pages,setPages]=useState<Page[]>([]);
+ const [workspaceCreationOpen,setWorkspaceCreationOpen]=useState(false);
  const [creationDirty,setCreationDirty]=useState(false);
  const [loading,setLoading]=useState(true),[error,setError]=useState(''),[needsSignIn,setNeedsSignIn]=useState(false);
  const [createOpen,setCreateOpen]=useState(false),[policyOpen,setPolicyOpen]=useState(false),[trashOpen,setTrashOpen]=useState(false),[accessOpen,setAccessOpen]=useState(false),[templatesOpen,setTemplatesOpen]=useState(false),[importOpen,setImportOpen]=useState(false);
@@ -32,12 +34,14 @@ export default function WorkspaceHome({chooseWorkspace=false}:{chooseWorkspace?:
  return <main className="workspace-home"><div className="brand"><span>✦</span>Holy Sheet</div>{!loading&&!needsSignIn&&<SignOutButton/>}<section><h1>{chooseWorkspace?'Choose your workspace':'A clear place for your next idea.'}</h1>
  {loading?<p role="status">Opening your workspace…</p>:!needsSignIn&&workspaces.length?<>
   <label>Workspace<select value={workspaceId} onChange={e=>{if(creationDirty&&!confirm('Leave this new-page form? Its title has not been saved.'))return;setCreationDirty(false);setWorkspaceId(e.target.value);}}>{workspaces.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
+  {workspaces.find(w=>w.id===workspaceId)?.canCreateWorkspace&&<button onClick={()=>{if(creationDirty&&!confirm('Leave this new-page form? Its title has not been saved.'))return;setWorkspaceCreationOpen(true);}}>Create workspace</button>}
   <div className="actions">{chooseWorkspace&&<button onClick={()=>setCreateOpen(true)}>Create page</button>}{space&&<><button onClick={()=>setImportOpen(true)}>Import a document</button>{chooseWorkspace&&<button onClick={()=>setTemplatesOpen(true)}>From template</button>}</>}</div>
   {!chooseWorkspace&&<CreatePage key={workspaceId} presentation="inline" workspaceId={workspaceId} spaces={availableSpaces} onDirty={setCreationDirty} onClose={()=>{}} onTemplates={()=>setTemplatesOpen(true)} onCreated={p=>{setCreationDirty(false);router.push(`/pages/${encodeURIComponent(p.id)}`);}}/>}
   {workspacePages.length?<nav aria-label="Workspace pages"><ul>{workspacePages.map(p=><li key={p.id}><button onClick={()=>open(p.id)}>{p.title}</button></li>)}</ul></nav>:<p>No accessible pages yet. Create your first private page in this workspace.</p>}
   <div className="actions"><button onClick={()=>setTrashOpen(true)}>Trash</button><button onClick={()=>setAccessOpen(true)}>Workspace access</button></div>
  </>:!error&&<p>Your signed-in account needs access to a Holy Sheet workspace. Ask its owner to add you.</p>}
  {error&&<p role="alert">{error}</p>}{needsSignIn&&<SignInLink/>}</section>
+ {workspaceCreationOpen&&workspaces.find(w=>w.id===workspaceId)?.canCreateWorkspace&&<CreateWorkspaceDialog source={workspaces.find(w=>w.id===workspaceId)!} onClose={()=>setWorkspaceCreationOpen(false)} onCreated={created=>{setWorkspaces(old=>[...old.filter(w=>w.id!==created.id),created].sort((a,b)=>a.name.localeCompare(b.name)));setCreationDirty(false);setWorkspaceId(created.id);setWorkspaceCreationOpen(false);}}/>}
  {createOpen&&workspaceId&&<CreatePage key={workspaceId} workspaceId={workspaceId} spaces={availableSpaces} onClose={()=>setCreateOpen(false)} onTemplates={()=>{setCreateOpen(false);setTemplatesOpen(true);}} onCreated={p=>{setCreationDirty(false);setCreateOpen(false);router.push(`/pages/${encodeURIComponent(p.id)}`);}}/>}
  {trashOpen&&workspaceId&&<TrashDialog workspaceId={workspaceId} spaces={availableSpaces} onClose={()=>setTrashOpen(false)} onRestored={id=>{setTrashOpen(false);open(id);}}/>}
  {accessOpen&&workspaceId&&<WorkspaceAccessDialog workspaceId={workspaceId} onClose={()=>setAccessOpen(false)} onExportPolicy={()=>{setAccessOpen(false);setPolicyOpen(true);}}/>}
