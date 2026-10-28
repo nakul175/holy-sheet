@@ -11,11 +11,16 @@ export default function PageStatistics({document:body,supportedSchema,available=
  const opener=useRef<HTMLButtonElement>(null);
  useEffect(()=>{
   if(!available){setOpen(false);setResult(null);return;}
-  let alive=true,worker:Worker|undefined,timer:ReturnType<typeof setTimeout>;
-  const finish=(value:StatisticsResult)=>{if(alive)setResult({body,supportedSchema,value});worker?.terminate();};
+  let alive=true,finished=false,fallbackStarted=false,worker:Worker|undefined;
+  let timer:ReturnType<typeof setTimeout>|undefined,watchdog:ReturnType<typeof setTimeout>|undefined;
+  const stopWorker=()=>{if(worker){worker.onmessage=null;worker.onerror=null;worker.onmessageerror=null;worker.terminate();worker=undefined;}};
+  const clearTimers=()=>{clearTimeout(timer);clearTimeout(watchdog);};
+  const finish=(value:StatisticsResult)=>{if(!alive||finished)return;finished=true;clearTimers();stopWorker();setResult({body,supportedSchema,value});};
   const fallback=()=>{
+   if(!alive||finished||fallbackStarted)return;
+   fallbackStarted=true;clearTimers();stopWorker();
    const job=pageStatisticsJob(body,supportedSchema);
-   const advance=()=>{try{const until=performance.now()+4;let steps=0;while(alive&&performance.now()<until&&steps++<16){const next=job.next();if(next.done){finish(next.value);return;}}if(alive)timer=setTimeout(advance,0);}catch{finish({status:'unavailable',reason:'Statistics could not be calculated. Your document is unchanged.'});}};
+   const advance=()=>{try{const until=performance.now()+4;let steps=0;while(alive&&!finished&&performance.now()<until&&steps++<16){const next=job.next();if(next.done){finish(next.value);return;}}if(alive&&!finished)timer=setTimeout(advance,0);}catch{finish({status:'unavailable',reason:'Statistics could not be calculated. Your document is unchanged.'});}};
    timer=setTimeout(advance,0);
   };
   timer=setTimeout(()=>{
@@ -24,12 +29,14 @@ export default function PageStatistics({document:body,supportedSchema,available=
     if(typeof Worker==='undefined'){fallback();return;}
     // Next emits a classic worker runtime; forcing module mode makes its runtime globals strict.
     worker=new Worker(new URL('./page-statistics-worker.js',__HS_PAGE_STATISTICS_PACKAGE_BASE__));
-    worker.onmessage=(event:MessageEvent<StatisticsResult>)=>finish(event.data);
-    worker.onerror=()=>{worker?.terminate();fallback();};
+    worker.onmessage=(event:MessageEvent<StatisticsResult>)=>{if(!fallbackStarted)finish(event.data);};
+    worker.onerror=fallback;worker.onmessageerror=fallback;
+    // A loaded but silent worker has ten seconds per body snapshot, then one cooperative retry.
+    watchdog=setTimeout(fallback,10_000);
     worker.postMessage({document:body,supportedSchema});
-   }catch{worker?.terminate();fallback();}
+   }catch{fallback();}
   },120);
-  return()=>{alive=false;clearTimeout(timer);worker?.terminate();};
+  return()=>{alive=false;clearTimers();stopWorker();};
  },[body,supportedSchema,available]);
  // Never render a previous body's or permission context's result, even before effects clean up.
  const current=available&&result!==null&&result.body===body&&result.supportedSchema===supportedSchema?result.value:null;
