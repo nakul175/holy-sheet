@@ -17,6 +17,24 @@ export class DirectoryTenantAuthority{
  constructor(readonly file:string,readonly issuer:string){
   try{const url=new URL(issuer);if(!isAbsolute(file)||url.protocol!=='https:'||url.username||url.password||url.search||url.hash)throw Error();}catch{throw new TenantAuthorityUnavailable();}
  }
+ verifyApplication(subjectId:string):{active:true;subject:string;revision:string}|{active:false}{
+  if(typeof subjectId!=='string'||!subjectId||subjectId.length>200)return {active:false};
+  let db:DatabaseSync|undefined;
+  try{
+   db=new DatabaseSync(this.file,{readOnly:true});db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=250; BEGIN');
+   const query=(sql:string,...params:string[])=>db!.prepare(sql).all(...params) as Row[];
+   const connector=query('SELECT application,mode,baseline_id,permission_contract_sha256,parity_verified_at,revocation_verified_at FROM directory_connectorstate WHERE application=?','holy-sheet');
+   if(connector.length!==1||connector[0].mode!=='central'||!connector[0].parity_verified_at||!connector[0].revocation_verified_at||!/^([a-f0-9]{64})$/.test(String(connector[0].permission_contract_sha256)))return {active:false};
+   const baseline=query('SELECT id,restore_verified FROM directory_snapshot WHERE id=?',String(connector[0].baseline_id));
+   if(baseline.length!==1||baseline[0].restore_verified!==1)return {active:false};
+   const subject=query('SELECT e.person_id,p.status FROM directory_externalsubject e JOIN directory_person p ON p.id=e.person_id WHERE e.issuer=? AND e.subject=?',this.issuer,subjectId);
+   if(subject.length!==1||subject[0].status!=='active')return {active:false};
+   const person=String(subject[0].person_id),access=query("SELECT a.id,a.organisation_id,a.status,m.status AS membership_status FROM directory_applicationaccess a JOIN directory_organisationmember m ON m.organisation_id=a.organisation_id AND m.person_id=a.person_id WHERE a.person_id=? AND a.application='holy-sheet' AND a.status='active' AND m.status='active'",person);
+   if(!access.length)return {active:false};
+   const revision=createHash('sha256').update(JSON.stringify({issuer:this.issuer,subject:subjectId,connector,baseline,identity:subject,access})).digest('hex');
+   db.exec('COMMIT');return {active:true,subject:subjectId,revision};
+  }catch{throw new TenantAuthorityUnavailable();}finally{db?.close();}
+ }
  verify(context:Context):TenantProof{
   if(!context||typeof context.subject!=='string'||!context.subject||context.subject.length>200||!uuid.test(context.tenantId)||typeof context.workspaceId!=='string'||!context.workspaceId||context.workspaceId.length>200)return {active:false};
   let db:DatabaseSync|undefined;
@@ -72,5 +90,23 @@ export function tenantStatusHandler(options:TenantHandlerOptions){
    if(final.revision!==proof.revision)return res.status(409).json({error:'tenant_authority_changed'});
    return res.json(final);
   }catch{return res.status(503).json({error:'tenant_authority_unavailable'});}
+ };
+}
+
+export function applicationStatusHandler(options:TenantHandlerOptions){
+ return async(req:{body?:unknown},res:Reply)=>{
+  res.set({'Cache-Control':'no-store','Pragma':'no-cache','Vary':'Authorization'});
+  const body=req.body as Record<string,unknown>|undefined;
+  if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!['client_id','client_secret','sub','uid'].includes(k)))return res.status(400).json({error:'invalid_request'});
+  const client=options.clients.find(c=>c.client_id==='holy-sheet'&&c.client_id===body.client_id);
+  if(!client||client.client_secret.length<32||!same(client.client_secret,body.client_secret))return res.status(401).json({error:'invalid_client'});
+  const {sub,uid}=body;if(typeof sub!=='string'||!sub||sub.length>200||typeof uid!=='string'||!uid||uid.length>200)return res.status(400).json({error:'invalid_request'});
+  if(!options.enabled||!options.directoryFile)return res.status(503).json({error:'application_authority_unavailable'});
+  try{
+   const session=await options.verifySession('holy-sheet',sub,uid);if(session.active!==true||session.sub!==sub||session.local_id!==sub)return res.json({active:false});
+   const directory=new DirectoryTenantAuthority(options.directoryFile,options.issuer),first=directory.verifyApplication(sub);if(!first.active)return res.json({active:false});
+   const sessionAfter=await options.verifySession('holy-sheet',sub,uid);if(sessionAfter.active!==true||sessionAfter.sub!==sub||sessionAfter.local_id!==sub)return res.json({active:false});
+   const final=directory.verifyApplication(sub);if(!final.active)return res.json({active:false});if(final.revision!==first.revision)return res.status(409).json({error:'application_authority_changed'});return res.json(final);
+  }catch{return res.status(503).json({error:'application_authority_unavailable'});}
  };
 }

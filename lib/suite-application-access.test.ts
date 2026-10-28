@@ -1,0 +1,9 @@
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import {requireSuiteApplicationAccess} from './suite-application-access';
+const issuer='https://accounts.example.test',secret='qa-only-client-secret-'.repeat(2);
+beforeEach(()=>vi.stubEnv('HS_APP_AUTHORITY_ENABLED','1'));
+afterEach(()=>{vi.unstubAllEnvs();vi.unstubAllGlobals();});
+it('binds the current application entitlement to the verified immutable subject',async()=>{const fetch=vi.fn(async()=>Response.json({active:true,subject:'actor',revision:'a'.repeat(64)}));vi.stubGlobal('fetch',fetch);await requireSuiteApplicationAccess('actor','uid',issuer,secret);const [url,options]=fetch.mock.calls[0] as unknown as [URL,RequestInit];expect(url.href).toBe(issuer+'/internal/application/status');expect(JSON.parse(String(options.body))).toEqual({client_id:'holy-sheet',client_secret:secret,sub:'actor',uid:'uid'});});
+it('denies revoked, malformed and mismatched application access',async()=>{for(const body of [{active:false},{active:true,subject:'other'},{active:'true',subject:'actor'},{}]){vi.stubGlobal('fetch',vi.fn(async()=>Response.json(body)));await expect(requireSuiteApplicationAccess('actor','uid',issuer,secret)).rejects.toMatchObject({status:403,code:'application_access_required'});}});
+it('fails closed when the authority is unavailable',async()=>{vi.stubGlobal('fetch',vi.fn(async()=>new Response('',{status:503})));await expect(requireSuiteApplicationAccess('actor','uid',issuer,secret)).rejects.toMatchObject({status:503,code:'identity_unavailable'});});
+it('is an explicit rollout gate before the central authority is enabled',async()=>{vi.stubEnv('HS_APP_AUTHORITY_ENABLED','0');const fetch=vi.fn();vi.stubGlobal('fetch',fetch);await requireSuiteApplicationAccess('actor','uid',issuer,secret);expect(fetch).not.toHaveBeenCalled();});
