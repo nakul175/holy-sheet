@@ -3,7 +3,7 @@ import { api,localPreview,readJson } from '../../../../../../lib/auth';
 import { repository } from '../../../../../../lib/repository';
 import { DocumentError } from '../../../../../../lib/document';
 import { workspaceAccess,previewMemberChange,changeWorkspaceMember } from '../../../../../../lib/workspace-administration';
-const change={subjectId:z.string().min(1).max(200),role:z.enum(['member','admin']),active:z.boolean()};
+const change={subjectId:z.string().min(1).max(200),role:z.enum(['owner','admin','member','observer']),active:z.boolean()};
 const input=z.discriminatedUnion('kind',[z.object({kind:z.literal('preview'),...change}).strict(),z.object({kind:z.literal('apply'),...change,operationId:z.uuid(),expectedVersion:z.number().int().positive(),previewDigest:z.string().regex(/^[a-f0-9]{64}$/)}).strict()]);
 type Context={params:Promise<{id:string}>};
 export async function GET(req:Request,c:Context){return api(req,async actor=>workspaceAccess(await repository(localPreview(req)),actor,(await c.params).id));}
