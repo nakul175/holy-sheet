@@ -1,0 +1,4 @@
+import {convertRecordTransfer,RecordTransferError,recordTransferLimits} from '../lib/shared-record-transfer-conversion';
+const parts:Buffer[]=[];let size=0;
+process.stdin.on('data',(part:Buffer)=>{size+=part.length;if(size>recordTransferLimits.sourceBytes){process.stdout.write(JSON.stringify({error:'Source exceeds 20 MiB.'}));process.exit(1);}parts.push(part);});
+process.stdin.on('end',async()=>{try{const sheet=process.argv[3]===undefined?undefined:Number(process.argv[3]);if(sheet!==undefined&&(!Number.isInteger(sheet)||sheet<0||sheet>=100))throw new RecordTransferError('Choose a supported worksheet.');const result=await convertRecordTransfer(Buffer.concat(parts),process.argv[2] as 'csv'|'xlsx',sheet);process.stdout.write(JSON.stringify({result}));}catch(e){process.stdout.write(JSON.stringify({error:e instanceof RecordTransferError?e.message:'The source could not be parsed safely. Choose a supported unencrypted CSV or XLSX file.'}));process.exitCode=1;}});
