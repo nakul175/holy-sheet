@@ -74,3 +74,9 @@ it('resolves a thousand-heading document by exact identity and fails closed abov
  const {host,root}=fixture(Array.from({length:1000},(_,i)=>`<h2 data-id="h${i}">Section ${i}</h2>`).join(''));expect(currentLinkedHeading(host,scope,'h999',new Set(['h999']))?.heading.label).toBe('Section 999');
  const extra=document.createDocumentFragment();for(let i=0;i<100_001;i++)extra.appendChild(document.createTextNode(' '));root.append(extra);expect(currentLinkedHeading(host,scope,'h999',new Set(['h999']))).toBeNull();
 });
+it('checks readability/label only for the exact destination rather than every other heading',()=>{
+ const {host}=fixture('<h2 data-id="a">Destination</h2>'+Array.from({length:1000},(_,i)=>`<h2 data-id="other${i}">Other ${i}</h2>`).join(''));const styles=vi.spyOn(globalThis,'getComputedStyle');expect(currentLinkedHeading(host,scope,'a',new Set(['a']))?.heading.label).toBe('Destination');expect(styles.mock.calls.some(([node])=>node instanceof HTMLElement&&node.dataset.id?.startsWith('other'))).toBe(false);
+});
+it('resolves confirmed IDs arriving after the rendered editor without requiring another DOM mutation',()=>{
+ const {host}=fixture();history.replaceState(null,'','/pages/'+pageId+'#hs-heading=a');let ids=new Set<string>();const publish=vi.fn(),navigation=watchHeadingLink({host,scope,pageId,saved:()=>ids,publish});expect(publish).toHaveBeenLastCalledWith({kind:'waiting'});ids=new Set(['a']);navigation.refresh();expect(publish).toHaveBeenLastCalledWith({kind:'ready',label:'Unicode 界 مرحبا'});navigation.refresh();expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledTimes(1);navigation.stop();
+});

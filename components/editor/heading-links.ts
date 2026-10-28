@@ -31,14 +31,14 @@ export function currentLinkedHeading(host:HTMLElement,scope:string,id:string,sav
  const root=outlineRoot(host,scope);if(!root)return null;
  const walker=document.createTreeWalker(root,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT);let visits=0;
  while(walker.nextNode())if(++visits>100_000)return null;
- const heading=collectOutline(root).find(heading=>heading.id===id);return heading?{root,heading}:null;
+ const heading=collectOutline(root,id)[0];return heading?{root,heading}:null;
 }
 export type HeadingNavigationState={kind:'idle'}|{kind:'waiting'}|{kind:'unavailable'}|{kind:'ready';label:string};
 /** One exact-ID jump per hash navigation. Never touches editor transactions or DOM selection. */
 export function watchHeadingLink({host,scope,pageId,saved,publish}:{host:HTMLElement;scope:string;pageId:string;saved:()=>ReadonlySet<string>;publish:(state:HeadingNavigationState)=>void}){
  let alive=true,epoch=0,lastHash:string|null=null,lastPath:string|null=null,observer:MutationObserver|undefined,timer:ReturnType<typeof setTimeout>|undefined;
- let temporary:TemporarySection[]=[],target:HTMLElement|null=null,queued=false;
- const clear=()=>{observer?.disconnect();observer=undefined;clearTimeout(timer);timer=undefined;temporary=restoreTemporarySections(temporary);target=null;};
+ let temporary:TemporarySection[]=[],target:HTMLElement|null=null,queued=false,currentCheck:(()=>void)|undefined;
+ const clear=()=>{observer?.disconnect();observer=undefined;clearTimeout(timer);timer=undefined;temporary=restoreTemporarySections(temporary);target=null;currentCheck=undefined;};
  const read=(force=false)=>{
   if(!alive||!force&&location.hash===lastHash&&location.pathname===lastPath)return;lastHash=location.hash;lastPath=location.pathname;const token=++epoch;clear();
   const fragment=parseHeadingFragment(lastHash);if(location.pathname!==`/pages/${encodeURIComponent(pageId)}`||fragment.kind==='other'){publish({kind:'idle'});return;}if(fragment.kind==='invalid'){publish({kind:'unavailable'});return;}
@@ -56,10 +56,10 @@ export function watchHeadingLink({host,scope,pageId,saved,publish}:{host:HTMLEle
   };
   observer=new MutationObserver(()=>{if(queued)return;queued=true;queueMicrotask(check);});
   observer.observe(host,{subtree:true,childList:true,attributes:true,attributeFilter:['data-id','data-preference-key','hidden','inert','aria-hidden','class','style']});
-  timer=setTimeout(unavailable,5_000);check();
+  currentCheck=check;timer=setTimeout(unavailable,5_000);check();
  };
  const changed=()=>read();
  const interaction=(event:Event)=>{if(alive&&event.isTrusted&&observer&&!target){epoch++;clear();publish({kind:'unavailable'});}};
  window.addEventListener('hashchange',changed);window.addEventListener('popstate',changed);host.addEventListener('pointerdown',interaction,true);host.addEventListener('keydown',interaction,true);read();
- return {retry:()=>read(true),stop:()=>{alive=false;epoch++;clear();window.removeEventListener('hashchange',changed);window.removeEventListener('popstate',changed);host.removeEventListener('pointerdown',interaction,true);host.removeEventListener('keydown',interaction,true);}};
+ return {retry:()=>read(true),refresh:()=>currentCheck?.(),stop:()=>{alive=false;epoch++;clear();window.removeEventListener('hashchange',changed);window.removeEventListener('popstate',changed);host.removeEventListener('pointerdown',interaction,true);host.removeEventListener('keydown',interaction,true);}};
 }

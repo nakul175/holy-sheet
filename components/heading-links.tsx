@@ -28,11 +28,13 @@ export function CopyHeadingLink({pageId,scope,host,heading,saved}:{pageId:string
 export function HeadingLinkDestination({host,scope,pageId,available,saved}:{host:RefObject<HTMLElement|null>;scope:string;pageId:string;available:boolean;saved:ReadonlySet<string>}){
  const [state,setState]=useState<HeadingNavigationState>({kind:'idle'}),[retry,setRetry]=useState(0);
  const destination=useRef<HTMLDivElement>(null),confirmed=useRef(saved);confirmed.current=saved;
+ const navigation=useRef<ReturnType<typeof watchHeadingLink>|null>(null);
  useEffect(()=>{
   if(!available||!host.current){setState({kind:'idle'});return;}
-  const navigation=watchHeadingLink({host:host.current,scope,pageId,saved:()=>confirmed.current,publish:setState});
-  return()=>navigation.stop();
+  const current=watchHeadingLink({host:host.current,scope,pageId,saved:()=>confirmed.current,publish:setState});navigation.current=current;
+  return()=>{current.stop();if(navigation.current===current)navigation.current=null;};
  },[host,scope,pageId,available,retry]);
+ useEffect(()=>{navigation.current?.refresh();},[saved]);
  useLayoutEffect(()=>{if(available&&state.kind==='ready')destination.current?.focus({preventScroll:true});},[state,available]);
  if(!available||state.kind==='idle')return null;
  return createPortal(<div className={styles.destination} ref={destination} tabIndex={-1} role="region" aria-label={state.kind==='ready'?`Linked heading: ${state.label}`:'Heading link destination'}>
