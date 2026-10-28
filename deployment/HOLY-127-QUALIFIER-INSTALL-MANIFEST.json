@@ -4,7 +4,7 @@
   "helperSourceTree": "a4d7d3b1c70561c348220a6cc96df90814d41f5a",
   "qualifiedApplicationSource": "f4f5a94fb16380021b501ab1da85e888994c0172",
   "bundleDirectory": {
-    "path": "/opt/holy-sheet-staging/qualification/holy127-4c1fdbda6becaf76",
+    "path": "/opt/holy-sheet-qualification/holy127-4c1fdbda6becaf76",
     "owner": 0,
     "group": 0,
     "mode": "0555"
@@ -38,18 +38,18 @@
   "reviewOnlyFiles": [
     {"source": "scripts/holy127_bounded_stream.py", "sha256": "8c874d97c9f6e86be0581ed82c4fff5ab1e539bf57b562c598c5c846040077e2"},
     {"source": "scripts/test_holy127_disposable_staging_qualifier.py", "sha256": "a93f11d5d7455bc812a292ee41f135f0dbe6e42fb704d16b79714fe27492ac01"},
-    {"source": "scripts/test_holy127_qualifier_entrypoints.py", "sha256": "f79b0d63d68485f6ada9624ada335f9f45ff4e529abde8a42a7bef0a1f06d6ff"},
+    {"source": "scripts/test_holy127_qualifier_entrypoints.py", "sha256": "c723c84148b958238ff8c629fd57eb7f217a6deee8a6f29633bbc0a8adf3d925"},
     {"source": "scripts/test_holy127_backup_orchestrator.py", "sha256": "8e56992b0d2f71292b3295f592f7a03766e374b9f659239abf8c8c9b73906724"},
     {"source": "scripts/test_holy127_bounded_stream.py", "sha256": "d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44"},
     {"source": "scripts/test_hs_release_guard.py", "sha256": "6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40"},
-    {"source": "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md", "sha256": "663f689fcdac4e80accba04f8a543e5e263e908b89718bca8c3a91478fc112ef"},
-    {"source": "deployment/HOLY-127-RELEASE-PACKET.md", "sha256": "f1f27db6e2d4e3048a5407edfc4f40efa58c7d59bd03b029893941281ca95287"}
+    {"source": "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md", "sha256": "0e4ba90764e539608d0aa54094164e0dd1034a37f999067c8feb07619f1b77d8"},
+    {"source": "deployment/HOLY-127-RELEASE-PACKET.md", "sha256": "754f8997696d270890c4ac6aacba4e3ffab272fe51a1f8b3568e60c9a6c61517"}
   ],
   "rootOwnedEntrypoints": [
     {
       "source": "scripts/holy127_qualifier_entrypoint.sh",
       "installedPath": "/usr/local/sbin/holy127-q-f4f5a94",
-      "sha256": "8c73d07469593956f5af8e6a9e9d43a524df52bb8790fe93233443173baad975",
+      "sha256": "b8a7c8162e8167b7cd35abde7189c7308a0fba15fe9af79ff9add056b1ed1fa7",
       "owner": 0,
       "group": 0,
       "mode": "0555",
@@ -77,7 +77,7 @@
   "pythonIsolation": {
     "executable": "/usr/bin/python3",
     "flags": ["-I"],
-    "importPath": "/opt/holy-sheet-staging/qualification/holy127-4c1fdbda6becaf76",
+    "importPath": "/opt/holy-sheet-qualification/holy127-4c1fdbda6becaf76",
     "environmentIgnored": true
   },
   "processEnvironment": {
@@ -88,18 +88,18 @@
     "absoluteExecutables": ["/usr/bin/docker", "/usr/bin/pgrep", "/usr/bin/python3"],
     "dockerSocketRequirements": {"path": "/var/run/docker.sock", "type": "socket", "owner": 0, "symlink": false}
   },
-  "ancestorPolicy": "Every bundle and entrypoint ancestor must be root-owned and not group/other writable. /var/tmp must be root-owned mode 1777; its sticky bit plus the root-owned 0700 receipt directory protects the fixed receipt path.",
+  "ancestorPolicy": "The separate /opt/holy-sheet-qualification bundle path and every entrypoint ancestor must be root-owned and not group/other writable. The hs-staging-owned live application tree is not an ancestor and is never re-owned. /var/tmp must be root-owned mode 1777; its sticky bit plus root-owned private staging/receipt directories protects fixed paths.",
   "operatorAccount": "deploy",
   "sudoPolicy": "Permit only the three exact no-argument installed entrypoints above; do not permit shells, Python, Docker, cat, rm, arbitrary paths or arguments.",
   "installationMechanism": {
     "source": "scripts/holy127_qualifier_installer.sh",
-    "sha256": "20ab6459973340aa74be5a29fdef22725d118a888e0fa37a7b95f1621058ac43",
+    "sha256": "5a557f792d30d7ebf14eb0744bfd67da4d2ee5be22774d5ba9da6da383684c23",
     "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-install",
     "allowedInvocation": "/usr/local/sbin/holy127-q-f4f5a94-install",
     "operatorOnly": true,
     "deploySudoAllowed": false,
     "arguments": 0,
-    "sourceRoot": "/var/tmp/holy127-installer-b949f7b2f8b7cc581ae01ef99c334d8b30b5666d/source",
+    "sourceRoot": "/var/tmp/holy127-installer-rootpath-v2/source",
     "sourceRootOwner": 0,
     "sourceRootGroup": 0,
     "sourceRootMode": "0500",

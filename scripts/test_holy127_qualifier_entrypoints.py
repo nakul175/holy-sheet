@@ -17,7 +17,8 @@ class QualifierEntrypointContractTest(unittest.TestCase):
         source = self.read("holy127_qualifier_entrypoint.sh")
         self.assertIn("/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin DOCKER_HOST=unix:///var/run/docker.sock", source)
         self.assertIn("unset DOCKER_CONTEXT DOCKER_CONFIG PYTHONPATH PYTHONHOME", source)
-        self.assertIn("for ancestor in /opt /opt/holy-sheet-staging /opt/holy-sheet-staging/qualification", source)
+        self.assertIn("for ancestor in /opt /opt/holy-sheet-qualification", source)
+        self.assertNotIn("/opt/holy-sheet-staging/qualification", source)
         self.assertIn("test $((0$mode & 0022)) -eq 0", source)
         self.assertIn("/usr/bin/python3 -I", source)
 

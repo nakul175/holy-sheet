@@ -12,16 +12,16 @@ fi
 
 test "$(/usr/bin/id -u)" -eq 0
 
-source_root=/var/tmp/holy127-installer-b949f7b2f8b7cc581ae01ef99c334d8b30b5666d/source
-bundle_parent=/opt/holy-sheet-staging/qualification
-bundle=/opt/holy-sheet-staging/qualification/holy127-4c1fdbda6becaf76
+source_root=/var/tmp/holy127-installer-rootpath-v2/source
+bundle_parent=/opt/holy-sheet-qualification
+bundle=/opt/holy-sheet-qualification/holy127-4c1fdbda6becaf76
 entrypoint=/usr/local/sbin/holy127-q-f4f5a94
 receipt_entrypoint=/usr/local/sbin/holy127-q-f4f5a94-receipt
 cleanup_entrypoint=/usr/local/sbin/holy127-q-f4f5a94-cleanup
 sudoers=/etc/sudoers.d/holy127-q-f4f5a94
 lock_parent=/run/lock/holy-sheet-release
 lock_file=/run/lock/holy-sheet-release/release.lock
-stage_suffix=.holy127-install-b949f7b2f8b7cc581ae01ef99c334d8b30b5666d.pending
+stage_suffix=.holy127-install-rootpath-v2.pending
 
 created_bundle_parent=0
 created_lock_parent=0
@@ -118,19 +118,19 @@ verify_regular_source scripts/holy127_backup_orchestrator.py f1f4655f0129167ae9a
 verify_regular_source scripts/hs_release_guard.py 2732a41da67239772b5232c4a616638f22d5de947763e142f1a95a32644c8495
 verify_regular_source scripts/holy127_bounded_stream.py 8c874d97c9f6e86be0581ed82c4fff5ab1e539bf57b562c598c5c846040077e2
 verify_regular_source scripts/test_holy127_disposable_staging_qualifier.py a93f11d5d7455bc812a292ee41f135f0dbe6e42fb704d16b79714fe27492ac01
-verify_regular_source scripts/test_holy127_qualifier_entrypoints.py f79b0d63d68485f6ada9624ada335f9f45ff4e529abde8a42a7bef0a1f06d6ff
+verify_regular_source scripts/test_holy127_qualifier_entrypoints.py c723c84148b958238ff8c629fd57eb7f217a6deee8a6f29633bbc0a8adf3d925
 verify_regular_source scripts/test_holy127_backup_orchestrator.py 8e56992b0d2f71292b3295f592f7a03766e374b9f659239abf8c8c9b73906724
 verify_regular_source scripts/test_holy127_bounded_stream.py d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44
 verify_regular_source scripts/test_hs_release_guard.py 6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40
-verify_regular_source deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md 663f689fcdac4e80accba04f8a543e5e263e908b89718bca8c3a91478fc112ef
-verify_regular_source deployment/HOLY-127-RELEASE-PACKET.md f1f27db6e2d4e3048a5407edfc4f40efa58c7d59bd03b029893941281ca95287
-verify_regular_source scripts/holy127_qualifier_entrypoint.sh 8c73d07469593956f5af8e6a9e9d43a524df52bb8790fe93233443173baad975
+verify_regular_source deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md 0e4ba90764e539608d0aa54094164e0dd1034a37f999067c8feb07619f1b77d8
+verify_regular_source deployment/HOLY-127-RELEASE-PACKET.md 754f8997696d270890c4ac6aacba4e3ffab272fe51a1f8b3568e60c9a6c61517
+verify_regular_source scripts/holy127_qualifier_entrypoint.sh b8a7c8162e8167b7cd35abde7189c7308a0fba15fe9af79ff9add056b1ed1fa7
 verify_regular_source scripts/holy127_qualifier_receipt_collect.sh 64b4f1311029bb64b265824c40a541c806ae3955bfe0b1558eff4e7dd6a8b695
 verify_regular_source scripts/holy127_qualifier_receipt_cleanup.sh 349297d0f11330568dffaf8c3486ff4e21af962237ba982324020ac76646910a
 
-# Refuse to change live ownership. The frozen entrypoint requires every bundle
-# ancestor, including /opt/holy-sheet-staging, to be root-owned and immutable.
-for ancestor in / /opt /opt/holy-sheet-staging /usr /usr/local /usr/local/sbin /etc /etc/sudoers.d /run /run/lock; do
+# Keep the qualifier bundle outside the hs-staging-owned live application tree.
+# Every ancestor of the separate qualification path is root-owned and immutable.
+for ancestor in / /opt /usr /usr/local /usr/local/sbin /etc /etc/sudoers.d /run /run/lock; do
   verify_safe_ancestor "$ancestor"
 done
 

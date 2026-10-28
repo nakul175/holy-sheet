@@ -32,13 +32,17 @@ class QualifierInstallerContractTest(unittest.TestCase):
         )
         self.assertEqual(len(expected), 14)
         self.assertEqual(frozen, expected)
+        for relative, digest in expected.items():
+            self.assertEqual(hashlib.sha256((REPO / relative).read_bytes()).hexdigest(), digest)
 
     def test_installer_hash_matches_manifest(self):
         expected = self.manifest["installationMechanism"]["sha256"]
         self.assertEqual(hashlib.sha256(INSTALLER.read_bytes()).hexdigest(), expected)
 
     def test_refuses_unsafe_live_ancestors_and_incompatible_lock(self):
-        self.assertIn("/opt/holy-sheet-staging /usr /usr/local", self.source)
+        self.assertIn("/ /opt /usr /usr/local", self.source)
+        self.assertIn("bundle_parent=/opt/holy-sheet-qualification", self.source)
+        self.assertNotIn("bundle_parent=/opt/holy-sheet-staging", self.source)
         self.assertIn('test "$(/usr/bin/stat -c %u:%g:%a:%F "$lock_file")" = "0:0:660:regular file"', self.source)
         self.assertNotIn("chown -R", self.source)
         self.assertNotIn("chmod -R", self.source)
