@@ -62,3 +62,11 @@ The operator implementation must make state-file updates atomic and last, reject
 3. Obtain a fresh serialized staging slot and capacity/backup/rollback receipt.
 4. Execute staging only, then authenticated editor/viewer acceptance and rollback/forward proof.
 5. Prepare and separately approve the production operation using production-specific current/rollback receipts. No production access or mutation is implied here.
+
+## Installation preflight refusal and installer candidate — 29 October 2026
+
+The Product-issued disposable qualification slot was released unused after fresh server preflight. Capacity passed, but `/run/lock/holy-sheet-release/release.lock` was absent, the deploy account could not access Docker, and its sudo policy lacked the three exact qualifier entrypoints and any reviewed fixed installer. The only Holy Sheet privileges were the ineligible legacy `deploy.sh` and `backup.sh`. No installation, Docker resource, receipt directory, staging mutation or production action occurred.
+
+The follow-up review candidate `scripts/holy127_qualifier_installer.sh` verifies the fourteen frozen manifest payload hashes and installs only the immutable bundle, the three no-argument entrypoints, the shared lock when absent, and the exact three-line sudo policy. It validates sudo syntax before commit and rolls back only paths created by its own attempt. It deliberately refuses an existing unsafe or incompatible lock, any occupied install target, a busy shared lock, and any unsafe ancestor instead of changing live ownership.
+
+Current-host evidence shows `/opt/holy-sheet-staging` is owned by `hs-staging:hs-staging`, while the frozen run entrypoint requires every bundle ancestor to be root-owned. The installer therefore correctly refuses this host before mutation. Review must choose either a new root-owned qualification path with correspondingly refrozen entrypoints/hashes, or an explicitly justified safe ancestor policy. Changing ownership of the live staging application directory is not proposed.

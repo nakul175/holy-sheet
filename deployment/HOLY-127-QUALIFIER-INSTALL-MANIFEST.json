@@ -42,8 +42,8 @@
     {"source": "scripts/test_holy127_backup_orchestrator.py", "sha256": "8e56992b0d2f71292b3295f592f7a03766e374b9f659239abf8c8c9b73906724"},
     {"source": "scripts/test_holy127_bounded_stream.py", "sha256": "d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44"},
     {"source": "scripts/test_hs_release_guard.py", "sha256": "6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40"},
-    {"source": "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md", "sha256": "d397badaaac497d0482709a866fa67d8f349125df4de7e7a3e5304d40a50fcb8"},
-    {"source": "deployment/HOLY-127-RELEASE-PACKET.md", "sha256": "415d4bd1fd1d848ac87822f794237c835452ffd8fd190edd166f1d47c66c9ac8"}
+    {"source": "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md", "sha256": "663f689fcdac4e80accba04f8a543e5e263e908b89718bca8c3a91478fc112ef"},
+    {"source": "deployment/HOLY-127-RELEASE-PACKET.md", "sha256": "f1f27db6e2d4e3048a5407edfc4f40efa58c7d59bd03b029893941281ca95287"}
   ],
   "rootOwnedEntrypoints": [
     {
@@ -91,6 +91,31 @@
   "ancestorPolicy": "Every bundle and entrypoint ancestor must be root-owned and not group/other writable. /var/tmp must be root-owned mode 1777; its sticky bit plus the root-owned 0700 receipt directory protects the fixed receipt path.",
   "operatorAccount": "deploy",
   "sudoPolicy": "Permit only the three exact no-argument installed entrypoints above; do not permit shells, Python, Docker, cat, rm, arbitrary paths or arguments.",
+  "installationMechanism": {
+    "source": "scripts/holy127_qualifier_installer.sh",
+    "sha256": "20ab6459973340aa74be5a29fdef22725d118a888e0fa37a7b95f1621058ac43",
+    "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-install",
+    "allowedInvocation": "/usr/local/sbin/holy127-q-f4f5a94-install",
+    "operatorOnly": true,
+    "deploySudoAllowed": false,
+    "arguments": 0,
+    "sourceRoot": "/var/tmp/holy127-installer-b949f7b2f8b7cc581ae01ef99c334d8b30b5666d/source",
+    "sourceRootOwner": 0,
+    "sourceRootGroup": 0,
+    "sourceRootMode": "0500",
+    "verifiedPayloadCount": 14,
+    "installsOnly": [
+      "the three frozen bundle files",
+      "the three fixed no-argument entrypoints",
+      "the exact three-command sudoers fragment",
+      "the shared root-owned release lock when absent"
+    ],
+    "doesNotExecuteQualifier": true,
+    "requiresVisudoValidation": true,
+    "refusesExistingInstallTargets": true,
+    "refusesUnsafeOrIncompatibleAncestorsAndLock": true,
+    "rollbackScope": "Only pending or committed paths created by the current failed attempt; never live application paths or pre-existing lock state."
+  },
   "orderedOperatorSteps": [
     "Acquire a Product-issued serialized staging slot and fresh preflight approval.",
     "Invoke only sudo -n /usr/local/sbin/holy127-q-f4f5a94.",

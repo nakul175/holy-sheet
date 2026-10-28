@@ -54,3 +54,11 @@ The image must already be present and is not counted as new allocation. Host fil
 ## Acceptance and disposition
 
 Pass requires baseline success, timeout cancellation success, SIGTERM cancellation success, all capacity checkpoints, exact cleanup, and unchanged live staging resource IDs. The executable candidate is `scripts/holy127_disposable_staging_qualifier.py`; it still requires hash freeze and Product review before a slot can be granted. Any missing reviewed helper, operator permission, image, headroom, slot, or cancellation proof parks HOLY-127 with evidence; it does not authorize a broader helper, pruning, image pulls, or changes to live staging. No deployment switch and no production action are part of this qualification.
+
+## Fixed installation mechanism
+
+The review candidate `scripts/holy127_qualifier_installer.sh` is a root-executed, no-argument installer only; it never runs the qualifier. It accepts payloads solely from the fixed root-owned staging tree `/var/tmp/holy127-installer-b949f7b2f8b7cc581ae01ef99c334d8b30b5666d/source`, verifies all fourteen hashes in `HOLY-127-QUALIFIER-INSTALL-MANIFEST.json` before mutation, and refuses symlinked, non-root-owned or group/other-writable inputs.
+
+It refuses to change ownership or permissions on existing live ancestors. In particular, the frozen entrypoint requires `/opt/holy-sheet-staging` to be root-owned and not group/other writable; a host where that live application directory is owned by `hs-staging` is incompatible and must fail before installation. Product/security must resolve that policy/path conflict through a separately reviewed payload rather than chowning the live tree silently.
+
+When compatible, the installer acquires the shared release lock nonblocking, stages the root-owned bundle, three fixed entrypoints and one three-command sudoers fragment under unique pending names, validates the fragment with `visudo`, and only then renames the staged artifacts into place. A trap removes only artifacts created by that attempt. An existing lock is accepted only when it is a root-owned mode-0660 regular file; existing install targets always cause refusal. The installer grants no shell, Python, Docker, file-copy or argument-bearing sudo command.
