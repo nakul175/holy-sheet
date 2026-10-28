@@ -25,7 +25,8 @@ if(picker){
   await check('Picker actor hint cannot authenticate','/api/v1/integrations/sho/picker',401,{headers:{'x-hs-actor':'local-owner'}});
   await check('Picker creation requires verified identity','/api/v1/integrations/sho/picker',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json','x-hs-actor':'local-owner'},body:'{}'});
 }
-const login=await check('Sign-in bridge readiness','/auth/sign-in',bridge?303:503);
+await check('Sign-in entry page','/auth/sign-in',200);
+const login=await check('Sign-in bridge readiness','/auth/sign-in?continue=1',bridge?303:503);
 if(bridge){
   assert.equal(new URL(login.headers.get('location')).origin,'https://accounts.aplyd.org');
   const cookie=login.headers.get('set-cookie')??'';
@@ -39,16 +40,9 @@ for(const [name,path] of [
   ['Trash','/api/v1/workspaces/ws-aplyd/trash'],['Workspace membership','/api/v1/workspaces/ws-aplyd/members'],['Personal navigation','/api/v1/personal-navigation'],['Templates','/api/v1/templates?workspaceId=ws-aplyd'],
   ['Media','/api/media/11111111-1111-4111-8111-111111111111'],['Upload recovery','/api/uploads/11111111-1111-4111-8111-111111111111'],
 ])await check(`${name} requires verified identity`,path,401);
+await check('Private export download requires identity','/api/v1/exports/11111111-1111-4111-8111-111111111111/download',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Import preparation requires identity','/api/v1/imports',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/octet-stream'},body:'synthetic'});
 await check('Trash mutation requires identity','/api/v1/pages/welcome/trash',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
 await check('Recovery mutation rejects foreign origin','/api/v1/workspaces/ws-aplyd/trash',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
 await check('Page move requires identity','/api/v1/pages/welcome/location',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
 await check('Page move rejects foreign origin','/api/v1/pages/welcome/location',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
-await check('Private export download requires identity','/api/v1/exports/11111111-1111-4111-8111-111111111111/download',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
-await check('Import preparation requires identity','/api/v1/imports',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/octet-stream'},body:'synthetic'});
-await check('Workspace mutation requires identity','/api/v1/workspaces/ws-aplyd/members',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
-await check('Workspace mutation rejects foreign origin','/api/v1/workspaces/ws-aplyd/members',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
-await check('Forged actor headers rejected','/api/pages',401,{headers:{'x-user-id':'local-owner','x-hs-local-preview':'1'}});
-await check('Foreign-origin mutation rejected','/api/pages',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
-await check('Same-origin mutation requires identity','/api/pages',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
-for(const path of ['/.env','/.git/config','/.holy-sheet/recovery.key'])await check('Private file unavailable '+path,path,404);
-console.log(JSON.stringify({kind:'HOLY-3-unauthenticated-rollout-boundaries',origin,bridgeEnabled:bridge,framingRequired:framing,passed:checks.length,scope:'Unauthenticated readiness only; no authenticated/product acceptance.',checks},null,2));

@@ -1,6 +1,4 @@
 import {test,expect} from '@playwright/test';
-import {mkdir,writeFile} from 'node:fs/promises';
-import {dirname} from 'node:path';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 const origin='http://127.0.0.1:53300';
 for(const width of [1440,390,320])test(`editor WCAG text contrast and usable controls at ${width}px`,async({page,request})=>{
@@ -12,14 +10,11 @@ for(const width of [1440,390,320])test(`editor WCAG text contrast and usable con
   await content.fill(marker);
   await expect.poll(async()=>JSON.stringify(await(await request.get(origin+'/api/v1/pages/'+id+'/document')).json())).toContain(marker);
   await expect(page.getByRole('button',{name:'✓ Saved',exact:true})).toBeVisible();
-  await expect(page.getByRole('button',{name:'Move to Trash',exact:true})).toBeVisible();
-  if(width<901)await page.locator('.mobile-workspace-tools > summary').click();
   await content.focus();await page.addScriptTag({content:axe.source});
   const result=await page.evaluate(async()=>{
     const engine=(window as unknown as {axe:{run:(context:Document,options:RunOptions)=>Promise<AxeResults>}}).axe;
     return engine.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}});
   });
-  const evidence=test.info().outputPath('axe.json');await mkdir(dirname(evidence),{recursive:true});await writeFile(evidence,JSON.stringify(result.violations,null,2));
   await test.info().attach('axe-results',{body:JSON.stringify(result.violations,null,2),contentType:'application/json'});
   expect(result.violations.map(v=>({id:v.id,impact:v.impact,nodes:v.nodes.map(n=>n.target)}))).toEqual([]);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
@@ -31,8 +26,8 @@ for(const width of [1440,390,320])test(`editor WCAG text contrast and usable con
     }));
     expect(undersized).toEqual([]);
   }
-  if(width<901)await page.locator('.mobile-workspace-tools > summary').click();
-  await page.getByRole('button',{name:'＋ Insert',exact:true}).click();
+  await page.getByRole('button',{name:/More blocks/,exact:false}).click();
+  await page.getByRole('button',{name:'Browse all blocks',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'Insert a block',exact:true});
   await expect(dialog.getByRole('button',{name:'Close dialog',exact:true})).toBeFocused();
   await page.keyboard.press('Tab');
@@ -41,5 +36,5 @@ for(const width of [1440,390,320])test(`editor WCAG text contrast and usable con
   await expect(dialog.getByRole('button',{name:'Close dialog',exact:true})).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('heading',{name:'Insert a block',exact:true})).toHaveCount(0);
-  await expect(page.getByRole('button',{name:'＋ Insert',exact:true})).toBeFocused();
+  await expect(page.getByRole('button',{name:'Browse all blocks',exact:true})).toBeFocused();
 });

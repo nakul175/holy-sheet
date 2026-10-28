@@ -1,4 +1,4 @@
-import {createHash,randomUUID} from 'node:crypto';
+import {createHash,randomUUID,randomBytes} from 'node:crypto';
 import type {Actor} from './auth';import type {Sql} from './database';import type {Repository} from './repository';import type {PageRole} from './types';
 import {DocumentError,stableStringify} from './document';
 import {pageSubtree,hierarchyRole,type HierarchyNode,type HierarchyMember,type HierarchyGrant,type LocationIntent} from './page-organisation';
@@ -43,12 +43,17 @@ export async function deletePageTree(r:Repository,actor:Actor,workspaceId:string
   await tx.query('INSERT INTO hs_audit(id,actor_id,action,page_id,after_value,correlation_id) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),actor.id,'page.trash',id,JSON.stringify(ack),input.operationId]);return {...ack,replayed:false,stateNow:'trashed'};
  });
 }
-export async function listTrash(r:Repository,actor:Actor,workspaceId:string,after?:string){return r.db.transaction(async tx=>{
- await workspace(tx,actor,workspaceId);let cursor:{deleted_at:string;id:string}|undefined;
- if(after){const c=await tx.query<{id:string;deleted_at:string}>('SELECT b.id,b.deleted_at FROM hs_deletion_batches b JOIN hs_pages p ON p.id=b.root_id WHERE b.id=$1 AND b.workspace_id=$2 AND p.owner_id=$3',[after,workspaceId,actor.id]);if(!c.rows.length)throw unavailable();cursor=c.rows[0];}
- const q=await tx.query<{id:string;root_id:string;title:string;name:string;deleted_at:string;expires_at:string;page_count:number;space_id:string;parent_id:string|null}>(`SELECT b.id,b.root_id,p.title,u.name,b.deleted_at,b.expires_at,b.page_count,p.space_id,p.parent_id FROM hs_deletion_batches b JOIN hs_pages p ON p.id=b.root_id JOIN hs_users u ON u.id=b.deleted_by WHERE b.workspace_id=$1 AND p.owner_id=$2 AND p.deleted_at IS NOT NULL AND p.deletion_batch_id=b.id AND b.restored_at IS NULL AND b.expires_at>clock_timestamp() AND ($3::timestamptz IS NULL OR (b.deleted_at,b.id)<($3::timestamptz,$4::uuid)) ORDER BY b.deleted_at DESC,b.id DESC LIMIT 21`,[workspaceId,actor.id,cursor?.deleted_at??null,cursor?.id??null]);
- const entries:TrashEntry[]=q.rows.slice(0,20).map(p=>({id:p.id,rootId:p.root_id,title:p.title,deletedBy:p.name,deletedAt:iso(p.deleted_at),expiresAt:iso(p.expires_at),pageCount:p.page_count,spaceId:p.space_id,parentId:p.parent_id}));return {entries,nextCursor:q.rows.length>20?entries.at(-1)!.id:null};
-});}
+export async function listTrash(r:Repository,actor:Actor,workspaceId:string,after?:string,query=''){
+ if(typeof query!=='string'||Array.from(query).length>200||/[\p{Cc}]/u.test(query)||after&&!/^[A-Za-z0-9_-]{43}$/.test(after))throw new DocumentError('Use a filter of at most200 characters and a current Trash cursor.','invalid_trash_query',422);
+ query=query.trim().normalize('NFC');return r.db.transaction(async tx=>{
+ const w=await workspace(tx,actor,workspaceId),queryHash=hash({query});let cursor:{last_deleted_at:string;last_id:string}|undefined;
+ if(after){cursor=(await tx.query<{last_deleted_at:string;last_id:string}>('SELECT last_deleted_at,last_id FROM hs_trash_query_cursors WHERE token_hash=$1 AND workspace_id=$2 AND actor_id=$3 AND query_hash=$4 AND tree_version=$5 AND access_version=$6 AND expires_at>clock_timestamp()',[hash(after),workspaceId,actor.id,queryHash,w.tree_version,w.access_version])).rows[0];if(!cursor)throw new DocumentError('Trash or its access changed. Refresh the current filter.','trash_cursor_changed',409);}
+ const q=await tx.query<{id:string;root_id:string;title:string;name:string;deleted_at:string;expires_at:string;page_count:number;space_id:string;parent_id:string|null}>(`SELECT b.id,b.root_id,p.title,u.name,b.deleted_at,b.expires_at,b.page_count,p.space_id,p.parent_id FROM hs_deletion_batches b JOIN hs_pages p ON p.id=b.root_id JOIN hs_users u ON u.id=b.deleted_by WHERE b.workspace_id=$1 AND p.owner_id=$2 AND p.deleted_at IS NOT NULL AND p.deletion_batch_id=b.id AND b.restored_at IS NULL AND b.expires_at>clock_timestamp() AND ($3::timestamptz IS NULL OR (b.deleted_at,b.id)<($3::timestamptz,$4::uuid)) AND strpos(lower(p.title),lower($5))>0 ORDER BY b.deleted_at DESC,b.id DESC LIMIT 21`,[workspaceId,actor.id,cursor?.last_deleted_at??null,cursor?.last_id??null,query]);
+ const entries:TrashEntry[]=q.rows.slice(0,20).map(p=>({id:p.id,rootId:p.root_id,title:p.title,deletedBy:p.name,deletedAt:iso(p.deleted_at),expiresAt:iso(p.expires_at),pageCount:p.page_count,spaceId:p.space_id,parentId:p.parent_id}));let nextCursor:string|null=null;
+ if(q.rows.length>20){nextCursor=randomBytes(32).toString('base64url');const last=q.rows[19];await tx.query('INSERT INTO hs_trash_query_cursors(token_hash,workspace_id,actor_id,query_hash,tree_version,access_version,last_deleted_at,last_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[hash(nextCursor),workspaceId,actor.id,queryHash,w.tree_version,w.access_version,iso(last.deleted_at),last.id]);}
+ return {entries,nextCursor,query};
+ });}
+
 async function batch(tx:Sql,workspaceId:string,id:string){const q=await tx.query<Batch>('SELECT * FROM hs_deletion_batches WHERE id=$1 AND workspace_id=$2 FOR UPDATE',[id,workspaceId]);if(!q.rows.length)throw unavailable();return q.rows[0];}
 async function restoreReview(r:Repository,tx:Sql,actor:Actor,workspaceId:string,batchId:string,input:Pick<LocationIntent,'spaceId'|'parentId'>){
  const w=await workspace(tx,actor,workspaceId),b=await batch(tx,workspaceId,batchId),p=await root(tx,actor,workspaceId,b.root_id);
