@@ -9,6 +9,8 @@ await check('Workspace metadata requires identity','/api/workspaces',401);
 await check('Workspace actor hint cannot authenticate','/api/workspaces',401,{headers:{'x-user-id':'local-owner','x-hs-local-preview':'1'}});
 await check('Space creation intent requires identity','/api/v1/space-creations',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
 await check('Space creation intent rejects foreign origin','/api/v1/space-creations',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
+await check('Workspace creation requires identity','/api/v1/workspace-creations',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Workspace creation rejects foreign origin','/api/v1/workspace-creations',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
 await check('Sign-in entry page remains available','/auth/sign-in',200);
 await check('Unconfigured sign-in bridge fails closed','/auth/sign-in?continue=1',503);
 await check('Unconfigured callback fails closed','/auth/callback?code=synthetic&state=synthetic',503);

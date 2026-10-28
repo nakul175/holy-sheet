@@ -10,14 +10,18 @@ async function check(name,path,status,options={}){
   for(const probe of ['Search token: orchid','HOLY3-open-revoke-UNSAVED','QA sync probe'])assert.ok(!body.includes(probe),`${name}: restricted fixture data appeared`);
   checks.push({name,status,durationMs:Math.round(performance.now()-started)});return response;
 }
-await check('Public landing','/',200);
-await check('Workspace chooser public shell','/workspaces',200);
+const landingShell=await check('Public landing','/',200);
+const workspaceShell=await check('Workspace chooser public shell','/workspaces',200);
 await check('Workspace actor hint cannot authenticate','/api/workspaces',401,{headers:{'x-user-id':'local-owner','x-hs-local-preview':'1'}});
 await check('Space creation intent requires identity','/api/v1/space-creations',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
 await check('Space creation intent rejects foreign origin','/api/v1/space-creations',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
+await check('Workspace creation requires identity','/api/v1/workspace-creations',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Workspace creation rejects foreign origin','/api/v1/workspace-creations',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
 await check('Local-only synthetic record preview','/qualification/record-layout',404);
 const documentShell=await check('Standalone public shell','/pages/welcome',200),embedShell=await check('Embedded public shell','/embed/pages/11111111-1111-4111-8111-111111111111',200);
 if(framing){
+  assert.match(landingShell.headers.get('content-security-policy')??'',/frame-ancestors 'none'/);
+  assert.match(workspaceShell.headers.get('content-security-policy')??'',/frame-ancestors 'none'/);
   assert.match(documentShell.headers.get('content-security-policy')??'',/frame-ancestors 'none'/);
   assert.equal(embedShell.headers.get('content-security-policy'),"frame-ancestors 'self' https://sheethappensofficer.aplyd.org https://sho-qa.aplyd.org");
   checks.push({name:'Reviewed standalone/embed frame policy',status:'verified'});
