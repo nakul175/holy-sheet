@@ -11,6 +11,7 @@ import os
 import selectors
 import secrets
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -30,12 +31,29 @@ LOCK = Path("/run/lock/holy-sheet-release/release.lock")
 HOST_BUDGET = 384 * 1024 * 1024
 MEMORY_REQUIRED = 384 * 1024 * 1024
 DUMP_LIMIT = 64 * 1024 * 1024
-LIVE_COMPOSE = ("docker", "compose", "--env-file", "/opt/holy-sheet-staging/app/.env.staging", "-f", "/opt/holy-sheet-staging/app/compose.staging.json")
+DOCKER = "/usr/bin/docker"
+PGREP = "/usr/bin/pgrep"
+DOCKER_SOCKET = "unix:///var/run/docker.sock"
+LIVE_COMPOSE = (DOCKER, "compose", "--env-file", "/opt/holy-sheet-staging/app/.env.staging", "-f", "/opt/holy-sheet-staging/app/compose.staging.json")
 TERMINATED = False
+FIXED_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
 
 
 class QualificationFailure(RuntimeError):
     pass
+
+
+def require_isolated_environment() -> None:
+    if os.environ.get("PATH") != FIXED_PATH or os.environ.get("DOCKER_HOST") != DOCKER_SOCKET:
+        raise QualificationFailure("fixed operator environment is missing")
+    for name in ("DOCKER_CONTEXT", "DOCKER_CONFIG", "PYTHONPATH", "PYTHONHOME"):
+        if name in os.environ:
+            raise QualificationFailure("inherited operator environment is forbidden")
+    socket_path = Path("/var/run/docker.sock")
+    details = os.lstat(socket_path)
+    if stat.S_ISLNK(details.st_mode) or not stat.S_ISSOCK(details.st_mode) or details.st_uid != 0:
+        raise QualificationFailure("local Docker socket identity is unsafe")
+    checked_capture((DOCKER, "info", "--format", "{{json .ServerVersion}}"), timeout=10, limit=4096)
 
 
 def interrupted(_signum: int, _frame: object) -> None:
@@ -95,7 +113,7 @@ def checked_capture(command: tuple[str, ...], *, timeout: int = 30, limit: int =
 
 
 def docker_json(*arguments: str) -> object:
-    raw = checked_capture(("docker", *arguments), limit=2 * 1024 * 1024)
+    raw = checked_capture((DOCKER, *arguments), limit=2 * 1024 * 1024)
     try:
         return json.loads(raw)
     except json.JSONDecodeError as error:
@@ -103,7 +121,7 @@ def docker_json(*arguments: str) -> object:
 
 
 def inspect_state(kind: str, name: str) -> str:
-    code, output = bounded_result(("docker", kind, "inspect", name), timeout=10, limit=65536)
+    code, output = bounded_result((DOCKER, kind, "inspect", name), timeout=10, limit=65536)
     if code == 0:
         return "present"
     error = output.decode("utf-8", "replace")
@@ -189,13 +207,13 @@ def create_resources(password: str, owned: dict[str, bool]) -> None:
     owned["base"] = True
     owned["network_attempted"] = True
     try:
-        checked_capture(("docker", "network", "create", "--internal", "--label", f"holy127.operation={OP}", NETWORK))
+        checked_capture((DOCKER, "network", "create", "--internal", "--label", f"holy127.operation={OP}", NETWORK))
     finally:
         owned["network"] = reconcile_labeled("network", NETWORK)
     owned["container_attempted"] = True
     try:
         checked_capture((
-            "docker", "run", "-d", "--pull=never", "--name", CONTAINER,
+            DOCKER, "run", "-d", "--pull=never", "--name", CONTAINER,
             "--network", NETWORK, "--label", f"holy127.operation={OP}",
             "--read-only", "--log-driver=none",
             "--tmpfs", "/var/lib/postgresql:rw,size=128m",
@@ -231,14 +249,14 @@ def require_mounts_and_image(image_id: str) -> None:
 
 
 def sql(statement: str, *, database: str = "holy127_fixture", timeout: int = 30) -> str:
-    raw = checked_capture(("docker", "exec", CONTAINER, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "holy127", "-d", database, "-Atc", statement), timeout=timeout)
+    raw = checked_capture((DOCKER, "exec", CONTAINER, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "holy127", "-d", database, "-Atc", statement), timeout=timeout)
     return raw.decode("utf-8").strip()
 
 
 def wait_ready() -> None:
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
-        result = subprocess.run(("docker", "exec", CONTAINER, "pg_isready", "-U", "holy127", "-d", "holy127_fixture"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, check=False)
+        result = subprocess.run((DOCKER, "exec", CONTAINER, "pg_isready", "-U", "holy127", "-d", "holy127_fixture"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, check=False)
         if result.returncode == 0:
             return
         time.sleep(.25)
@@ -254,11 +272,11 @@ def seed() -> int:
 
 
 def producer(app_name: str) -> tuple[str, ...]:
-    return ("docker", "exec", "-e", "PGAPPNAME=" + app_name, CONTAINER, "pg_dump", "-U", "holy127", "-d", "holy127_fixture", "-Fc")
+    return (DOCKER, "exec", "-e", "PGAPPNAME=" + app_name, CONTAINER, "pg_dump", "-U", "holy127", "-d", "holy127_fixture", "-Fc")
 
 
 def verifier() -> tuple[str, ...]:
-    return ("docker", "exec", "-i", CONTAINER, "pg_restore", "--list")
+    return (DOCKER, "exec", "-i", CONTAINER, "pg_restore", "--list")
 
 
 def backend_count(app_name: str) -> int:
@@ -270,7 +288,7 @@ def terminate_backend(app_name: str) -> None:
 
 
 def lock_table() -> subprocess.Popen[bytes]:
-    command = ("docker", "exec", "-e", "PGAPPNAME=holy127-locker", CONTAINER, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "holy127", "-d", "holy127_fixture", "-Atc", "BEGIN; LOCK TABLE holy127_fixture IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(120)")
+    command = (DOCKER, "exec", "-e", "PGAPPNAME=holy127-locker", CONTAINER, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "holy127", "-d", "holy127_fixture", "-Atc", "BEGIN; LOCK TABLE holy127_fixture IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(120)")
     process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
@@ -297,18 +315,18 @@ def dump_is_waiting(app_name: str) -> bool:
 
 
 def host_command_count(app_name: str) -> int:
-    raw = checked_capture(("pgrep", "-f", "PGAPPNAME=" + app_name), timeout=5, limit=65536, allowed=(0, 1))
+    raw = checked_capture((PGREP, "-f", "PGAPPNAME=" + app_name), timeout=5, limit=65536, allowed=(0, 1))
     return len([line for line in raw.decode("ascii").splitlines() if line])
 
 
 def container_pg_dump_count() -> int:
-    raw = checked_capture(("docker", "top", CONTAINER, "-eo", "args"), timeout=10, limit=65536)
+    raw = checked_capture((DOCKER, "top", CONTAINER, "-eo", "args"), timeout=10, limit=65536)
     return sum(1 for line in raw.decode("utf-8", "replace").splitlines()[1:] if "pg_dump" in line)
 
 
 def resource_snapshot() -> dict[str, object]:
     inspected = docker_json("container", "inspect", "--size", CONTAINER)[0]
-    raw = checked_capture(("docker", "stats", "--no-stream", "--format", "{{json .}}", CONTAINER), timeout=10, limit=65536)
+    raw = checked_capture((DOCKER, "stats", "--no-stream", "--format", "{{json .}}", CONTAINER), timeout=10, limit=65536)
     try:
         stats = json.loads(raw)
     except json.JSONDecodeError as error:
@@ -403,12 +421,12 @@ def cleanup(owned: dict[str, bool], *, preserve_receipt: bool) -> None:
     failure: BaseException | None = None
     if owned["container"]:
         try:
-            subprocess.run(("docker", "container", "rm", "-f", CONTAINER), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
+            subprocess.run((DOCKER, "container", "rm", "-f", CONTAINER), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
         except BaseException as error:
             failure = error
     if owned["network"]:
         try:
-            subprocess.run(("docker", "network", "rm", NETWORK), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
+            subprocess.run((DOCKER, "network", "rm", NETWORK), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
         except BaseException as error:
             failure = error
     if owned["base"] and not preserve_receipt:
@@ -448,6 +466,7 @@ def write_receipt(data: dict[str, object]) -> None:
 def run() -> dict[str, object]:
     global TERMINATED
     TERMINATED = False
+    require_isolated_environment()
     if memory_available() < MEMORY_REQUIRED:
         raise QualificationFailure("available memory is below 384 MiB")
     before = live_ids()

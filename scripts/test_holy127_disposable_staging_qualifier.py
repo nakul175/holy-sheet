@@ -1,11 +1,13 @@
 import os
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parent))
 import holy127_disposable_staging_qualifier as q
@@ -35,6 +37,34 @@ class DisposableQualifierTest(unittest.TestCase):
             with self.subTest(field=field), patch.object(q, "docker_json", return_value=changed):
                 with self.assertRaises(q.QualificationFailure):
                     q.require_image()
+
+    def test_operator_environment_is_fixed_and_hostile_overrides_fail(self):
+        safe = {"PATH": q.FIXED_PATH, "DOCKER_HOST": q.DOCKER_SOCKET}
+        socket = SimpleNamespace(st_mode=stat.S_IFSOCK | 0o660, st_uid=0)
+        with patch.dict(q.os.environ, safe, clear=True), patch.object(q.os, "lstat", return_value=socket), patch.object(q, "checked_capture", return_value=b'"18"'):
+            q.require_isolated_environment()
+        hostile = (
+            {"PATH": "/tmp", "DOCKER_HOST": q.DOCKER_SOCKET},
+            {"PATH": q.FIXED_PATH, "DOCKER_HOST": "tcp://attacker"},
+            {"PATH": q.FIXED_PATH, "DOCKER_HOST": q.DOCKER_SOCKET, "DOCKER_CONTEXT": "remote"},
+            {"PATH": q.FIXED_PATH, "DOCKER_HOST": q.DOCKER_SOCKET, "PYTHONPATH": "/tmp"},
+        )
+        for environment in hostile:
+            with self.subTest(environment=environment), patch.dict(q.os.environ, environment, clear=True):
+                with self.assertRaises(q.QualificationFailure):
+                    q.require_isolated_environment()
+
+    def test_local_docker_socket_must_be_root_owned_socket_not_symlink(self):
+        safe = {"PATH": q.FIXED_PATH, "DOCKER_HOST": q.DOCKER_SOCKET}
+        unsafe = (
+            SimpleNamespace(st_mode=stat.S_IFREG | 0o660, st_uid=0),
+            SimpleNamespace(st_mode=stat.S_IFSOCK | 0o660, st_uid=501),
+            SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_uid=0),
+        )
+        for details in unsafe:
+            with patch.dict(q.os.environ, safe, clear=True), patch.object(q.os, "lstat", return_value=details):
+                with self.assertRaisesRegex(q.QualificationFailure, "socket identity"):
+                    q.require_isolated_environment()
 
     def test_container_contract_rejects_volume_or_bind_and_requires_all_tmpfs(self):
         item = {"Image": "sha256:x", "Mounts": [], "HostConfig": {"Tmpfs": {"/var/lib/postgresql": "rw,size=128m", "/tmp": "rw,size=32m", "/var/run/postgresql": "rw,size=16m"}}, "Config": {"Env": ["PGDATA=/var/lib/postgresql/18/docker"]}}
@@ -124,7 +154,7 @@ class DisposableQualifierTest(unittest.TestCase):
         fake = subprocess.CompletedProcess([], 0)
         with patch.object(q.subprocess, "run", side_effect=lambda command, **_: commands.append(command) or fake):
             q.cleanup({"base": False, "network": True, "container": False}, preserve_receipt=True)
-        self.assertEqual(commands, [("docker", "network", "rm", q.NETWORK)])
+        self.assertEqual(commands, [(q.DOCKER, "network", "rm", q.NETWORK)])
 
     def test_cleanup_attempts_network_after_container_timeout(self):
         commands = []
@@ -136,7 +166,7 @@ class DisposableQualifierTest(unittest.TestCase):
         with patch.object(q.subprocess, "run", side_effect=run):
             with self.assertRaisesRegex(q.QualificationFailure, "cleanup command failed"):
                 q.cleanup({"base": False, "network": True, "container": True}, preserve_receipt=True)
-        self.assertEqual(commands[-1], ("docker", "network", "rm", q.NETWORK))
+        self.assertEqual(commands[-1], (q.DOCKER, "network", "rm", q.NETWORK))
 
     def test_failed_cleanup_removes_only_known_operation_files(self):
         with tempfile.TemporaryDirectory() as folder:
