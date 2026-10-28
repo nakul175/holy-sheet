@@ -32,9 +32,10 @@ or historical actor attribution and demotes the previous Owner to Administrator.
 The Accounts integration adds a hash-pinned, read-only application-entitlement
 authority. With `HS_APP_AUTHORITY_ENABLED=1`, every authenticated Holy Sheet
 request verifies the current upstream session and current `holy-sheet`
-ApplicationAccess for the exact subject. Unknown, revoked, disabled or unavailable
-authority fails closed. The rollout gate stays off until the reviewed central
-adapter, Directory parity snapshot and revocation checks are installed.
+ApplicationAccess for the exact subject, including an active person and active
+organisation membership. Unknown, revoked, disabled or unavailable authority
+fails closed. Tenant/resource authority remains a separate HOLY-19 concern and
+is not a prerequisite for this application-level check.
 
 Focused regression tests cover private reads and edits, search discovery,
 backlinks, personal navigation, demotion, inactive membership, workspace
