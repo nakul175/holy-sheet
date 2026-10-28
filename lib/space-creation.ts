@@ -13,7 +13,7 @@ export async function createSpaceIntent(r:Repository,actor:Actor,name:string,wor
   const prior=await tx.query<{space_id:string|null;request_hash:string}>('SELECT space_id,request_hash FROM hs_space_creations WHERE actor_id=$1 AND operation_id=$2',[actor.id,operationId]);
   if(prior.rows.length){
    if(prior.rows[0].request_hash!==requestHash)throw new DocumentError('Creation attempt was reused with different fields','operation_mismatch',409);
-   const space=prior.rows[0].space_id&&(await bound.spaces(actor)).find(s=>s.id===prior.rows[0].space_id);
+   const space=prior.rows[0].space_id&&(await bound.spaces(actor)).find(s=>s.id===prior.rows[0].space_id&&s.workspaceId===workspaceId);
    if(!space)throw new DocumentError('Space unavailable','not_found',404);
    return space;
   }
