@@ -2,7 +2,7 @@ import type { Actor } from './auth';
 import type { Repository } from './repository';
 import type { Sql } from './database';
 import { DocumentError } from './document';
-export type NavigationEntry={id:string;title:string;workspaceId:string;workspaceName:string;spaceId:string;spaceName:string;parentTitle:string|null};
+export type NavigationEntry={id:string;title:string;workspaceId:string;workspaceName:string;spaceId:string;spaceName:string;ancestorTitles:string[]};
 export type PersonalNavigation={version:number;favourites:NavigationEntry[];recents:NavigationEntry[]};
 export type NavigationAction={action:'favourite';pageId:string;value:boolean;version:number}|{action:'opened';pageId:string}|{action:'clear';version:number}|{action:'reorder';pageId:string;beforeId:string|null;version:number};
 async function state(tx:Sql,actor:Actor){await tx.query('INSERT INTO hs_navigation_state(user_id) SELECT id FROM hs_users WHERE id=$1 ON CONFLICT DO NOTHING',[actor.id]);const {rows}=await tx.query<{version:number}>('SELECT version FROM hs_navigation_state WHERE user_id=$1 FOR UPDATE',[actor.id]);if(!rows.length)throw new DocumentError('Your HS account is unavailable','not_found',404);return rows[0].version;}
@@ -12,9 +12,15 @@ export async function personalNavigation(r:Repository,actor:Actor,workspaceId?:s
   SELECT p.id,p.workspace_id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
   WHERE p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
   UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN reachable a ON c.parent_id=a.id AND c.workspace_id=a.workspace_id WHERE c.deleted_at IS NULL
- ), permitted AS (SELECT DISTINCT id,workspace_id FROM reachable) SELECT p.id,p.title,p.workspace_id AS "workspaceId",w.name AS "workspaceName",p.space_id AS "spaceId",s.name AS "spaceName",parent.title AS "parentTitle"
+ ), permitted AS (SELECT DISTINCT id,workspace_id FROM reachable), permitted_paths(id,titles) AS (
+  SELECT p.id,ARRAY[]::text[] FROM hs_pages p JOIN permitted a ON a.id=p.id
+  WHERE p.parent_id IS NULL OR NOT EXISTS(SELECT 1 FROM permitted parent_access WHERE parent_access.id=p.parent_id)
+  UNION ALL
+  SELECT child.id,path.titles||parent.title FROM permitted_paths path JOIN hs_pages parent ON parent.id=path.id
+  JOIN hs_pages child ON child.parent_id=parent.id JOIN permitted child_access ON child_access.id=child.id
+ ) SELECT p.id,p.title,p.workspace_id AS "workspaceId",w.name AS "workspaceName",p.space_id AS "spaceId",s.name AS "spaceName",path.titles AS "ancestorTitles"
  FROM ${table} n JOIN permitted a ON a.id=n.page_id JOIN hs_pages p ON p.id=n.page_id JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
- LEFT JOIN hs_pages parent ON parent.id=p.parent_id AND parent.id IN (SELECT id FROM permitted)
+ JOIN permitted_paths path ON path.id=p.id
  WHERE n.user_id=$1 AND p.deleted_at IS NULL AND ($2::text IS NULL OR p.workspace_id=$2) ORDER BY ${order}`,[actor.id,workspaceId??null]);return rows;};
  // Read current page metadata only after access checks. No stale titles or activity are stored in these tables.
  return {version:version.rows[0]?.version??0,favourites:await read('hs_favourites','n.position,n.page_id'),recents:await read('hs_recents','n.opened_at DESC,n.page_id')};
