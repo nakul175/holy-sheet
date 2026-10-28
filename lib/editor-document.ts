@@ -1,4 +1,18 @@
-import { ensureIds,highlights,languages,palette,safeUrl,type RichNode } from "./document";
+import { ensureIds,highlights,languages,palette,safeUrl,stableStringify,type RichNode } from "./document";
+export function semanticRichDocument(document:RichNode):RichNode {
+  function walk(value:unknown,key=""):unknown {
+    if(Array.isArray(value)){
+      const items=value.map(item=>walk(item));
+      return key==="marks"?items.sort((a,b)=>stableStringify(a).localeCompare(stableStringify(b))):items;
+    }
+    if(value&&typeof value==="object")return Object.fromEntries(Object.entries(value).flatMap(([name,item])=>{
+      if(item===null||(name==="content"&&Array.isArray(item)&&item.length===0))return [];
+      return [[name,walk(item,name)]];
+    }));
+    return value;
+  }
+  return walk(document) as RichNode;
+}
 export function rgbToHex(value:string){const m=/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/.exec(value);return m?'#'+m.slice(1).map(v=>Number(v).toString(16).padStart(2,'0')).join(''):value.toLowerCase();}
 export function normalizeRichDocument(document:RichNode):RichNode {
   function walk(n:RichNode):RichNode {

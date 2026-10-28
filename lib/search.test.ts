@@ -5,6 +5,11 @@ import { parseQuery, searchPages } from "./search";
 const page = (overrides: Partial<Page>): Page => ({ id: "one", workspaceId: "w", workspaceName: "Work", spaceId: "s", spaceName: "Product", parentPageId: null, title: "Release plan", visibility: "private", version: 1, updatedAt: "2026-01-01T00:00:00Z", blocks: [{ id: "b", pageId: "one", parentBlockId: null, type: "paragraph", text: "Coordinate the SHO integration launch", position: 0 }], ...overrides });
 
 describe("searchPages", () => {
+  it('requires words across the combined title and body and rejects incomplete whole words',()=>{
+    expect(searchPages([page({title:'Launch',blocks:[{id:'x',pageId:'one',parentBlockId:null,type:'paragraph',text:'budget planning',position:0}]})],'launch budg')).toHaveLength(1);
+    expect(searchPages([page({title:'Launchpad budget',blocks:[]})],'launch budget')).toHaveLength(0);
+    expect(searchPages([page({title:'Launch',blocks:[{id:'x',pageId:'one',parentBlockId:null,type:'paragraph',text:'budget',position:0}]})],'"launch budget"')).toHaveLength(0);
+  });
   it("supports quoted phrases and final-word prefixes", () => {
     expect(parseQuery('"SHO integration" lau')).toEqual({ phrases: ["sho integration"], terms: ["lau"], prefix: "lau" });
     expect(searchPages([page({})], '"SHO integration" lau')).toHaveLength(1);

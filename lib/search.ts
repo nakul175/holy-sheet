@@ -5,14 +5,14 @@ export type ParsedQuery = { terms: string[]; phrases: string[]; prefix: string |
 export function parseQuery(input: string): ParsedQuery {
   const normalized = input.trim().toLocaleLowerCase();
   const phrases = [...normalized.matchAll(/"([^"]+)"/g)].map((match) => match[1].trim()).filter(Boolean);
-  const unquoted = normalized.replace(/"[^"]+"/g, " ").split(/\s+/).filter(Boolean);
+  const unquoted = normalized.replace(/"[^"]+"/g, " ").match(/[\p{L}\p{N}]+/gu) ?? [];
   const prefix = unquoted.length ? unquoted.at(-1)! : null;
   return { terms: unquoted, phrases, prefix };
 }
 
-function includesParsed(text: string, parsed: ParsedQuery) {
+export function includesParsed(text: string, parsed: ParsedQuery) {
   const value = text.toLocaleLowerCase();
-  if (!parsed.phrases.every((phrase) => value.includes(phrase))) return false;
+  if (!parsed.phrases.every((phrase) => new RegExp('(^|[^\\p{L}\\p{N}])'+phrase.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'([^\\p{L}\\p{N}]|$)','u').test(value))) return false;
   return parsed.terms.every((term, index) => {
     if (index === parsed.terms.length - 1 && parsed.prefix) {
       return value.split(/[^\p{L}\p{N}]+/u).some((word) => word.startsWith(term));
@@ -28,11 +28,10 @@ export function searchPages(pages: Page[], input: string, spaceId?: string | nul
     if (spaceId && page.spaceId !== spaceId) return [];
     const body = page.blocks.map((block) => block.text).join(" \n");
     const titleMatch = includesParsed(page.title, parsed);
-    const contentMatch = includesParsed(body, parsed);
-    if (!titleMatch && !contentMatch) return [];
+    if (!includesParsed(page.title + " \n" + body, parsed)) return [];
     const exact = page.title.toLocaleLowerCase() === input.trim().toLocaleLowerCase();
-    const previewSource = contentMatch ? body : page.blocks[0]?.text ?? "";
-    const needle = [...parsed.phrases, ...parsed.terms][0] ?? "";
+    const previewSource = !titleMatch ? body : page.blocks[0]?.text ?? "";
+    const needle = [...parsed.phrases, ...parsed.terms].find(term=>body.toLocaleLowerCase().includes(term)) ?? "";
     const at = previewSource.toLocaleLowerCase().indexOf(needle);
     const start = Math.max(0, at - 42);
     const preview = previewSource.slice(start, start + 150).trim();
@@ -47,6 +46,6 @@ export function searchPages(pages: Page[], input: string, spaceId?: string | nul
     } satisfies SearchResult];
   }).sort((a, b) => {
     const weights = { "title-exact": 0, title: 1, content: 2 };
-    return weights[a.match] - weights[b.match] || b.updatedAt.localeCompare(a.updatedAt);
+    return weights[a.match] - weights[b.match] || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id);
   });
 }

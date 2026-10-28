@@ -4,12 +4,13 @@ import type { DocumentPage } from "../../lib/repository";
 import { monitorAccess } from "../../lib/access-monitor";
 import { canEdit,type PageRole } from "../../lib/types";
 import { ensureIds, mergeDocuments, schemaVersion, stableStringify, type RichNode } from "../../lib/document";
+import { semanticRichDocument } from "../../lib/editor-document";
 import { decryptDraft, discardDraft, importDraftKey, recoveryDrafts, storeDraft, type DraftProtection, type RecoveryRecord } from "../../lib/recovery-client";
 
 export class ApiError extends Error { constructor(message:string,public status:number,public code:string,public retryAfter=0){super(message);} }
 export async function requestJson<T>(url:string,options?:RequestInit):Promise<T>{const r=await fetch(url,{cache:"no-store",...options});const data=await r.json();if(!r.ok)throw new ApiError(data.error??"Request failed",r.status,data.code,Number(r.headers.get("retry-after")??0));return data;}
 const post=(body:unknown):RequestInit=>({method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
-const signature=(title:string,document:RichNode)=>stableStringify([title,document]);
+const signature=(title:string,document:RichNode)=>stableStringify([title,semanticRichDocument(document)]);
 const editableDocument=(page:DocumentPage)=>canEdit(page.role)&&page.schemaVersion===schemaVersion;
 type SavePayload = {operationId:string;baseVersion:number;title:string;document:RichNode};
 export type SaveStatus="loading"|"saved"|"saving"|"unsaved"|"offline"|"error"|"conflict"|"readonly";
