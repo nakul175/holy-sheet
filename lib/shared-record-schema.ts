@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
+import {resolveRecordReferenceFields} from './record-reference-fields';
 import {DocumentError} from './document';
 import {SharedRecordRepository,type RecordContext} from './shared-records';
 import {recordHash,recordWhitespaceSql,typedRecordValue,type RecordField} from './shared-record-types';
@@ -10,7 +11,7 @@ const definition=z.object({
  label:z.string().trim().min(1).max(100).refine(v=>!/[\p{Cc}]/u.test(v)),
  kind:z.enum(['text','long-text','number','currency','date','boolean','single-select','multi-select','email','phone','url','attachment','record']),
  required:z.boolean().default(false),defaultValue:z.unknown().optional(),choices:z.array(z.string().trim().min(1).max(100).refine(v=>!/[\p{Cc}]/u.test(v))).max(100).default([]),
- sensitive:z.boolean().default(false),unique:z.boolean().default(false),deprecated:z.boolean().default(false),
+ referenceListId:uuid.optional(),sensitive:z.boolean().default(false),unique:z.boolean().default(false),deprecated:z.boolean().default(false),
 }).strict();
 const prepare=z.object({prepareId:uuid,collection:z.string().min(1).max(100),fieldKey:uuid.optional(),expectedSchemaVersion:z.number().int().positive(),definition}).strict();
 const apply=z.object({previewId:uuid,operationId:uuid,reviewHash:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
@@ -19,7 +20,19 @@ type Revisions={schema_version:number;policy_version:number;data_revision:string
 type Impact={recordCount:number;populatedCount:number;missingCount:number;duplicateValues:number;dependencies:{kind:string;label:string;version:number}[];blockers:string[];changes:string[];defaultBehavior:string};
 type Preview={id:string;tenant_id:string;actor_id:string;workspace_id:string;collection:string;field_key:string;proposed:RecordField;review_hash:string;schema_version:number;policy_version:number;data_revision:string|number;dependency_revision:string|number;authority_revision:string;before_schema:RecordField|null;impact:Impact;expires_at:string;request_hash:string};
 const fail=(message:string,code='record_schema_conflict',status=409)=>new DocumentError(message,code,status);
-export function makeRecordField(input:unknown,key:string,version=1):RecordField {const parsed=definition.safeParse(input);if(!parsed.success)throw fail('Review the custom-field definition.','record_schema_validation',400);const proposed:RecordField={...parsed.data,key,core:false,version};const select=['single-select','multi-select'].includes(proposed.kind);if(new Set(proposed.choices).size!==proposed.choices.length||(select?!proposed.choices.length:!!proposed.choices.length))throw fail('Use distinct choices for select fields only.','record_schema_validation',400);if(proposed.defaultValue!==undefined)proposed.defaultValue=typedRecordValue(proposed,proposed.defaultValue);if(['attachment','record'].includes(proposed.kind)&&proposed.defaultValue!==undefined&&proposed.defaultValue!==null)throw fail('Reference defaults require a qualified reference-policy adapter.','record_reference_unavailable',503);return proposed;}
+export function makeRecordField(input:unknown,key:string,version=1,reference?:RecordField['referenceList']):RecordField {
+ const parsed=definition.safeParse(input);if(!parsed.success)throw fail('Review the custom-field definition.','record_schema_validation',400);
+ const proposed:RecordField={...parsed.data,key,core:false,version};
+ const select=['single-select','multi-select'].includes(proposed.kind);
+ if(proposed.referenceListId){
+  if(!select||proposed.choices.length)throw fail('Bind reference lists to select fields without inline choices.','record_schema_validation',400);
+  if(!reference||reference.id!==proposed.referenceListId)throw fail('Resolve the current permitted reference list first.','record_reference_unavailable',503);
+  proposed.referenceList=reference;proposed.choices=reference.items.map(i=>i.id);
+ }else if(new Set(proposed.choices).size!==proposed.choices.length||(select?!proposed.choices.length:!!proposed.choices.length))throw fail('Use distinct choices for select fields only.','record_schema_validation',400);
+ if(proposed.defaultValue!==undefined)proposed.defaultValue=typedRecordValue(proposed,proposed.defaultValue);
+ if(['attachment','record'].includes(proposed.kind)&&proposed.defaultValue!==undefined&&proposed.defaultValue!==null)throw fail('Reference defaults require a qualified reference-policy adapter.','record_reference_unavailable',503);
+ return proposed;
+}
 export class SharedRecordSchemaRepository extends SharedRecordRepository {
  private async permission(tx:Sql,ctx:RecordContext,key:string,admin:boolean){
   if(!admin||!(await this.collectionCaps(tx,ctx,key)).includes('schema'))throw fail('Tenant administrator and schema permission are required.','record_schema_forbidden',403);
@@ -37,13 +50,16 @@ export class SharedRecordSchemaRepository extends SharedRecordRepository {
    const fields=await this.fields(tx,ctx,c.collection),before=c.fieldKey?fields.find(f=>f.key===c.fieldKey):undefined;
    if(c.fieldKey&&!before)throw fail('The custom field is unavailable.','schema_field_unavailable',404);
    if(!before&&fields.filter(f=>!f.core).length>=100)throw fail('A collection supports at most 100 custom fields.','schema_field_limit',400);
-   const proposed=makeRecordField(c.definition,before?.key??randomUUID(),(before?.version??0)+1);
+   const fieldKey=before?.key??randomUUID();
+   const reference=c.definition.referenceListId?(await resolveRecordReferenceFields(tx,ctx,[{...c.definition,key:fieldKey,core:false,version:1}]))[0].referenceList:undefined;
+   const proposed=makeRecordField(c.definition,fieldKey,(before?.version??0)+1,reference);
    const stats=(await tx.query<{total:string;populated:string;missing:string}>(`SELECT count(*)::text AS total,count(*) FILTER(WHERE field_values ? $3 AND field_values->$3 <> 'null'::jsonb AND field_values->$3 <> '""'::jsonb AND field_values->$3 <> '[]'::jsonb AND NOT(jsonb_typeof(field_values->$3)='string' AND btrim(field_values->>$3,${recordWhitespaceSql})=''))::text AS populated,count(*) FILTER(WHERE NOT(field_values ? $3) OR field_values->$3 = 'null'::jsonb OR field_values->$3 = '""'::jsonb OR field_values->$3 = '[]'::jsonb OR (jsonb_typeof(field_values->$3)='string' AND btrim(field_values->>$3,${recordWhitespaceSql})=''))::text AS missing FROM hs_data_records WHERE tenant_id=$1 AND collection=$2`,[ctx.tenantId,c.collection,proposed.key])).rows[0];
    const dependencies=before?(await tx.query<{kind:string;label:string;version:number}>('SELECT kind,label,version FROM hs_data_schema_dependencies WHERE tenant_id=$1 AND collection=$2 AND field_key=$3 AND active=true ORDER BY id LIMIT 201',[ctx.tenantId,c.collection,proposed.key])).rows:[];
    const impact:Impact={recordCount:Number(stats.total),populatedCount:Number(stats.populated),missingCount:Number(stats.missing),duplicateValues:0,dependencies:dependencies.slice(0,200),blockers:[],changes:[],defaultBehavior:'Defaults apply to future creates only. Existing records are not rewritten.'};
-   const properties=['label','kind','required','defaultValue','choices','sensitive','unique','deprecated'] as const;
+   const properties=['label','kind','required','defaultValue','choices','referenceListId','sensitive','unique','deprecated'] as const;
    for(const property of properties)if(!before||recordHash(before[property]??null)!==recordHash(proposed[property]??null))impact.changes.push(property);
-   const incompatible=!!before&&(before.kind!==proposed.kind||before.choices.some(v=>!proposed.choices.includes(v))||!before.deprecated&&proposed.deprecated||!before.required&&proposed.required||!before.unique&&proposed.unique);
+   const incompatible=!!before&&(before.referenceListId!==proposed.referenceListId||before.kind!==proposed.kind||before.choices.some(v=>!proposed.choices.includes(v))||!before.deprecated&&proposed.deprecated||!before.required&&proposed.required||!before.unique&&proposed.unique);
+   if(before&&before.referenceListId!==proposed.referenceListId&&impact.populatedCount)impact.blockers.push('Populated values require a separately reviewed reference-list conversion.');
    if(before?.sensitive&&!proposed.sensitive)impact.blockers.push('Sensitive classification cannot be lowered through this workflow.');
    if(before&&before.kind!==proposed.kind&&impact.populatedCount)impact.blockers.push('Populated values require a separately reviewed conversion.');
    if(before&&before.choices.some(v=>!proposed.choices.includes(v))&&impact.populatedCount)impact.blockers.push('Existing select values must be resolved before choices are removed.');
@@ -71,7 +87,8 @@ export class SharedRecordSchemaRepository extends SharedRecordRepository {
    if(p.review_hash!==c.reviewHash||p.authority_revision!==proof.revision||rev.schema_version!==p.schema_version||rev.policy_version!==p.policy_version||String(rev.data_revision)!==String(p.data_revision)||String(rev.dependency_revision)!==String(p.dependency_revision))throw fail('The reviewed schema, data, dependencies or authority changed. Prepare another preview.');
    if(p.impact.blockers.length)throw fail('Resolve the schema preview blockers before applying.','schema_change_blocked');
    const f=p.proposed;
-   await tx.query('INSERT INTO hs_data_fields(tenant_id,collection,field_key,label,kind,required,default_value,choices,sensitive,unique_value,deprecated,version,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(tenant_id,collection,field_key) DO UPDATE SET label=EXCLUDED.label,kind=EXCLUDED.kind,required=EXCLUDED.required,default_value=EXCLUDED.default_value,choices=EXCLUDED.choices,sensitive=EXCLUDED.sensitive,unique_value=EXCLUDED.unique_value,deprecated=EXCLUDED.deprecated,version=EXCLUDED.version',[ctx.tenantId,p.collection,f.key,f.label,f.kind,f.required,f.defaultValue===undefined?null:JSON.stringify(f.defaultValue),JSON.stringify(f.choices),f.sensitive,f.unique,f.deprecated,f.version,ctx.actor.id]);
+   if(f.referenceListId){const current=(await resolveRecordReferenceFields(tx,ctx,[f]))[0];if(recordHash(current.referenceList)!==recordHash(f.referenceList))throw fail('The reference list changed. Prepare another schema preview.');if(f.defaultValue!==undefined)typedRecordValue(current,f.defaultValue);}
+   await tx.query('INSERT INTO hs_data_fields(tenant_id,collection,field_key,label,kind,required,default_value,choices,sensitive,unique_value,deprecated,version,created_by,reference_list_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT(tenant_id,collection,field_key) DO UPDATE SET label=EXCLUDED.label,kind=EXCLUDED.kind,required=EXCLUDED.required,default_value=EXCLUDED.default_value,choices=EXCLUDED.choices,sensitive=EXCLUDED.sensitive,unique_value=EXCLUDED.unique_value,deprecated=EXCLUDED.deprecated,version=EXCLUDED.version,reference_list_id=EXCLUDED.reference_list_id',[ctx.tenantId,p.collection,f.key,f.label,f.kind,f.required,f.defaultValue===undefined?null:JSON.stringify(f.defaultValue),JSON.stringify(f.referenceListId?[]:f.choices),f.sensitive,f.unique,f.deprecated,f.version,ctx.actor.id,f.referenceListId??null]);
    if(f.unique!==!!p.before_schema?.unique){await tx.query('DELETE FROM hs_data_unique_values WHERE tenant_id=$1 AND collection=$2 AND field_key=$3',[ctx.tenantId,p.collection,f.key]);
    if(f.unique){const rows=await tx.query<{id:string;value:unknown}>(`SELECT id,field_values->$3 AS value FROM hs_data_records WHERE tenant_id=$1 AND collection=$2 AND state<>'trashed' AND merged_into_id IS NULL AND field_values ? $3 AND field_values->$3 <> 'null'::jsonb AND field_values->$3 <> '""'::jsonb AND field_values->$3 <> '[]'::jsonb AND NOT(jsonb_typeof(field_values->$3)='string' AND btrim(field_values->>$3,${recordWhitespaceSql})='')`,[ctx.tenantId,p.collection,f.key]);for(const r of rows.rows)await tx.query('INSERT INTO hs_data_unique_values(tenant_id,collection,field_key,value_hash,record_id) VALUES($1,$2,$3,$4,$5)',[ctx.tenantId,p.collection,f.key,recordHash(r.value),r.id]);}
    }
