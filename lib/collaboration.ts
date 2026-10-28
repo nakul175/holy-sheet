@@ -14,7 +14,7 @@ const digest=(value:unknown)=>createHash('sha256').update(stableStringify(value)
 const unavailable=()=>new DocumentError('The collaboration session changed. Reopen this page.','collaboration_stale',409);
 
 function identities(document:RichNode){return new Map(documentBlocks(document).map(block=>[block.id,block.type]));}
-function protectedAtoms(document:RichNode){return documentBlocks(document).filter(block=>['image','file','pageLink'].includes(block.type)).map(block=>stableStringify(block.node)).sort();}
+function protectedAtoms(document:RichNode){const schema=richSchema();return documentBlocks(document).filter(block=>['image','file','pageLink'].includes(block.type)).map(block=>stableStringify(schema.nodeFromJSON(block.node).toJSON())).sort();}
 async function reset(tx:Sql,pageId:string,documentVersion:number,document:RichNode){
  const epoch=randomUUID();
  await tx.query('DELETE FROM hs_collaboration_presence WHERE session_id IN (SELECT id FROM hs_collaboration_sessions WHERE page_id=$1)',[pageId]);
