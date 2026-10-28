@@ -36,7 +36,7 @@ export function compileRecordView(def:RecordViewDefinition,fields:RecordField[],
   }
   if(f.operator==='in'){
    if(!['single-select','text','email','phone','date'].includes(e.kind)||!Array.isArray(f.value)||!f.value.length||f.value.length>100)throw invalid();
-   const list=f.value.map(v=>base?typedRecordValue(base,v):typeof v==='string'&&v.length<=200?v:(()=>{throw invalid();})());predicates.push(`${e.sql}=ANY(${bind(list)}::text[])`);continue;
+   const list=f.value.map(v=>base?typedRecordValue(base,v,{historical:true}):typeof v==='string'&&v.length<=200?v:(()=>{throw invalid();})());predicates.push(`${e.sql}=ANY(${bind(list)}::text[])`);continue;
   }
   if(f.operator==='includes'){
    if(!base||!['multi-select','record','attachment'].includes(base.kind)||typeof f.value!=='string')throw invalid();
@@ -46,7 +46,7 @@ export function compileRecordView(def:RecordViewDefinition,fields:RecordField[],
   if(['currency','attachment','record','multi-select'].includes(e.kind))throw invalid();
   if((f.operator==='greater'||f.operator==='less')&&!['number','date'].includes(e.kind))throw invalid();
   if(f.value===null||f.value===undefined)throw invalid();
-  const value=base?typedRecordValue(base,f.value):typeof f.value==='string'&&f.value.length<=200?f.value:(()=>{throw invalid();})();
+  const value=base?typedRecordValue(base,f.value,{historical:true}):typeof f.value==='string'&&f.value.length<=200?f.value:(()=>{throw invalid();})();
   const op=f.operator==='equal'?'=':f.operator==='greater'?'>':'<';predicates.push(`${e.sql}${op}${bind(value)}::${e.cast}`);
  }
  const sort:SortExpression[]=[];
