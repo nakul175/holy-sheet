@@ -37,7 +37,7 @@ describe('personal code-block wrapping',()=>{
 
   it('clears choices when the page or actor scope changes',()=>{
     const {editor,host}=setup();host.querySelector<HTMLButtonElement>('[data-code-wrap-id="code-a"]')!.click();expect(codeWrappingKey.getState(editor.state)?.wrapped.has('code-a')).toBe(true);
-    resetCodeWrapping(editor,'actor-b:page-a');expect(codeWrappingKey.getState(editor.state)).toEqual({scope:'actor-b:page-a',wrapped:new Set()});expect(host.querySelector('pre[data-code-wrap=wrap]')).toBeNull();
+    resetCodeWrapping(editor,'actor-b:page-a');const state=codeWrappingKey.getState(editor.state)!;expect(state.scope).toBe('actor-b:page-a');expect(state.wrapped).toEqual(new Set());expect(host.querySelector('pre[data-code-wrap=wrap]')).toBeNull();
   });
 
   it('prunes deleted IDs and keeps the preference attached across reorder',()=>{
@@ -52,5 +52,20 @@ describe('personal code-block wrapping',()=>{
   it('does not add operations during rapid toggles or large plain-render fallback',()=>{
     const {editor,host}=setup(),before=editor.getJSON(),button=()=>host.querySelector<HTMLButtonElement>('[data-code-wrap-id="code-a"]')!;
     for(let index=0;index<50;index++)button().click();expect(editor.getJSON()).toEqual(before);expect(editor.can().undo()).toBe(false);expect(codeWrappingKey.getState(editor.state)?.wrapped.size).toBe(0);
+  });
+
+  it('caches decorations across selection-only work with 1,000 code blocks and invalidates only on document or wrap changes',()=>{
+    const host=document.createElement('div');document.body.append(host);
+    const content=Array.from({length:1_000},(_,index)=>({type:'codeBlock',attrs:{id:`code-${index}`,language:'plaintext'},content:[{type:'text',text:`const value${index} = "${'x'.repeat(80)}";`}]}));
+    const editor=new Editor({element:host,extensions:[StarterKit.configure({codeBlock:false,trailingNode:false}),LazyCodeBlock,UniqueID.configure({types:['codeBlock'],attributeName:'id'}),CodeWrapping.configure({scope:'actor:large-page'})],content:{type:'doc',content}});editors.push(editor);
+    const initial=codeWrappingKey.getState(editor.state)!;
+    const started=performance.now();
+    for(let index=0;index<100;index++)editor.commands.setTextSelection(index%2?1:2);
+    const selected=codeWrappingKey.getState(editor.state)!;
+    expect(selected).toBe(initial);expect(selected.decorations).toBe(initial.decorations);expect(performance.now()-started).toBeLessThan(1_000);
+    host.querySelector<HTMLButtonElement>('[data-code-wrap-id="code-500"]')!.click();
+    const toggled=codeWrappingKey.getState(editor.state)!;expect(toggled.decorations).not.toBe(initial.decorations);expect(toggled.wrapped.has('code-500')).toBe(true);
+    editor.commands.insertContentAt(2,'x');
+    expect(codeWrappingKey.getState(editor.state)!.decorations).not.toBe(toggled.decorations);
   });
 });

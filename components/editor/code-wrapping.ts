@@ -3,12 +3,12 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorState } from '@tiptap/pm/state';
 
-type WrapState={scope:string;wrapped:ReadonlySet<string>};
+type WrapState={scope:string;wrapped:ReadonlySet<string>;decorations:DecorationSet};
 type WrapMeta={type:'reset';scope:string}|{type:'toggle';scope:string;id:string};
 
 export const codeWrappingKey=new PluginKey<WrapState>('hs-code-wrapping');
 
-function decorations(editorState:EditorState,state:WrapState){
+function buildDecorations(editorState:EditorState,state:Pick<WrapState,'scope'|'wrapped'>){
   const result:Decoration[]=[];
   editorState.doc.descendants((node,pos)=>{
     if(node.type.name!=='codeBlock'||typeof node.attrs.id!=='string')return;
@@ -49,17 +49,21 @@ export const CodeWrapping=Extension.create<{scope:string}>({
     return [new Plugin<WrapState>({
       key:codeWrappingKey,
       state:{
-        init:()=>({scope:initialScope,wrapped:new Set()}),
-        apply(transaction,previous){
+        init:(_config,editorState)=>{const state={scope:initialScope,wrapped:new Set<string>()};return {...state,decorations:buildDecorations(editorState,state)};},
+        apply(transaction,previous,_oldState,editorState){
           const meta=transaction.getMeta(codeWrappingKey) as WrapMeta|undefined;
-          if(meta?.type==='reset')return meta.scope===previous.scope?previous:{scope:meta.scope,wrapped:new Set()};
-          const valid=new Set<string>();transaction.doc.descendants(node=>{if(node.type.name==='codeBlock'&&typeof node.attrs.id==='string')valid.add(node.attrs.id);});
-          const wrapped=new Set([...previous.wrapped].filter(id=>valid.has(id)));
+          if(!transaction.docChanged&&!meta)return previous;
+          if(meta?.type==='reset'&&meta.scope===previous.scope)return previous;
+          const scope=meta?.type==='reset'?meta.scope:previous.scope;
+          const valid=new Set<string>();
+          editorState.doc.descendants(node=>{if(node.type.name==='codeBlock'&&typeof node.attrs.id==='string')valid.add(node.attrs.id);});
+          const wrapped=meta?.type==='reset'?new Set<string>():new Set([...previous.wrapped].filter(id=>valid.has(id)));
           if(meta?.type==='toggle'&&meta.scope===previous.scope&&valid.has(meta.id)){wrapped.has(meta.id)?wrapped.delete(meta.id):wrapped.add(meta.id);}
-          return wrapped.size===previous.wrapped.size&&[...wrapped].every(id=>previous.wrapped.has(id))?previous:{...previous,wrapped};
+          const state={scope,wrapped};
+          return {...state,decorations:buildDecorations(editorState,state)};
         },
       },
-      props:{decorations(state){const current=codeWrappingKey.getState(state);return current?decorations(state,current):null;}},
+      props:{decorations(state){return codeWrappingKey.getState(state)?.decorations??null;}},
     })];
   },
 });
