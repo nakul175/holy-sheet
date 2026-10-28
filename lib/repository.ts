@@ -10,7 +10,7 @@ import { usableMedia } from './media-authorization';
 import { canEdit,type Page,type PageRole } from './types';
 import { validateNewPageReferences } from './page-references';
 
-type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
+type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
 export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole};
 export class Repository {
   constructor(public db:Database) {}
@@ -48,14 +48,14 @@ export class Repository {
     const p=await this.access(tx,id,actor);
     const {rows}=await tx.query<{node:RichNode}>("SELECT node FROM hs_blocks WHERE page_id=$1 AND parent_id IS NULL ORDER BY position",[id]);
     const document:RichNode={type:"doc",content:rows.map(r=>r.node)};
-    return {id:p.id,workspaceId:p.workspace_id,workspaceName:p.workspace_name,spaceId:p.space_id,spaceName:p.space_name,parentPageId:p.parent_id,parentTitle:p.parent_title,title:p.title,visibility:p.visibility,version:p.version,updatedAt:new Date(p.updated_at).toISOString(),schemaVersion:p.schema_version,role:p.role,document,blocks:(document.content ?? []).map((n,i)=>({id:String(n.attrs?.id),pageId:id,parentBlockId:null,type:n.type==="heading"?"heading":"paragraph",text:plainText(n),position:i}))};
+    return {id:p.id,workspaceId:p.workspace_id,workspaceName:p.workspace_name,spaceId:p.space_id,spaceName:p.space_name,parentPageId:p.parent_id,parentTitle:p.parent_title,title:p.title,visibility:p.visibility,position:p.position,version:p.version,updatedAt:new Date(p.updated_at).toISOString(),schemaVersion:p.schema_version,role:p.role,document,blocks:(document.content ?? []).map((n,i)=>({id:String(n.attrs?.id),pageId:id,parentBlockId:null,type:n.type==="heading"?"heading":"paragraph",text:plainText(n),position:i}))};
   }
   async list(actor:Actor) {
     const {rows}=await this.db.query<{id:string}>(`WITH RECURSIVE permitted AS (
       SELECT p.id,p.workspace_id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
       WHERE p.deleted_at IS NULL AND (m.role='admin' OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
       UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN permitted p ON c.parent_id=p.id AND c.workspace_id=p.workspace_id WHERE c.deleted_at IS NULL
-    ) SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.id ORDER BY p.updated_at DESC,p.id`,[actor.id]);
+    ) SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.id ORDER BY p.position,p.updated_at DESC,p.id`,[actor.id]);
     const pages=await Promise.all(rows.map(async row=>{try{return await this.get(row.id,actor);}catch(e){if(e instanceof DocumentError&&e.status===404)return null;throw e;}}));return pages.filter((p):p is DocumentPage=>p!==null);
   }
   async spaces(actor:Actor) {

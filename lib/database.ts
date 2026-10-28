@@ -20,7 +20,7 @@ export async function createDatabase(dataDir?: string): Promise<Database> {
     };
   }
   if (!dataDir && process.env.NODE_ENV === "production") throw new Error("DATABASE_URL is required in production");
-  const dir = dataDir ?? path.join(process.cwd(), ".holy-sheet/postgres");
+  const dir = dataDir ?? (process.env.NODE_ENV!=='production'&&process.env.HS_LOCAL_PREVIEW==='1'?process.env.HS_LOCAL_DATABASE_DIR:undefined) ?? path.join(process.cwd(), ".holy-sheet/postgres");
   if(dir!==":memory:") await mkdir(dir,{recursive:true});
   const local = new PGlite(dir === ":memory:" ? undefined : dir);
   await local.exec(migration);

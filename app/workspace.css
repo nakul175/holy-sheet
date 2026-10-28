@@ -68,8 +68,9 @@ body { font-family:var(--font-public-sans),system-ui,sans-serif; -webkit-font-sm
 .page-primary-actions .share-primary:hover { background:var(--navy-dark); }
 .page-tools { position:relative; }
 .page-tools summary { list-style:none; width:44px; padding:0; }
+.page-tools[open] { z-index:8; }
 .page-tools[open] summary { background:#e9ebf2; }
-.page-tools-menu { display:grid; position:absolute; z-index:5; right:0; top:50px; padding:7px; min-width:220px; border:1px solid var(--line); border-radius:11px; background:white; box-shadow:0 10px 32px #151b3226; }
+.page-tools-menu { display:grid; max-height:min(560px,calc(100dvh - 240px)); overflow-y:auto; overscroll-behavior:contain; position:absolute; z-index:5; right:0; top:50px; padding:7px; min-width:220px; border:1px solid var(--line); border-radius:11px; background:white; box-shadow:0 10px 32px #151b3226; }
 .page-tools-menu button { justify-content:flex-start; width:100%; text-align:left; font-size:13px; }
 .menu-label { display:block; padding:10px 11px 8px; color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
 .link-notice { margin:0 30px 12px; color:var(--navy); font-size:12px; }

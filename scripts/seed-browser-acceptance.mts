@@ -1,0 +1,4 @@
+// Disposable local browser database only. Never configures suite users or an external service.
+import {createDatabase} from '../lib/database';import {Repository} from '../lib/repository';import {localActor} from '../lib/auth';
+if(process.env.HS_ACCEPTANCE_SEED!=='1'||process.env.NODE_ENV==='production'||process.env.DATABASE_URL||process.env.HS_LOCAL_DATABASE_DIR!=='.holy-sheet/browser-acceptance')throw Error('Explicit isolated browser acceptance configuration required');
+const db=await createDatabase();try{await new Repository(db).seedLocal();await db.query("UPDATE hs_members SET role='admin' WHERE workspace_id='ws-aplyd' AND user_id=$1",[localActor.id]);console.log('Disposable synthetic local actor configured for browser workflow acceptance. No external identity or workspace access changed.');}finally{await db.close();}

@@ -102,6 +102,34 @@ describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
     finally{await db.query('UPDATE hs_members SET active=true WHERE user_id=$1',[localActor.id]);}
   });
 
+  it('filters twenty-item Trash pages literally and preserves scoped cursors across PostgreSQL restart',async()=>{
+    const {previewPageDeletion,deletePageTree,listTrash}=await import('./trash'),actor={id:crypto.randomUUID()},workspaceId=crypto.randomUUID(),spaceId=crypto.randomUUID(),query='PG Trash %_ '+crypto.randomUUID();
+    await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$2)',[workspaceId,'Isolated filtered Trash PG']);await db.query("INSERT INTO hs_members(workspace_id,user_id,role) VALUES($1,$2,'admin')",[workspaceId,actor.id]);await db.query('INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)',[spaceId,workspaceId,'Filtered Trash']);
+    for(let i=0;i<21;i++){const p=await r.create(actor,query+' '+i,spaceId),review=await previewPageDeletion(r,actor,workspaceId,p.id);await deletePageTree(r,actor,workspaceId,p.id,{operationId:crypto.randomUUID(),expectedTreeVersion:review.treeVersion,previewDigest:review.digest});}
+    const first=await listTrash(r,actor,workspaceId,undefined,query);expect(first.entries).toHaveLength(20);expect(first.nextCursor).toBeTruthy();await db.close();db=await createDatabase();r=new Repository(db);
+    const second=await listTrash(r,actor,workspaceId,first.nextCursor!,query);expect(second.entries).toHaveLength(1);expect(new Set([...first.entries,...second.entries].map(x=>x.rootId)).size).toBe(21);await expect(listTrash(r,actor,workspaceId,first.nextCursor!,query+' other')).rejects.toMatchObject({code:'trash_cursor_changed'});expect((await listTrash(r,actor,workspaceId,undefined,'%_ nonexistent')).entries).toEqual([]);
+  });
+  it('serializes recoverable deletion and competing recovery operations on PostgreSQL',async()=>{
+    const {previewPageDeletion,deletePageTree,previewTrashRestore,restoreTrashBatch}=await import('./trash');
+    const actor={id:crypto.randomUUID()},workspaceId=crypto.randomUUID(),spaceId=crypto.randomUUID();await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$2)',[workspaceId,'Isolated Trash PG']);await db.query("INSERT INTO hs_members(workspace_id,user_id,role) VALUES($1,$2,'admin')",[workspaceId,actor.id]);await db.query('INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)',[spaceId,workspaceId,'Trash']);
+    const p=await r.create(actor,'Root',spaceId),child=await r.create(actor,'Child',spaceId,p.id),review=await previewPageDeletion(r,actor,workspaceId,p.id),input={operationId:crypto.randomUUID(),expectedTreeVersion:review.treeVersion,previewDigest:review.digest};
+    const deletes=await Promise.all([1,2].map(()=>deletePageTree(r,actor,workspaceId,p.id,input)));expect(deletes[0].batchId).toBe(deletes[1].batchId);expect(deletes.filter(x=>x.replayed)).toHaveLength(1);
+    const batchId=String(deletes[0].batchId),destination={spaceId,parentId:null},preview=await previewTrashRestore(r,actor,workspaceId,batchId,destination),base={...destination,expectedTreeVersion:preview.treeVersion,previewDigest:preview.digest,reviewed:true};
+    const outcomes=await Promise.allSettled([1,2].map(()=>restoreTrashBatch(r,actor,workspaceId,batchId,{...base,operationId:crypto.randomUUID()})));expect(outcomes.filter(x=>x.status==='fulfilled')).toHaveLength(1);expect((await r.get(p.id,actor)).version).toBe(p.version);expect((await r.get(child.id,actor)).id).toBe(child.id);expect((await listTrashForTest()).entries).toHaveLength(0);
+    async function listTrashForTest(){const {listTrash}=await import('./trash');return listTrash(r,actor,workspaceId);}
+  });
+
+  it('serializes concurrent reviewed page moves without overwriting a later tree',async()=>{
+    const {previewPageLocation,movePageTree}=await import('./page-organisation');
+    const actor={id:crypto.randomUUID()},workspace=crypto.randomUUID(),space=crypto.randomUUID();
+    await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[actor.id]);await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$2)',[workspace,'Isolated page moves']);await db.query("INSERT INTO hs_members(workspace_id,user_id,role) VALUES($1,$2,'admin')",[workspace,actor.id]);await db.query('INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)',[space,workspace,'Moves']);
+    const page=await r.create(actor,'Moving root',space),a=await r.create(actor,'Parent A',space),b=await r.create(actor,'Parent B',space);
+    const inputs=await Promise.all([a,b].map(async parent=>{const input={spaceId:space,parentId:parent.id,index:0},p=await previewPageLocation(r,actor,page.id,input);return {...input,operationId:crypto.randomUUID(),expectedTreeVersion:p.treeVersion,previewDigest:p.digest,confirmExpanded:true};}));
+    const results=await Promise.allSettled(inputs.map(input=>movePageTree(r,actor,page.id,input)));
+    expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);const failure=results.find(x=>x.status==='rejected') as PromiseRejectedResult;expect(failure.reason).toMatchObject({code:'move_conflict'});
+    const first=results.findIndex(x=>x.status==='fulfilled');expect((await r.get(page.id,actor)).parentPageId).toBe(inputs[first].parentId);expect((await movePageTree(r,actor,page.id,inputs[first])).replayed).toBe(true);
+  });
+
   it('serializes concurrent last-admin changes and stale native access previews',async()=>{
     const {previewMemberChange,changeWorkspaceMember}=await import('./workspace-administration');
     const workspaceId=crypto.randomUUID(),a={id:crypto.randomUUID()},b={id:crypto.randomUUID()};
