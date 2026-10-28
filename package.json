@@ -9,12 +9,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build:editor": "node scripts/build-editor-package.mjs",
-    "pretest": "npm run build:editor && npm run build:import && npm run build:export && npm run build:record-import",
-    "pretypecheck": "npm run build:editor && npm run build:import && npm run build:export && npm run build:record-import",
-    "prebuild": "npm run build:editor && npm run build:import && npm run build:export && npm run build:record-import",
+    "pretest": "npm run build:editor && npm run build:import && npm run build:export && npm run build:record-import && npm run build:record-export",
+    "pretypecheck": "npm run build:editor && npm run build:import && npm run build:export && npm run build:record-import && npm run build:record-export",
+    "prebuild": "npm run build:editor && npm run build:import && npm run build:export && npm run build:record-import && npm run build:record-export",
     "build:import": "node scripts/build-import-worker.mjs",
     "build:export": "node scripts/build-export-worker.mjs",
-    "build:record-import": "node scripts/build-record-import-worker.mjs"
+    "build:record-import": "node scripts/build-record-import-worker.mjs",
+    "build:record-export": "node scripts/build-record-export-worker.mjs"
   },
   "dependencies": {
     "@aplyd/holy-sheet-editor": "file:packages/editor",
@@ -49,7 +50,8 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "yauzl": "3.4.0",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "jszip": "3.10.2"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
@@ -65,7 +67,6 @@
     "@types/yauzl": "3.4.0",
     "esbuild": "0.28.2",
     "fake-indexeddb": "6.2.6",
-    "jszip": "3.10.2",
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.5"
