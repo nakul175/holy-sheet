@@ -42,8 +42,8 @@
     {"source": "scripts/test_holy127_backup_orchestrator.py", "sha256": "8e56992b0d2f71292b3295f592f7a03766e374b9f659239abf8c8c9b73906724"},
     {"source": "scripts/test_holy127_bounded_stream.py", "sha256": "d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44"},
     {"source": "scripts/test_hs_release_guard.py", "sha256": "6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40"},
-    {"source": "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md", "sha256": "0e4ba90764e539608d0aa54094164e0dd1034a37f999067c8feb07619f1b77d8"},
-    {"source": "deployment/HOLY-127-RELEASE-PACKET.md", "sha256": "754f8997696d270890c4ac6aacba4e3ffab272fe51a1f8b3568e60c9a6c61517"}
+    {"source": "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md", "sha256": "2286b1e4d04e69553bdeaefc84b3563ce591b970aa33b0bce545ccd1c726dc5f"},
+    {"source": "deployment/HOLY-127-RELEASE-PACKET.md", "sha256": "62f7e290a0ddab55772988e83ff8f437e53f99bd7b956a6697b4bfd62b46920f"}
   ],
   "rootOwnedEntrypoints": [
     {
@@ -92,8 +92,8 @@
   "operatorAccount": "deploy",
   "sudoPolicy": "Permit only the three exact no-argument installed entrypoints above; do not permit shells, Python, Docker, cat, rm, arbitrary paths or arguments.",
   "installationMechanism": {
-    "source": "scripts/holy127_qualifier_installer.sh",
-    "sha256": "5a557f792d30d7ebf14eb0744bfd67da4d2ee5be22774d5ba9da6da383684c23",
+    "source": "scripts/holy127_qualifier_installer.py",
+    "sha256": "80c946e60a18fcabe35e5f23c64a097a685187de90817cefb1cf313505f77227",
     "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-install",
     "allowedInvocation": "/usr/local/sbin/holy127-q-f4f5a94-install",
     "operatorOnly": true,

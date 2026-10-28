@@ -57,7 +57,7 @@ Pass requires baseline success, timeout cancellation success, SIGTERM cancellati
 
 ## Fixed installation mechanism
 
-The review candidate `scripts/holy127_qualifier_installer.sh` is a root-executed, no-argument installer only; it never runs the qualifier. It accepts payloads solely from the fixed root-owned staging tree `/var/tmp/holy127-installer-rootpath-v2/source`, verifies all fourteen hashes in `HOLY-127-QUALIFIER-INSTALL-MANIFEST.json` before mutation, and refuses symlinked, non-root-owned or group/other-writable inputs.
+The review candidate `scripts/holy127_qualifier_installer.py` is a root-executed, no-argument installer only; it never runs the qualifier. It accepts payloads solely from the fixed root-owned staging tree `/var/tmp/holy127-installer-rootpath-v2/source`, verifies all fourteen hashes in `HOLY-127-QUALIFIER-INSTALL-MANIFEST.json` before mutation, and refuses symlinked, non-root-owned or group/other-writable inputs.
 
 The refrozen qualifier bundle lives at `/opt/holy-sheet-qualification/holy127-4c1fdbda6becaf76`, outside the `hs-staging`-owned live application tree. The installer creates only the separate root-owned `/opt/holy-sheet-qualification` directory when absent and refuses an existing unsafe or incompatible directory. It never changes ownership or permissions under `/opt/holy-sheet-staging`.
 
