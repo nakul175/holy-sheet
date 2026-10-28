@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "helperSourceCommit": "8ddbe5c34b91eac0553f55608e7820544e553e26",
-  "helperSourceTree": "61c7d2190792fb60aa0a73e88b9cc89f9bac7bc0",
+  "helperSourceCommit": "a45cbac1fad037dfde12e266e6c50e05ccb885ed",
+  "helperSourceTree": "a4d7d3b1c70561c348220a6cc96df90814d41f5a",
   "qualifiedApplicationSource": "f4f5a94fb16380021b501ab1da85e888994c0172",
   "bundleDirectory": {
     "path": "/opt/holy-sheet-staging/qualification/holy127-4c1fdbda6becaf76",
@@ -38,7 +38,7 @@
   "reviewOnlyFiles": [
     {"source": "scripts/holy127_bounded_stream.py", "sha256": "8c874d97c9f6e86be0581ed82c4fff5ab1e539bf57b562c598c5c846040077e2"},
     {"source": "scripts/test_holy127_disposable_staging_qualifier.py", "sha256": "a93f11d5d7455bc812a292ee41f135f0dbe6e42fb704d16b79714fe27492ac01"},
-    {"source": "scripts/test_holy127_qualifier_entrypoints.py", "sha256": "5f7b05c6c5f8c4d5787427319b887c0d1fb6c578726c21decc6d0314555c3a37"},
+    {"source": "scripts/test_holy127_qualifier_entrypoints.py", "sha256": "f79b0d63d68485f6ada9624ada335f9f45ff4e529abde8a42a7bef0a1f06d6ff"},
     {"source": "scripts/test_holy127_backup_orchestrator.py", "sha256": "8e56992b0d2f71292b3295f592f7a03766e374b9f659239abf8c8c9b73906724"},
     {"source": "scripts/test_holy127_bounded_stream.py", "sha256": "d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44"},
     {"source": "scripts/test_hs_release_guard.py", "sha256": "6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40"},
@@ -49,7 +49,7 @@
     {
       "source": "scripts/holy127_qualifier_entrypoint.sh",
       "installedPath": "/usr/local/sbin/holy127-q-f4f5a94",
-      "sha256": "ebf8bb4e62d253fcf468bd2462d8f093d2849c727d15604e01434df9bc2c1292",
+      "sha256": "8c73d07469593956f5af8e6a9e9d43a524df52bb8790fe93233443173baad975",
       "owner": 0,
       "group": 0,
       "mode": "0555",
@@ -58,7 +58,7 @@
     {
       "source": "scripts/holy127_qualifier_receipt_collect.sh",
       "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-receipt",
-      "sha256": "7188d9926c868dfcc37999359ff5b453805470e08281ab7076accbffdcf34dc9",
+      "sha256": "64b4f1311029bb64b265824c40a541c806ae3955bfe0b1558eff4e7dd6a8b695",
       "owner": 0,
       "group": 0,
       "mode": "0555",
@@ -67,7 +67,7 @@
     {
       "source": "scripts/holy127_qualifier_receipt_cleanup.sh",
       "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-cleanup",
-      "sha256": "01ae09806b51085624b48f70b65bf4dccc3aec6dc1759d572ffb6973d9131969",
+      "sha256": "349297d0f11330568dffaf8c3486ff4e21af962237ba982324020ac76646910a",
       "owner": 0,
       "group": 0,
       "mode": "0555",
