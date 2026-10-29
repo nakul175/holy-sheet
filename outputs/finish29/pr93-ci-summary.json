@@ -1,0 +1,9 @@
+{
+  "total": 989,
+  "passed": 983,
+  "skipped": 6,
+  "targets": [
+    "obtains authority only from a verified token/current source session and never adds a UID to public Actor",
+    "feeds current proofs into actual native record transactions and rolls back a mutation if the final revision changes"
+  ]
+}

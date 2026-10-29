@@ -1,0 +1,12 @@
+import {z} from 'zod';
+import {readJson,sameOrigin} from '../../../../../../../../lib/auth';
+import {DocumentError} from '../../../../../../../../lib/document';
+import {repository} from '../../../../../../../../lib/repository';
+import {authenticateRecordAuthority} from '../../../../../../../../lib/suite-tenant-authority';
+import {SharedRecordCollectionRepository} from '../../../../../../../../lib/shared-record-collections';
+const id=z.string().uuid();
+const proposal=z.object({id, name:z.string().min(1).max(100), description:z.string().max(2000).default(''), ownerId:z.string().min(1).max(200), expectedVersion:z.number().int().nonnegative(), expectedSchemaVersion:z.number().int().positive(), deprecated:z.boolean().default(false), initialFields:z.array(z.object({key:id,definition:z.unknown()}).strict()).max(100).default([])}).strict();
+const command=z.discriminatedUnion('kind',[z.object({kind:z.literal('preview'),proposal}).strict(),z.object({kind:z.literal('apply'),previewId:id,reviewHash:z.string().regex(/^[a-f0-9]{64}$/),operationId:id,confirm:z.literal('save-custom-collection'),proposal}).strict()]);
+export async function GET(request:Request,{params}:{params:Promise<{id:string;tenantId:string}>}){try{const {id:workspaceId,tenantId}=await params;const {actor,authority}=await authenticateRecordAuthority(request);const repo=new SharedRecordCollectionRepository(await repository(),authority);return Response.json(await repo.listCollections({actor,workspaceId,tenantId}));}catch(e){return error(e);}}
+export async function POST(request:Request,{params}:{params:Promise<{id:string;tenantId:string}>}){try{sameOrigin(request);const {id:workspaceId,tenantId}=await params;const {actor,authority}=await authenticateRecordAuthority(request);const parsed=command.safeParse(await readJson(request,128_000));if(!parsed.success)throw new DocumentError('Invalid collection request.','record_collection_validation',400);const repo=new SharedRecordCollectionRepository(await repository(),authority);const ctx={actor,workspaceId,tenantId};const data=parsed.data;return Response.json(data.kind==='preview'?await repo.previewCollection(ctx,data.proposal):await repo.applyCollection(ctx,data));}catch(e){return error(e);}}
+function error(e:unknown){if(e instanceof DocumentError)return Response.json({error:e.message,code:e.code,retryable:e.status>=500},{status:e.status,headers:{'Cache-Control':'no-store'}});return Response.json({error:'Service temporarily unavailable',code:'service_unavailable',retryable:true},{status:503});}
