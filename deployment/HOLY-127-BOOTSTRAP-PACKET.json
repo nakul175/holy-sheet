@@ -4,7 +4,7 @@
   "packetSourceCommit": "d140c7f951fc1412a5fe3deb3f67727b85b100a2",
   "bootstrap": {
     "source": "scripts/holy127_qualifier_bootstrap.py",
-    "sha256": "2e4e5f2d51b33168e62c0033408f801e43597b23e02d109e2e24b91d748f3697",
+    "sha256": "3dc8e484e8f579e976ebb8d9619843bb468947a02973f266fca2bb859a0860d8",
     "transferDestination": "/root/holy127-transfer-inbox/holy127-bootstrap-d140c7f.py",
     "owner": 0,
     "group": 0,

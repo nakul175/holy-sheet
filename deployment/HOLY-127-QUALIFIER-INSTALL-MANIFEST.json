@@ -119,7 +119,7 @@
   "bootstrapPacket": {
     "manifest": "deployment/HOLY-127-BOOTSTRAP-PACKET.json",
     "script": "scripts/holy127_qualifier_bootstrap.py",
-    "scriptSha256": "2e4e5f2d51b33168e62c0033408f801e43597b23e02d109e2e24b91d748f3697",
+    "scriptSha256": "3dc8e484e8f579e976ebb8d9619843bb468947a02973f266fca2bb859a0860d8",
     "payload": "deployment/HOLY-127-BOOTSTRAP-PAYLOAD-d140c7f.tar",
     "payloadSha256": "aad7fbc7d4b44944029536c7fb49a53a0bd70839cd8dfe977c47739c5edb1f45",
     "payloadSizeBytes": 143360,

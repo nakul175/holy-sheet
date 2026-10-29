@@ -144,6 +144,38 @@ class BootstrapTest(unittest.TestCase):
             process.wait(timeout=5); self.assertEqual(process.returncode, 128 + signal.SIGTERM)
             with self.assertRaises(ProcessLookupError): os.kill(child_pid, 0)
 
+    def test_exited_leader_does_not_hide_surviving_descendant(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            status = pathlib.Path(temporary) / "status"
+            process = subprocess.Popen([sys.executable, "-c", "import pathlib,subprocess; p=subprocess.Popen(['/bin/sleep','30']); pathlib.Path(" + repr(str(status)) + ").write_text(str(p.pid))"], start_new_session=True)
+            process.wait(timeout=5); self.assertEqual(process.returncode, 0)
+            child_pid = int(status.read_text()); os.kill(child_pid, 0)
+            subject = mod.Bootstrap(mod.Config(stop_timeout=.3, expected_uid=os.getuid(), expected_gid=os.getgid()))
+            self.assertTrue(subject.stop_process_group(process))
+            with self.assertRaises(ProcessLookupError): os.kill(child_pid, 0)
+
+    def test_leader_exits_first_on_term_but_ignoring_descendant_is_killed(self):
+        runner = textwrap.dedent(f"""
+            import importlib.util,pathlib,signal,sys
+            spec=importlib.util.spec_from_file_location('boot',{str(BOOTSTRAP_PATH)!r});m=importlib.util.module_from_spec(spec);sys.modules[spec.name]=m;spec.loader.exec_module(m)
+            def interrupted(signum,frame): raise m.BootstrapInterrupted(signum)
+            for signum in m.CAUGHT_SIGNALS: signal.signal(signum,interrupted)
+            b=m.Bootstrap(m.Config(installer=pathlib.Path(sys.argv[1]),invoke_timeout=30,stop_timeout=.3,expected_uid=0,expected_gid=0))
+            try:b.invoke_installer()
+            except m.BootstrapInterrupted as e: raise SystemExit(128+e.signum)
+        """)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary); status = root / "status"; installer = root / "installer.py"
+            installer.write_text("import pathlib,subprocess,time\np=subprocess.Popen(['/bin/sh','-c','trap \"\" TERM; sleep 30'])\npathlib.Path(" + repr(str(status)) + ").write_text(str(p.pid))\ntime.sleep(30)\n")
+            process = subprocess.Popen([sys.executable, "-c", runner, str(installer)])
+            for _ in range(100):
+                if status.exists(): break
+                time.sleep(0.02)
+            self.assertTrue(status.exists()); child_pid = int(status.read_text())
+            process.send_signal(signal.SIGTERM); process.wait(timeout=5)
+            self.assertEqual(process.returncode, 128 + signal.SIGTERM)
+            with self.assertRaises(ProcessLookupError): os.kill(child_pid, 0)
+
     def test_successful_child_marks_outputs_committed(self):
         with tempfile.TemporaryDirectory() as temporary:
             installer = pathlib.Path(temporary) / "installer.py"; installer.write_text("raise SystemExit(0)\n")

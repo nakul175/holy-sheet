@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -188,27 +189,58 @@ class Bootstrap:
         )
         try:
             return_code = process.wait(timeout=self.config.invoke_timeout)
-            with blocked_signals():
-                if return_code == 0: self.installer_succeeded = True
         except BaseException:
             with blocked_signals():
-                if process.poll() == 0:
-                    self.installer_succeeded = True
-                else:
-                    self.stop_process_group(process)
+                group_was_alive = self.stop_process_group(process)
+                if process.poll() == 0 and not group_was_alive: self.installer_succeeded = True
             raise
+        group_was_alive = self.stop_process_group(process)
         if return_code != 0:
             raise BootstrapFailure(f"installer exited {return_code}")
-
-    def stop_process_group(self, process: subprocess.Popen) -> None:
+        if group_was_alive:
+            raise BootstrapFailure("installer leader exited with a surviving process group")
         with blocked_signals():
-            if process.poll() is None:
-                os.killpg(process.pid, signal.SIGTERM)
+            self.installer_succeeded = True
+
+    def stop_process_group(self, process: subprocess.Popen) -> bool:
+        with blocked_signals():
+            leader_was_running = process.poll() is None
+            if leader_was_running:
+                group_was_alive = True
+            else:
                 try:
-                    process.wait(timeout=self.config.stop_timeout)
-                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, 0)
+                    group_was_alive = True
+                except (ProcessLookupError, PermissionError):
+                    group_was_alive = False
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+            if leader_was_running:
+                try: process.wait(timeout=self.config.stop_timeout)
+                except subprocess.TimeoutExpired: pass
+            deadline = time.monotonic() + self.config.stop_timeout
+            group_remains = False
+            while time.monotonic() < deadline:
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    break
+                except PermissionError:
+                    break
+                group_remains = True
+                time.sleep(0.02)
+            if group_remains:
+                try:
                     os.killpg(process.pid, signal.SIGKILL)
-                    process.wait()
+                except (ProcessLookupError, PermissionError):
+                    pass
+            if process.poll() is None:
+                try: process.wait(timeout=self.config.stop_timeout)
+                except subprocess.TimeoutExpired:
+                    process.kill(); process.wait()
+            return group_was_alive
 
     def run(self) -> None:
         self.verify_transfer()
