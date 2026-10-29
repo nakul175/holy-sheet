@@ -22,6 +22,9 @@ test('owner inspects, copies and opens an exact formatted destination without do
   const data=await fixture(request),operations:unknown[]=[],external:unknown[]=[];
   await context.grantPermissions(['clipboard-read','clipboard-write'],{origin});
   await page.addInitScript(()=>{(window as unknown as {opened:unknown[]}).opened=[];window.open=((url?:string|URL,target?:string,features?:string)=>{(window as unknown as {opened:unknown[]}).opened.push([String(url),target,features]);return {opener:{}} as Window;}) as typeof window.open;});
+  await page.route('**/document',async route=>{const response=await route.fetch(),body=await response.json(),document=body.page.document;await route.fulfill({response,json:{...body,page:{...body.page,document:{...document,content:[...document.content.slice(0,2),{type:'file',attrs:{id:crypto.randomUUID(),attachmentId:'holy137-download',title:'HOLY-137 attachment'}},...document.content.slice(2)]}}}});});
+  await page.route('**/api/media/holy137-download/metadata',route=>route.fulfill({json:{name:'HOLY-137 attachment',size:10,mime:'text/plain'}}));
+  await page.route('**/api/media/holy137-download',route=>route.fulfill({status:200,headers:{'Content-Type':'text/plain','Content-Disposition':'attachment; filename="holy137.txt"'},body:'attachment'}));
   await page.route(`**/api/v1/pages/${data.page.id}/operations`,async route=>{operations.push(route.request().postDataJSON());await route.continue();});
   page.on('request',request=>{if(request.url().startsWith('https://example.test/'))external.push(request.url());});
   await page.goto('/pages/'+data.page.id);await ready(page);const before=await editorState(page),anchor=page.getByRole('link',{name:'Formatted <inspect> مرحبا 世界',exact:true});
@@ -30,6 +33,11 @@ test('owner inspects, copies and opens an exact formatted destination without do
   await dialog.getByRole('button',{name:'Open',exact:true}).click();await expect(dialog.getByRole('status')).toHaveText('Destination opened.');expect(await page.evaluate(()=>(window as unknown as {opened:unknown[]}).opened)).toEqual([[href,'_blank','noopener,noreferrer']]);expect(external).toEqual([]);
   await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(anchor).toBeFocused();expect(await editorState(page)).toEqual(before);
   await anchor.focus();await anchor.press('Enter');await expect(dialog).toBeVisible();await dialog.getByRole('button',{name:'Close dialog'}).click();await expect(anchor).toBeFocused();
+  const preserved=await anchor.evaluate(async element=>{
+    const activate=(init:MouseEventInit)=>new Promise<boolean>(resolve=>{let seen=false;const observe=(event:Event)=>{seen=true;const prevented=event.defaultPrevented;event.preventDefault();resolve(!prevented);};element.addEventListener('click',observe,{once:true});element.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,...init}));setTimeout(()=>{if(!seen)resolve(false);},20);});
+    return Promise.all([{ctrlKey:true},{metaKey:true},{shiftKey:true},{altKey:true},{button:1}].map(activate));
+  });expect(preserved).toEqual([true,true,true,true,true]);await expect(dialog).toHaveCount(0);
+  const received=page.waitForEvent('download');await page.getByRole('link',{name:'HOLY-137 attachment'}).click();expect((await received).suggestedFilename()).not.toBe('');await expect(dialog).toHaveCount(0);
   await page.locator('.reference-block a').first().click();await expect(page).toHaveURL('/pages/'+data.target.id);await expect(page.getByRole('dialog',{name:'Inspect link'})).toHaveCount(0);
   expect(operations).toEqual([]);const after=(await(await request.get(`/api/v1/pages/${data.page.id}/document`)).json()).page;expect(after.version).toBe(data.page.version);expect(after.document).toEqual(data.page.document);
 });

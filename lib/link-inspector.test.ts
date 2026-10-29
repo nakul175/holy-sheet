@@ -4,10 +4,10 @@ import { inspectedTextLink,openInspectedLink } from '../components/editor/link-i
 
 describe('document hyperlink inspector helpers',()=>{
   it('resolves only text anchors and preserves their literal destination',()=>{
-    document.body.innerHTML='<p><a href="https://example.test/😀?x=%3Ctag%3E"><strong>HTML-like</strong></a></p><div data-hs-reference><a href="/pages/page-a">Page</a></div><div class="reference-block"><a href="/pages/page-b">Existing page block</a></div>';
-    const text=document.querySelector('strong')!,reference=document.querySelector('[data-hs-reference] a')!,existingReference=document.querySelector('.reference-block a')!;
+    document.body.innerHTML='<div class="rich-prose"><p><a href="https://example.test/😀?x=%3Ctag%3E"><strong>HTML-like</strong></a></p><div data-hs-reference><a href="/pages/page-a">Page</a></div><div class="reference-block"><a href="/pages/page-b">Existing page block</a></div><div class="file-block"><a href="/api/media/file-a" download>File</a></div><nav class="contents-block"><a href="#heading-a">Heading</a></nav></div>';
+    const text=document.querySelector('strong')!,reference=document.querySelector('[data-hs-reference] a')!,existingReference=document.querySelector('.reference-block a')!,file=document.querySelector('.file-block a')!,contents=document.querySelector('.contents-block a')!;
     expect(inspectedTextLink(text)?.href).toBe('https://example.test/😀?x=%3Ctag%3E');
-    expect(inspectedTextLink(reference)).toBeNull();expect(inspectedTextLink(existingReference)).toBeNull();expect(inspectedTextLink(document.body)).toBeNull();
+    expect(inspectedTextLink(reference)).toBeNull();expect(inspectedTextLink(existingReference)).toBeNull();expect(inspectedTextLink(file)).toBeNull();expect(inspectedTextLink(contents)).toBeNull();expect(inspectedTextLink(document.body)).toBeNull();
   });
 
   it('revalidates every open and isolates browsing contexts without fetching',()=>{

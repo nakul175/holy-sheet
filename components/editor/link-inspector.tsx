@@ -10,7 +10,8 @@ export type InspectedLink={anchor:HTMLAnchorElement;href:string};
 export function inspectedTextLink(target:EventTarget|null){
   if(!(target instanceof Element))return null;
   const anchor=target.closest<HTMLAnchorElement>('a[href]');
-  if(!anchor||anchor.closest('[data-hs-reference],.reference-block'))return null;
+  const textBlock=anchor?.closest('p,h1,h2,h3,h4,h5,h6');
+  if(!anchor||!textBlock||!anchor.closest('.rich-prose')||anchor.matches('[download]')||anchor.closest('[data-hs-reference],[data-hs-file],.reference-block,.file-block,.contents-block'))return null;
   const href=anchor.getAttribute('href');
   return href?{anchor,href}:null;
 }
