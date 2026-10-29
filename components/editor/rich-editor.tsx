@@ -48,6 +48,7 @@ import { tablePosition,tablePositionKey,tablePositionText } from './table-positi
 import { TablePositionStatus } from './table-position-status';
 import { LinkInspector,inspectedTextLink,type InspectedLink } from './link-inspector';
 import {ProtectedImageView} from './image-viewer';
+import {ReadingGuide,ReadingGuideControl,useReadingGuide} from './reading-guide';
 
 const noThreads:ThreadView[]=[];
 const comparableDocument=(value:RichNode)=>stableStringify(semanticRichDocument(value));
@@ -115,7 +116,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
   const editor=useEditor({immediatelyRender:false,editable,content:document,extensions:[
     StarterKit.configure({heading:{levels:[1,2,3]},codeBlock:false,undoRedo:{depth:100,newGroupDelay:750},link:{openOnClick:false,autolink:false,linkOnPaste:false,isAllowedUri:url=>safeUrl(url),HTMLAttributes:{target:"_blank",rel:"noopener noreferrer",tabindex:"0"}}}),
     TextStyle,Color,Highlight.configure({multicolor:true}),TaskList,TaskItem.configure({nested:true}),TableKit.configure({table:{resizable:true,allowTableNodeSelection:true}}),
-    LazyCodeBlock.configure({defaultLanguage:"plaintext"}),CodeWrapping.configure({scope:preferenceKey}),ProtectedImage.configure({allowBase64:false}),Details.configure({persist:false}),DetailsSummary,DetailsContent,Callout,TableOfContents,PageLink.configure({sourcePageId:pageId}),FileBlock,FindExtension,DiscussionAnchors.configure({onOpen:id=>onOpenThread?.(id)}),
+    LazyCodeBlock.configure({defaultLanguage:"plaintext"}),CodeWrapping.configure({scope:preferenceKey}),ReadingGuide,ProtectedImage.configure({allowBase64:false}),Details.configure({persist:false}),DetailsSummary,DetailsContent,Callout,TableOfContents,PageLink.configure({sourcePageId:pageId}),FileBlock,FindExtension,DiscussionAnchors.configure({onOpen:id=>onOpenThread?.(id)}),
     UniqueID.configure({types:idTypes,attributeName:"id",generateID:()=>crypto.randomUUID()}),...(collaborationExtension.current?[collaborationExtension.current]:[]),
   ],editorProps:{attributes:{class:"rich-prose",role:"textbox",tabindex:"0","aria-label":"Document content","aria-multiline":"true",spellcheck:"true"},transformPastedHTML:sanitizePaste,
     handleDOMEvents:{keydown:(view,event)=>{if(view.editable||event.isComposing)return false;if(editor&&handleTableKeyDown(editor,event,()=>findButton.current?.focus(),setNotice))return true;if(isPageFindShortcut(event)){event.preventDefault();if(editor)savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);return true;}return false;}},
@@ -201,6 +202,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
   }
   function navigateFind(delta:number){const matches=state?.find?.matches??[];if(!editor||!matches.length)return;const next=(matchIndex+delta+matches.length)%matches.length;setMatchIndex(next);const m=matches[next];if(!selectFindMatch(editor,m))return;revealFindMatch(editor,m,preferenceKey,temporaryOpen.current);}
   function closeFind(){setFindOpen(false);setFindQuery("");if(editor&&savedFindSelection.current){restoreFindSelection(editor,savedFindSelection.current);savedFindSelection.current=null;focusAfterFind(editor);}temporaryOpen.current=restoreTemporarySections(temporaryOpen.current);}
+  const readingGuide=useReadingGuide(editor,`${pageId}:${preferenceKey}:${editable}`);
   if(!editor)return <div className="editor-skeleton" aria-label="Loading editor"/>;
   const button=(label:string,children:ReactNode,run:()=>void,pressed:boolean|'mixed'=false,disabled=false)=><button type="button" key={label} aria-label={label} title={pressed==='mixed'?`${label}: mixed formatting`:label} aria-pressed={pressed} disabled={!editable||disabled} onMouseDown={e=>e.preventDefault()} onClick={run}>{children}</button>;
   function toolbar(){if(!editor)return null;return <div className="format-tools" role="toolbar" aria-label="Text formatting">
@@ -215,6 +217,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
     {collaboration&&<div className="live-collaborators" role="status" aria-live="polite" aria-label="People editing this page">{collaborators.filter(person=>person.clientId!==collaboration.clientId).slice(0,5).map(person=><span key={person.sessionId} title={`${person.name} is editing`}>{person.name.slice(0,1).toUpperCase()}</span>)}{collaborators.filter(person=>person.clientId!==collaboration.clientId).length>5&&<span>+{collaborators.length-6}</span>}</div>}
     <div className="editor-actions" role="toolbar" aria-label="Document tools">
       {button("Undo","↶",()=>editor.chain().focus().undo().run(),false,!state?.undo)}{button("Redo","↷",()=>editor.chain().focus().redo().run(),false,!state?.redo)}
+      <ReadingGuideControl model={readingGuide}/>
       <button ref={findButton} className="find-button" onClick={()=>{savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);}}>⌕ Find</button>
     </div>
     {editable&&<aside className={`editor-toolbox ${toolboxOpen?'is-open':'is-collapsed'} ${toolboxPinned?'is-pinned':''}`} aria-label="Editor toolbox">
