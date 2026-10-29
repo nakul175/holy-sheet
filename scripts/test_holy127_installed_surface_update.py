@@ -61,4 +61,28 @@ class UpdateTest(unittest.TestCase):
                 mod.run()
             self.assertEqual(first.read_bytes(), b"old-one"); self.assertEqual(second.read_bytes(), b"old-two")
 
+    def test_second_stage_failure_removes_every_owned_pending_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary); first, second, patches = self.harness(root); real_fsync = os.fsync; calls = 0
+            def fsync(descriptor):
+                nonlocal calls
+                calls += 1
+                if calls == 2: raise OSError("injected stage fsync failure")
+                return real_fsync(descriptor)
+            with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], mock.patch.object(mod.os, "fsync", fsync), self.assertRaises(OSError):
+                mod.run()
+            self.assertEqual(first.read_bytes(), b"old-one"); self.assertEqual(second.read_bytes(), b"old-two")
+            self.assertEqual(list(root.glob("*.pending")), [])
+
+    def test_old_snapshot_is_verified_after_lock_acquisition(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            first, second, patches = self.harness(pathlib.Path(temporary)); real_flock = mod.fcntl.flock
+            def flock(descriptor, operation):
+                result = real_flock(descriptor, operation)
+                first.chmod(0o600); first.write_bytes(b"changed-before-lock-return"); first.chmod(0o444)
+                return result
+            with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], mock.patch.object(mod.fcntl, "flock", flock), self.assertRaisesRegex(mod.UpdateFailure, "identity mismatch"):
+                mod.run()
+            self.assertEqual(first.read_bytes(), b"changed-before-lock-return"); self.assertEqual(second.read_bytes(), b"old-two")
+
 if __name__ == "__main__": unittest.main()

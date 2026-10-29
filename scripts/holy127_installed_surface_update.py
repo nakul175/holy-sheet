@@ -78,9 +78,20 @@ def read_packet() -> dict[str, bytes]:
     if set(found) != set(wanted): raise UpdateFailure("update member set mismatch")
     return found
 
-def stage(path: pathlib.Path, content: bytes, mode: int) -> pathlib.Path:
+def same_inode(path: pathlib.Path, device: int, inode: int) -> bool:
+    try: metadata = path.lstat()
+    except FileNotFoundError: return False
+    return metadata.st_dev == device and metadata.st_ino == inode and stat.S_ISREG(metadata.st_mode)
+
+def cleanup_stage(item: tuple[pathlib.Path, int, int]) -> None:
+    path, device, inode = item
+    if same_inode(path, device, inode): path.unlink()
+
+def stage(path: pathlib.Path, content: bytes, mode: int) -> tuple[pathlib.Path, int, int]:
     pending = path.with_name(path.name + ".holy127-update-5bc68a1.pending")
     descriptor = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW, mode)
+    metadata = os.fstat(descriptor)
+    item = (pending, metadata.st_dev, metadata.st_ino)
     try:
         view = memoryview(content)
         while view:
@@ -88,45 +99,51 @@ def stage(path: pathlib.Path, content: bytes, mode: int) -> pathlib.Path:
             if count <= 0: raise OSError("short update write")
             view = view[count:]
         os.fsync(descriptor); os.fchown(descriptor, OWNER_UID, OWNER_GID); os.fchmod(descriptor, mode)
+    except BaseException:
+        os.close(descriptor); cleanup_stage(item); raise
     finally:
-        os.close(descriptor)
-    return pending
+        try: os.close(descriptor)
+        except OSError: pass
+    return item
 
 def restore(target: pathlib.Path, content: bytes, mode: int) -> None:
-    pending = target.with_name(target.name + ".holy127-rollback-5bc68a1.pending")
-    created = stage(pending.with_name(target.name), content, mode)
-    os.replace(created, target)
+    created = stage(target, content, mode)
+    os.replace(created[0], target)
 
 def run() -> dict[str, object]:
-    if RECEIPT_DIRECTORY.exists():
-        raise UpdateFailure("preserved failed receipt must be collected and cleaned before update")
     lock_metadata = LOCK.lstat()
     if LOCK.is_symlink() or not stat.S_ISREG(lock_metadata.st_mode) or lock_metadata.st_uid != OWNER_UID or stat.S_IMODE(lock_metadata.st_mode) != 0o660:
         raise UpdateFailure("shared lock identity mismatch")
     packet = read_packet()
-    before: dict[pathlib.Path, bytes] = {}
-    modes: dict[pathlib.Path, int] = {}
-    for path, expected in OLD.items():
-        verify_regular(path, expected)
-        before[path] = path.read_bytes(); modes[path] = stat.S_IMODE(path.stat().st_mode)
     descriptor = os.open(LOCK, os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW)
     replaced: list[pathlib.Path] = []
+    staged: dict[pathlib.Path, tuple[pathlib.Path, int, int]] = {}
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        staged = {target: stage(target, packet[relative], mode) for target, (relative, _expected, mode) in UPDATES.items()}
+        if RECEIPT_DIRECTORY.exists():
+            raise UpdateFailure("preserved failed receipt must be collected and cleaned before update")
+        before: dict[pathlib.Path, bytes] = {}
+        modes: dict[pathlib.Path, int] = {}
+        for path, expected in OLD.items():
+            verify_regular(path, expected)
+            before[path] = path.read_bytes(); modes[path] = stat.S_IMODE(path.stat().st_mode)
         try:
+            for target, (relative, _expected, mode) in UPDATES.items():
+                staged[target] = stage(target, packet[relative], mode)
             with blocked():
-                for target, pending in staged.items():
-                    os.replace(pending, target); replaced.append(target)
+                for target, item in staged.items():
+                    os.replace(item[0], target); replaced.append(target)
                 for parent in {target.parent for target in replaced}:
                     directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY); os.fsync(directory); os.close(directory)
+                for target, (_relative, expected, mode) in UPDATES.items(): verify_regular(target, expected, mode)
         except BaseException:
             with blocked():
                 for target in reversed(replaced): restore(target, before[target], modes[target])
             raise
     finally:
+        with blocked():
+            for item in staged.values(): cleanup_stage(item)
         os.close(descriptor)
-    for target, (_relative, expected, mode) in UPDATES.items(): verify_regular(target, expected, mode)
     return {"source": SOURCE_COMMIT, "status": "updated", "updated": {str(path): expected for path, (_relative, expected, _mode) in UPDATES.items()}}
 
 def main() -> int:

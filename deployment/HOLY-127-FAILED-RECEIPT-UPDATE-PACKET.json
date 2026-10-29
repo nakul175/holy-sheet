@@ -12,7 +12,7 @@
   "files": [
     {"source": "scripts/holy127_qualifier_receipt_collect.sh", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-collect-5bc68a1", "sha256": "7f7e66316a1fa8adcf3b47f6a86dedc2e4c637fda470cf4deca930b7221326fd", "mode": "0555", "arguments": 0},
     {"source": "scripts/holy127_qualifier_receipt_cleanup.sh", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1", "sha256": "e2ead68983d9c0119515129125652eb8026557f16cdbef931adfb0ae8f1471e5", "mode": "0555", "arguments": 0},
-    {"source": "scripts/holy127_installed_surface_update.py", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py", "sha256": "94b833b33f61bdc61a17c79416c06e8b9fe8c8de4b9f0d4823fa0ff81d909d7c", "mode": "0500", "arguments": 0},
+    {"source": "scripts/holy127_installed_surface_update.py", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py", "sha256": "069c00711e88bedd373bf789a50c1b7905b5bf91c3d540c87b6662a27d3139a4", "mode": "0500", "arguments": 0},
     {"source": "deployment/HOLY-127-UPDATE-PAYLOAD-5bc68a1.tar", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-payload-5bc68a1.tar", "sha256": "de15ba0fe8714db6f0b2c55c8c67f7f69fca9fdd2f546f4814e603b995b674b3", "sizeBytes": 153600, "mode": "0400", "arguments": 0}
   ],
   "preservedReceipt": {
