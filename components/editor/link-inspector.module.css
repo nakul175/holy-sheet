@@ -1,0 +1,8 @@
+.inspector{display:grid;gap:14px;min-width:0}
+.destination{display:grid;gap:6px;color:var(--muted);font-size:12px}
+.destination input{min-width:0;width:100%;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;overflow:hidden;text-overflow:ellipsis}
+.actions{display:flex;flex-wrap:wrap;gap:10px}
+.actions button{min-height:44px;padding:9px 14px;border:1px solid var(--line);border-radius:9px;background:white;color:var(--ink);font-weight:600}
+.actions .primary{border-color:var(--ink);background:var(--ink);color:white}
+.feedback{margin:0;overflow-wrap:anywhere}
+@media(max-width:480px){.actions button{flex:1 1 100%}}
