@@ -12,7 +12,7 @@ export type LocationPreview={pageId:string;title:string;descendantCount:number;t
 const hash=(v:unknown)=>createHash('sha256').update(stableStringify(v)).digest('hex');
 const rank=(role:PageRole|null)=>role?({viewer:1,commenter:2,editor:3,owner:4}[role]):0;
 async function scope(r:Repository,tx:Sql,pageId:string,actor:Actor){
- const root=await r.access(tx,pageId,actor,false,true);
+ const root=await r.access(tx,pageId,actor,true,true);
  if(root.owner_id!==actor.id)throw new DocumentError('Only the page owner can move this page','owner_required',403);
  const member=await tx.query<{role:string}>('SELECT role FROM hs_members WHERE workspace_id=$1 AND user_id=$2 AND active=true',[root.workspace_id,actor.id]);
  if(!['owner','admin'].includes(member.rows[0]?.role??''))throw new DocumentError('Source and destination management authority is required','management_required',403);
@@ -21,14 +21,15 @@ async function scope(r:Repository,tx:Sql,pageId:string,actor:Actor){
 }
 function subtree(nodes:Node[],rootId:string){const ids=new Set([rootId]);let changed=true;while(changed){changed=false;for(const n of nodes)if(n.parent_id&&ids.has(n.parent_id)&&!ids.has(n.id)){ids.add(n.id);changed=true;}}return ids;}
 function effective(nodes:Map<string,Node>,grants:Map<string,Grant[]>,member:Member,id:string,cache:Map<string,PageRole|null>,seen=new Set<string>()):PageRole|null{
- if(cache.has(id))return cache.get(id)!;
- if(!member.active)return null;const root=nodes.get(id);if(!root||root.deleted_at)return null;
- if(root.owner_id===member.id)return 'owner';if(['owner','admin'].includes(member.role))return 'editor';
+ if(!member.active)return null;
+ if(cache.has(id)){const role=cache.get(id)!;return member.role==='observer'&&role?'viewer':role;}
+ const root=nodes.get(id);if(!root||root.deleted_at)return null;
+ if(root.owner_id===member.id)return member.role==='observer'?'viewer':'owner';if(['owner','admin'].includes(member.role))return 'editor';
  if(seen.has(id))throw new DocumentError('The existing hierarchy contains a cycle. No pages were moved.','move_cycle',422);
  seen.add(id);let result:PageRole|null=null;
  for(const g of grants.get(id)??[])if((g.subject===member.id||(g.subject==='space'&&root.visibility==='space'))&&rank(g.role)>rank(result))result=g.role;
  if(root.parent_id){const inherited=effective(nodes,grants,member,root.parent_id,cache,seen),role=inherited==='owner'?'editor':inherited;if(rank(role)>rank(result))result=role;}
- seen.delete(id);cache.set(id,result);return result;
+ seen.delete(id);if(member.role==='observer'&&result)result='viewer';cache.set(id,result);return result;
 }
 function path(nodes:Map<string,Node>,id:string|null,spaceName:string){const names:string[]=[],seen=new Set<string>();let p=id?nodes.get(id):undefined;while(p&&!seen.has(p.id)){seen.add(p.id);names.unshift(p.title);p=p.parent_id?nodes.get(p.parent_id):undefined;}return [spaceName,...names];}
 async function review(r:Repository,tx:Sql,actor:Actor,pageId:string,input:LocationIntent){

@@ -4,6 +4,13 @@ assert.ok(['http://127.0.0.1:53104','https://staging.holysheet.aplyd.org'].inclu
 const checks=[];
 async function check(name,path,status,options={}){const start=performance.now();const response=await fetch(origin+path,{redirect:'manual',...options});assert.equal(response.status,status,`${name}: expected ${status}, received ${response.status}`);if(path.startsWith('/api/')&&path!='/api/internal/maintenance')assert.match(response.headers.get('cache-control')??'',/no-store/);const body=await response.text();assert.ok(!body.includes('Search token: orchid'),'Private fixture content leaked');checks.push({name,status,durationMs:Math.round(performance.now()-start)});}
 await check('Public landing shell','/',200);
+await check('Workspace chooser public shell','/workspaces',200);
+await check('Workspace metadata requires identity','/api/workspaces',401);
+await check('Workspace actor hint cannot authenticate','/api/workspaces',401,{headers:{'x-user-id':'local-owner','x-hs-local-preview':'1'}});
+await check('Space creation intent requires identity','/api/v1/space-creations',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Space creation intent rejects foreign origin','/api/v1/space-creations',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
+await check('Workspace creation requires identity','/api/v1/workspace-creations',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Workspace creation rejects foreign origin','/api/v1/workspace-creations',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
 await check('Sign-in entry page remains available','/auth/sign-in',200);
 await check('Unconfigured sign-in bridge fails closed','/auth/sign-in?continue=1',503);
 await check('Unconfigured callback fails closed','/auth/callback?code=synthetic&state=synthetic',503);
