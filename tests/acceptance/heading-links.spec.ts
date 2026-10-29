@@ -1,3 +1,5 @@
+import {createServer,request as httpRequest} from 'node:http';
+import {createConnection,type AddressInfo,type Socket} from 'node:net';
 import {test,expect,type APIRequestContext,type Page as BrowserPage} from '@playwright/test';
 import type {Editor} from '@tiptap/core';
 type Stored={id:string;title:string;version:number;workspaceId:string;document:unknown};
@@ -22,7 +24,25 @@ test('copy uses a saved ID only and leaves exact model, selection, history and d
  expect(await model(page)).toEqual(baseline);expect(await stored(request,f.page.id)).toEqual(before);expect(await history(request,f.page.id)).toEqual(versions);expect(operations).toBe(0);await page.screenshot({path:test.info().outputPath('heading-copy.png')});
 });
 test('real clipboard policy denial gives a selectable canonical fallback without writes',async({page,request,baseURL})=>{
- const f=await fixture(request,baseURL!);await page.route('**/pages/'+f.page.id,async route=>{const response=await route.fetch();await route.fulfill({response,headers:{...response.headers(),'permissions-policy':'clipboard-write=()'}});});let writes=0;page.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/operations'))writes++;});await ready(page,f.page.id);const baseline=await model(page),panel=await openOutline(page);await panel.getByRole('button',{name:'Copy heading link: Résumé 界 مرحبا',exact:true}).click();await expect(panel.getByText('Clipboard unavailable. Select and copy this heading link.',{exact:true})).toBeVisible();await expect(panel.getByRole('textbox',{name:'Heading link',exact:true})).toHaveValue(baseURL+'/pages/'+f.page.id+'#hs-heading='+encodeURIComponent(f.id('first')));expect(await model(page)).toEqual(baseline);expect(writes).toBe(0);
+ const f=await fixture(request,baseURL!),upstream=new URL(baseURL!),sockets=new Set<Socket>();let origin='';
+ // A real loopback response retains Chromium's network address space; fulfilling the main
+ // HTML through Playwright can block Next's local HMR bootstrap before the editor loads.
+ // Only this isolated test origin is translated to the normal preview origin. No role/session changes.
+ const server=createServer((incoming,outgoing)=>{
+  const headers={...incoming.headers,host:upstream.host};if(headers.origin===origin)headers.origin=upstream.origin;
+  const forward=httpRequest({hostname:upstream.hostname,port:upstream.port,path:incoming.url,method:incoming.method,headers},response=>{outgoing.writeHead(response.statusCode??502,{...response.headers,'permissions-policy':'clipboard-write=()'});response.pipe(outgoing);});
+  forward.on('error',()=>{outgoing.writeHead(502);outgoing.end('Local test proxy unavailable');});incoming.pipe(forward);
+ });
+ server.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>sockets.delete(socket));});
+ server.on('upgrade',(incoming,client,head)=>{
+  const remote=createConnection({host:upstream.hostname,port:Number(upstream.port)},()=>{const headers={...incoming.headers,host:upstream.host};if(headers.origin===origin)headers.origin=upstream.origin;remote.write(`${incoming.method} ${incoming.url} HTTP/1.1\r\n`+Object.entries(headers).map(([key,value])=>`${key}: ${value}`).join('\r\n')+'\r\n\r\n');if(head.length)remote.write(head);client.pipe(remote).pipe(client);});
+  remote.on('error',()=>client.destroy());client.on('error',()=>remote.destroy());client.once('close',()=>remote.destroy());remote.once('close',()=>client.destroy());
+ });
+ await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});origin='http://127.0.0.1:'+(server.address() as AddressInfo).port;
+ try{
+  let writes=0;page.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/operations'))writes++;});const lease=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith(`/api/v1/pages/${f.page.id}/drafts`));await page.goto(origin+'/pages/'+f.page.id);await expect(page.getByRole('textbox',{name:'Document content',exact:true})).toBeVisible();await lease;
+  const baseline=await model(page),panel=await openOutline(page);await panel.getByRole('button',{name:'Copy heading link: Résumé 界 مرحبا',exact:true}).click();await expect(panel.getByText('Clipboard unavailable. Select and copy this heading link.',{exact:true})).toBeVisible();await expect(panel.getByRole('textbox',{name:'Heading link',exact:true})).toHaveValue(origin+'/pages/'+f.page.id+'#hs-heading='+encodeURIComponent(f.id('first')));expect(await model(page)).toEqual(baseline);expect(writes).toBe(0);await page.screenshot({path:test.info().outputPath('heading-clipboard-denial.png')});
+ }finally{await page.goto('about:blank');for(const socket of sockets)socket.destroy();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
 });
 for(const width of [320,1280])test(`cold exact heading link respects reduced-motion media and layout at ${width}px`,async({page,request,baseURL})=>{
  const f=await fixture(request,baseURL!),before=await stored(request,f.page.id),versions=await history(request,f.page.id),data=await(await request.get(`/api/v1/pages/${f.page.id}/document`)).json(),key=`hs-collapse:${data.actorId}:${f.page.workspaceId}:${f.page.id}:${f.id('outer')}`;await page.setViewportSize({width,height:900});await page.emulateMedia({reducedMotion:'reduce'});await page.addInitScript(({key})=>{localStorage.setItem(key,'closed');const native=HTMLElement.prototype.scrollIntoView;HTMLElement.prototype.scrollIntoView=function(options){(window as unknown as {headingScrollOptions:unknown}).headingScrollOptions=options;return native.call(this,options);};},{key});let writes=0;page.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/operations'))writes++;});await ready(page,f.page.id,'#hs-heading='+encodeURIComponent(f.id('nested')));const destination=page.getByRole('region',{name:'Linked heading: Repeated heading',exact:true});await expect(destination).toBeFocused();expect(await page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);expect(await page.evaluate(()=>(window as unknown as {headingScrollOptions:unknown}).headingScrollOptions)).toEqual({block:'start',behavior:'auto'});
