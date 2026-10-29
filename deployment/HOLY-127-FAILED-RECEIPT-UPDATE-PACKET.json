@@ -10,8 +10,8 @@
     "mustBeAbsentBeforeTransfer": true
   },
   "files": [
-    {"source": "scripts/holy127_qualifier_receipt_collect.sh", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-collect-5bc68a1", "sha256": "7f7e66316a1fa8adcf3b47f6a86dedc2e4c637fda470cf4deca930b7221326fd", "mode": "0555", "arguments": 0},
-    {"source": "scripts/holy127_qualifier_receipt_cleanup.sh", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1", "sha256": "e2ead68983d9c0119515129125652eb8026557f16cdbef931adfb0ae8f1471e5", "mode": "0555", "arguments": 0},
+    {"source": "scripts/holy127_failed_receipt_export.py", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-export-5bc68a1.py", "sha256": "7716dfda3f55f26ac9e2f0f10f96fe404defe4c4a8eaa7cf8a83ab52e58ce0b9", "mode": "0500", "arguments": 0},
+    {"source": "scripts/holy127_failed_receipt_cleanup.py", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1.py", "sha256": "48cb60361669338b222a69780ddbdc8f31395ce0bae98eb36035a5509d2e1b32", "mode": "0500", "arguments": 0},
     {"source": "scripts/holy127_installed_surface_update.py", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py", "sha256": "069c00711e88bedd373bf789a50c1b7905b5bf91c3d540c87b6662a27d3139a4", "mode": "0500", "arguments": 0},
     {"source": "deployment/HOLY-127-UPDATE-PAYLOAD-5bc68a1.tar", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-payload-5bc68a1.tar", "sha256": "de15ba0fe8714db6f0b2c55c8c67f7f69fca9fdd2f546f4814e603b995b674b3", "sizeBytes": 153600, "mode": "0400", "arguments": 0}
   ],
@@ -23,20 +23,28 @@
     "knownStatus": "failed",
     "knownError": "Docker exec cancellation left a PostgreSQL backend"
   },
+  "machineReadableExport": {
+    "path": "/var/tmp/holy127-failed-receipt-export-20261029a.json",
+    "owner": 0,
+    "group": 0,
+    "mode": "0444",
+    "mustBeAbsentBeforeExport": true,
+    "capture": "The normal deploy SSH account may read this one root-owned nonsecret file byte-for-byte; it cannot modify or remove it in sticky /var/tmp."
+  },
   "fixedCommandsInOrder": [
-    "/usr/bin/sha256sum /root/holy127-transfer-inbox-cancel-v3/holy127-receipt-collect-5bc68a1 /root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1 /root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py /root/holy127-transfer-inbox-cancel-v3/holy127-payload-5bc68a1.tar",
-    "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-collect-5bc68a1",
-    "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1",
+    "/usr/bin/sha256sum /root/holy127-transfer-inbox-cancel-v3/holy127-receipt-export-5bc68a1.py /root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1.py /root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py /root/holy127-transfer-inbox-cancel-v3/holy127-payload-5bc68a1.tar",
+    "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-export-5bc68a1.py",
+    "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1.py",
     "/root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py"
   ],
   "requiredGates": [
-    "Capture collector stdout off-host; require non-empty valid JSON, operation holy127-q-f4f5a94-20261029a, status failed, and record its SHA-256 before cleanup.",
-    "Run cleanup only after off-host receipt validation; require its printed SHA-256 to equal the off-host receipt hash and prove the fixed receipt directory absent.",
+    "After export reports 3379 bytes and a SHA-256, use normal deploy SSH to copy /var/tmp/holy127-failed-receipt-export-20261029a.json off-host byte-for-byte; require non-empty valid JSON, operation holy127-q-f4f5a94-20261029a, status failed, and the same SHA-256 before cleanup.",
+    "Run cleanup only after off-host receipt validation; it requires byte equality between the original and root-owned 0444 export, and its printed SHA-256 must equal the off-host receipt hash. Prove both the fixed receipt directory and export file absent.",
     "The updater refuses while the preserved receipt directory exists, any installed old hash differs, the shared lock is busy or incompatible, or the new archive differs.",
     "Require updater JSON status updated and verify all five installed new hashes. Qualification requires a later fresh Product slot and a new exclusive operation ID."
   ],
   "mutationScope": [
-    "Remove only the exact preserved qualification.json and then its empty fixed receipt directory.",
+    "Exclusively create one root-owned mode-0444 nonsecret export in sticky /var/tmp; after verified off-host capture, remove only that byte-matched export, the exact preserved qualification.json and then its empty fixed receipt directory.",
     "Replace only five hash-verified root-owned fixed files: disposable qualifier, qualifier entrypoint, receipt collector, receipt cleanup and installer.",
     "Never touch the live app/database, production, DB settings, secrets, sudo policy, existing /run/lock, or any Docker resource."
   ],
