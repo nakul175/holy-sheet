@@ -2,7 +2,6 @@
 import {useEffect,useRef,useState} from 'react';
 import type {Editor} from '@tiptap/core';
 import {TextSelection} from '@tiptap/pm/state';
-import {skipTrailingNodeMeta} from '@tiptap/extensions';
 import {UNCHECKED_NAVIGATION_META,uncheckedListText,uncheckedTarget,type UncheckedList} from './unchecked-navigation';
 import {openSectionsForNavigation,restoreTemporarySections,type TemporarySection} from './section-navigation';
 
@@ -25,7 +24,8 @@ export function UncheckedNavigationControls({editor,list,preferenceKey}:{editor:
     if(!element||!editor.view.dom.contains(element))return;
     temporary.current=restoreTemporarySections(temporary.current);
     openSectionsForNavigation(element,preferenceKey,temporary.current,editor.view.dom);
-    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc,target)).setMeta('addToHistory',false).setMeta(skipTrailingNodeMeta,true).setMeta(UNCHECKED_NAVIGATION_META,true));
+    // Public metadata key verified in the installed Tiptap trailing-node plugin.
+    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc,target)).setMeta('addToHistory',false).setMeta('skipTrailingNode',true).setMeta(UNCHECKED_NAVIGATION_META,true));
     element.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});setNotice(direction==='previous'?'Moved to the previous unchecked item.':'Moved to the next unchecked item.');
   }
   return <section className="context-tools" aria-label="Unchecked checklist navigation"><span>{uncheckedListText(list)}</span><button type="button" onClick={()=>navigate('previous')}>Previous unchecked item</button><button type="button" onClick={()=>navigate('next')}>Next unchecked item</button><span role="status" aria-live="polite" aria-atomic="true">{notice}</span></section>;
