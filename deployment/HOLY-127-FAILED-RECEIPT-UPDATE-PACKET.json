@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "5bc68a18a1004146e6300ae1e79e24228428ae42",
+  "purpose": "Collect and remove only the preserved failed HOLY-127 receipt, then atomically update the already-installed fixed qualifier surfaces. This packet does not run qualification.",
+  "inbox": {
+    "path": "/root/holy127-transfer-inbox-cancel-v3",
+    "owner": 0,
+    "group": 0,
+    "mode": "0700",
+    "mustBeAbsentBeforeTransfer": true
+  },
+  "files": [
+    {"source": "scripts/holy127_qualifier_receipt_collect.sh", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-collect-5bc68a1", "sha256": "7f7e66316a1fa8adcf3b47f6a86dedc2e4c637fda470cf4deca930b7221326fd", "mode": "0555", "arguments": 0},
+    {"source": "scripts/holy127_qualifier_receipt_cleanup.sh", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1", "sha256": "e2ead68983d9c0119515129125652eb8026557f16cdbef931adfb0ae8f1471e5", "mode": "0555", "arguments": 0},
+    {"source": "scripts/holy127_installed_surface_update.py", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py", "sha256": "94b833b33f61bdc61a17c79416c06e8b9fe8c8de4b9f0d4823fa0ff81d909d7c", "mode": "0500", "arguments": 0},
+    {"source": "deployment/HOLY-127-UPDATE-PAYLOAD-5bc68a1.tar", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-payload-5bc68a1.tar", "sha256": "de15ba0fe8714db6f0b2c55c8c67f7f69fca9fdd2f546f4814e603b995b674b3", "sizeBytes": 153600, "mode": "0400", "arguments": 0}
+  ],
+  "preservedReceipt": {
+    "directory": "/var/tmp/holy127-q-f4f5a94-20261029a",
+    "file": "/var/tmp/holy127-q-f4f5a94-20261029a/qualification.json",
+    "expectedRootMetadata": "directory 0700; file 0600",
+    "knownSizeBytes": 3379,
+    "knownStatus": "failed",
+    "knownError": "Docker exec cancellation left a PostgreSQL backend"
+  },
+  "fixedCommandsInOrder": [
+    "/usr/bin/sha256sum /root/holy127-transfer-inbox-cancel-v3/holy127-receipt-collect-5bc68a1 /root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1 /root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py /root/holy127-transfer-inbox-cancel-v3/holy127-payload-5bc68a1.tar",
+    "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-collect-5bc68a1",
+    "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1",
+    "/root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py"
+  ],
+  "requiredGates": [
+    "Capture collector stdout off-host; require non-empty valid JSON, operation holy127-q-f4f5a94-20261029a, status failed, and record its SHA-256 before cleanup.",
+    "Run cleanup only after off-host receipt validation; require its printed SHA-256 to equal the off-host receipt hash and prove the fixed receipt directory absent.",
+    "The updater refuses while the preserved receipt directory exists, any installed old hash differs, the shared lock is busy or incompatible, or the new archive differs.",
+    "Require updater JSON status updated and verify all five installed new hashes. Qualification requires a later fresh Product slot and a new exclusive operation ID."
+  ],
+  "mutationScope": [
+    "Remove only the exact preserved qualification.json and then its empty fixed receipt directory.",
+    "Replace only five hash-verified root-owned fixed files: disposable qualifier, qualifier entrypoint, receipt collector, receipt cleanup and installer.",
+    "Never touch the live app/database, production, DB settings, secrets, sudo policy, existing /run/lock, or any Docker resource."
+  ],
+  "authorization": "Packet publication is not execution. Product must review the exact packet and use the persisted NJ staging installation authority; a new qualification run still requires a fresh serialized slot."
+}
