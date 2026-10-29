@@ -34,7 +34,7 @@ export class Repository {
       UNION ALL SELECT p.id,p.parent_id,p.workspace_id,p.visibility,p.owner_id,a.path||p.id FROM hs_pages p JOIN ancestors a ON p.id=a.parent_id AND p.workspace_id=a.workspace_id
       WHERE p.deleted_at IS NULL AND NOT p.id=ANY(a.path)
     ) SELECT p.*,w.name AS workspace_name,s.name AS space_name,parent.title AS parent_title,
-      CASE WHEN p.owner_id=$2 THEN 'owner' WHEN m.role IN ('owner','admin') THEN 'editor' WHEN m.role<>'observer' AND EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.role='editor') THEN 'editor'
+      CASE WHEN m.role='observer' THEN 'viewer' WHEN p.owner_id=$2 THEN 'owner' WHEN m.role IN ('owner','admin') THEN 'editor' WHEN m.role<>'observer' AND EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.role='editor') THEN 'editor'
       WHEN EXISTS(SELECT 1 FROM ancestors a JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE g.role='commenter') THEN 'commenter' ELSE 'viewer' END AS role
       FROM hs_pages p JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
       JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$2 AND m.active=true
@@ -64,7 +64,7 @@ export class Repository {
   async createSpace(actor:Actor,name:string,workspaceId:string) {
     if(!name.trim() || name.length>80)throw new DocumentError("Space name must be between 1 and 80 characters");
     const id=crypto.randomUUID();
-    return this.db.transaction(async tx=>{await tx.query('SELECT w.id FROM hs_workspaces w JOIN hs_members m ON m.workspace_id=w.id AND m.user_id=$2 AND m.active=true WHERE w.id=$1 FOR UPDATE OF w',[workspaceId,actor.id]);const m=await tx.query("SELECT user_id FROM hs_members WHERE workspace_id=$1 AND user_id=$2 AND active=true FOR UPDATE",[workspaceId,actor.id]);if(!m.rows.length)throw new DocumentError("Workspace unavailable","not_found",404);await tx.query("INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)",[id,workspaceId,name.trim()]);return {id,workspaceId,name:name.trim()};});
+    return this.db.transaction(async tx=>{await tx.query('SELECT w.id FROM hs_workspaces w JOIN hs_members m ON m.workspace_id=w.id AND m.user_id=$2 AND m.active=true WHERE w.id=$1 FOR UPDATE OF w',[workspaceId,actor.id]);const m=await tx.query<{user_id:string;role:string}>("SELECT user_id,role FROM hs_members WHERE workspace_id=$1 AND user_id=$2 AND active=true FOR UPDATE",[workspaceId,actor.id]);if(!m.rows.length)throw new DocumentError("Workspace unavailable","not_found",404);if(m.rows[0].role==='observer')throw new DocumentError("Observers cannot create spaces","read_only",403);await tx.query("INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)",[id,workspaceId,name.trim()]);return {id,workspaceId,name:name.trim()};});
   }
   async create(actor:Actor,title:string,spaceId:string,parentId?:string|null,operationId?:string) {
     return this.db.transaction(async tx=>{
@@ -80,8 +80,9 @@ export class Repository {
         }
       }
       await tx.query('SELECT w.id FROM hs_workspaces w JOIN hs_spaces s ON s.workspace_id=w.id JOIN hs_members m ON m.workspace_id=w.id AND m.user_id=$2 AND m.active=true WHERE s.id=$1 FOR UPDATE OF w',[spaceId,actor.id]);
-      const {rows}=await tx.query<{workspace_id:string}>("SELECT s.workspace_id FROM hs_spaces s JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$2 AND m.active=true WHERE s.id=$1 FOR UPDATE OF m",[spaceId,actor.id]);
+      const {rows}=await tx.query<{workspace_id:string;role:string}>("SELECT s.workspace_id,m.role FROM hs_spaces s JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$2 AND m.active=true WHERE s.id=$1 FOR UPDATE OF m",[spaceId,actor.id]);
       if(!rows.length)throw new DocumentError("Space unavailable","not_found",404);
+      if(rows[0].role==='observer')throw new DocumentError("Observers cannot create pages","read_only",403);
       if(parentId){const parent=await this.access(tx,parentId,actor,true,true);if(parent.space_id!==spaceId)throw new DocumentError("Subpages must use their parent's space");}
       const id=crypto.randomUUID(), actualTitle=title.trim()||"Untitled";
       if(actualTitle.length>240)throw new DocumentError("Title is too long");

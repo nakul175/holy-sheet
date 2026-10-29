@@ -1,19 +1,52 @@
 'use client';
-import { useEffect,useState } from 'react';
-import { useRouter } from 'next/navigation';
-import type { Space } from '../lib/types';
+import {useEffect,useState} from 'react';
+import {useRouter} from 'next/navigation';
+import type {Page,Space} from '../lib/types';
+import type {WorkspaceSummary} from '../lib/workspace-navigation';
 import TemplatesDialog from './templates-dialog';
 import ImportDialog from './import-dialog';
 import ExportPolicyDialog from './export-policy-dialog';
 import TrashDialog from './trash-dialog';
 import WorkspaceAccessDialog from './workspace-access-dialog';
-import { SignInLink,SignOutButton } from './session-boundary';
-import { ApiError,requestJson } from './editor/use-document-session';
+import CreatePage from './create-page-dialog';
+import CreateWorkspaceDialog from './create-workspace-dialog';
+import {SignInLink,SignOutButton} from './session-boundary';
+import {ApiError,requestJson} from './editor/use-document-session';
 
-export default function WorkspaceHome(){
-  const [policyOpen,setPolicyOpen]=useState(false),[trashOpen,setTrashOpen]=useState(false),[accessOpen,setAccessOpen]=useState(false),[templatesOpen,setTemplatesOpen]=useState(false),[importOpen,setImportOpen]=useState(false),[needsSignIn,setNeedsSignIn]=useState(false);
-  const router=useRouter(),[spaces,setSpaces]=useState<Space[]>([]),[space,setSpace]=useState(''),[title,setTitle]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  useEffect(()=>{let active=true;void Promise.all([requestJson<{pages:{id:string}[]}>('/api/pages'),requestJson<{spaces:Space[]}>('/api/spaces')]).then(([a,b])=>{if(!active)return;if(a.pages.length){router.replace(`/pages/${encodeURIComponent(a.pages[0].id)}`);return;}setSpaces(b.spaces);setSpace(b.spaces[0]?.id??'');setLoading(false);}).catch(e=>{if(active){setError(e instanceof Error?e.message:'Workspace unavailable');setNeedsSignIn(e instanceof ApiError&&e.status===401);setLoading(false);}});return()=>{active=false;};},[router]);
-  async function create(e:React.FormEvent){e.preventDefault();setBusy(true);setError('');try{const data=await requestJson<{page:{id:string}}>('/api/pages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title,spaceId:space})});router.push(`/pages/${encodeURIComponent(data.page.id)}`);}catch(e){setError(e instanceof Error?e.message:'Could not create the page');setBusy(false);}}
-  return <main className="workspace-home"><div className="brand"><span>✦</span>Holy Sheet</div>{!loading&&!needsSignIn&&<SignOutButton/>}<section><h1>A clear place for your next idea.</h1>{loading?<p role="status">Opening your workspace…</p>:spaces.length?<form onSubmit={create}><p>Create your first private page in an accessible space.</p><label>Page title<input value={title} maxLength={240} placeholder="Untitled" onChange={e=>setTitle(e.target.value)}/></label><label>Space<select value={space} onChange={e=>setSpace(e.target.value)}>{spaces.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><button type="button" disabled={busy||!space} onClick={()=>setImportOpen(true)}>Import a document</button><button type="button" disabled={busy||!space} onClick={()=>setTemplatesOpen(true)}>From template</button><button disabled={busy||!space}>{busy?'Creating…':'Create page'}</button></form>:!error&&<p>Your signed-in account needs access to a Holy Sheet workspace. Ask its owner to add you.</p>}{error&&<p role="alert">{error}</p>}{needsSignIn&&<SignInLink/>}{!needsSignIn&&spaces.some(s=>s.id===space)&&<div className="actions"><button onClick={()=>setTrashOpen(true)}>Trash</button><button onClick={()=>setAccessOpen(true)}>Workspace access</button></div>}</section>{trashOpen&&spaces.some(s=>s.id===space)&&<TrashDialog workspaceId={spaces.find(s=>s.id===space)!.workspaceId} spaces={spaces} onClose={()=>setTrashOpen(false)} onRestored={id=>{if(title.trim()&&!confirm("Leave this new-page form? Its title has not been saved."))return;setTrashOpen(false);router.push(`/pages/${encodeURIComponent(id)}`);}}/>}{accessOpen&&spaces.some(s=>s.id===space)&&<WorkspaceAccessDialog workspaceId={spaces.find(s=>s.id===space)!.workspaceId} onClose={()=>setAccessOpen(false)} onExportPolicy={()=>{setAccessOpen(false);setPolicyOpen(true);}}/>}{policyOpen&&spaces.some(s=>s.id===space)&&<ExportPolicyDialog key={spaces.find(s=>s.id===space)!.workspaceId} workspaceId={spaces.find(s=>s.id===space)!.workspaceId} onClose={()=>setPolicyOpen(false)}/>} {importOpen&&<ImportDialog spaces={spaces} initialSpaceId={space} onClose={()=>setImportOpen(false)} onCreated={()=>{}} onOpen={id=>{if(title.trim()&&!confirm("Leave this new-page form? Its title has not been saved."))return;router.push(`/pages/${encodeURIComponent(id)}`);}}/>} {templatesOpen&&spaces.some(s=>s.id===space)&&<TemplatesDialog workspaceId={spaces.find(s=>s.id===space)!.workspaceId} initialSpaceId={space} spaces={spaces} onClose={()=>setTemplatesOpen(false)} onCreated={id=>{setTemplatesOpen(false);router.push(`/pages/${encodeURIComponent(id)}`);}}/>}</main>;
+export default function WorkspaceHome({chooseWorkspace=false}:{chooseWorkspace?:boolean}){
+ const router=useRouter();
+ const [workspaces,setWorkspaces]=useState<WorkspaceSummary[]>([]),[workspaceId,setWorkspaceId]=useState(''),[spaces,setSpaces]=useState<Space[]>([]),[pages,setPages]=useState<Page[]>([]);
+ const [workspaceCreationOpen,setWorkspaceCreationOpen]=useState(false);
+ const [creationDirty,setCreationDirty]=useState(false);
+ const [loading,setLoading]=useState(true),[error,setError]=useState(''),[needsSignIn,setNeedsSignIn]=useState(false);
+ const [createOpen,setCreateOpen]=useState(false),[policyOpen,setPolicyOpen]=useState(false),[trashOpen,setTrashOpen]=useState(false),[accessOpen,setAccessOpen]=useState(false),[templatesOpen,setTemplatesOpen]=useState(false),[importOpen,setImportOpen]=useState(false);
+ useEffect(()=>{let active=true;
+  void Promise.all([requestJson<{pages:Page[]}>('/api/pages'),requestJson<{spaces:Space[]}>('/api/spaces'),requestJson<{workspaces:WorkspaceSummary[]}>('/api/workspaces')]).then(([a,b,c])=>{
+   if(!active)return;
+   if(!Array.isArray(a.pages)||!Array.isArray(b.spaces)||!Array.isArray(c.workspaces))throw new Error('Workspace navigation unavailable. Please reload.');
+   if(!chooseWorkspace&&a.pages.length){router.replace(`/pages/${encodeURIComponent(a.pages[0].id)}`);return;}
+   setWorkspaces(c.workspaces);setWorkspaceId(c.workspaces[0]?.id??'');setSpaces(b.spaces);setPages(a.pages);setLoading(false);
+  }).catch(e=>{if(active){setError(e instanceof Error?e.message:'Workspace unavailable');setNeedsSignIn(e instanceof ApiError&&e.status===401);setLoading(false);}});
+  return()=>{active=false;};
+ },[router,chooseWorkspace]);
+ const availableSpaces=spaces.filter(s=>s.workspaceId===workspaceId),space=availableSpaces[0]?.id??'',workspacePages=pages.filter(p=>p.workspaceId===workspaceId);
+ function open(id:string){if(creationDirty&&!confirm('Leave this new-page form? Its title has not been saved.'))return;router.push(`/pages/${encodeURIComponent(id)}`);}
+ return <main className="workspace-home"><div className="brand"><span>✦</span>Holy Sheet</div>{!loading&&!needsSignIn&&<SignOutButton/>}<section><h1>{chooseWorkspace?'Choose your workspace':'A clear place for your next idea.'}</h1>
+ {loading?<p role="status">Opening your workspace…</p>:!needsSignIn&&workspaces.length?<>
+  <label>Workspace<select value={workspaceId} onChange={e=>{if(creationDirty&&!confirm('Leave this new-page form? Its title has not been saved.'))return;setCreationDirty(false);setWorkspaceId(e.target.value);}}>{workspaces.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
+  {workspaces.find(w=>w.id===workspaceId)?.canCreateWorkspace&&<button onClick={()=>{if(creationDirty&&!confirm('Leave this new-page form? Its title has not been saved.'))return;setWorkspaceCreationOpen(true);}}>Create workspace</button>}
+  <div className="actions">{chooseWorkspace&&<button onClick={()=>setCreateOpen(true)}>Create page</button>}{space&&<><button onClick={()=>setImportOpen(true)}>Import a document</button>{chooseWorkspace&&<button onClick={()=>setTemplatesOpen(true)}>From template</button>}</>}</div>
+  {!chooseWorkspace&&<CreatePage key={workspaceId} presentation="inline" workspaceId={workspaceId} spaces={availableSpaces} onDirty={setCreationDirty} onClose={()=>{}} onTemplates={()=>setTemplatesOpen(true)} onCreated={p=>{setCreationDirty(false);router.push(`/pages/${encodeURIComponent(p.id)}`);}}/>}
+  {workspacePages.length?<nav aria-label="Workspace pages"><ul>{workspacePages.map(p=><li key={p.id}><button onClick={()=>open(p.id)}>{p.title}</button></li>)}</ul></nav>:<p>No accessible pages yet. Create your first private page in this workspace.</p>}
+  <div className="actions"><button onClick={()=>setTrashOpen(true)}>Trash</button><button onClick={()=>setAccessOpen(true)}>Workspace access</button></div>
+ </>:!error&&<p>Your signed-in account needs access to a Holy Sheet workspace. Ask its owner to add you.</p>}
+ {error&&<p role="alert">{error}</p>}{needsSignIn&&<SignInLink/>}</section>
+ {workspaceCreationOpen&&workspaces.find(w=>w.id===workspaceId)?.canCreateWorkspace&&<CreateWorkspaceDialog source={workspaces.find(w=>w.id===workspaceId)!} onClose={()=>setWorkspaceCreationOpen(false)} onCreated={created=>{setWorkspaces(old=>[...old.filter(w=>w.id!==created.id),created].sort((a,b)=>a.name.localeCompare(b.name)));setCreationDirty(false);setWorkspaceId(created.id);setWorkspaceCreationOpen(false);}}/>}
+ {createOpen&&workspaceId&&<CreatePage key={workspaceId} workspaceId={workspaceId} spaces={availableSpaces} onClose={()=>setCreateOpen(false)} onTemplates={()=>{setCreateOpen(false);setTemplatesOpen(true);}} onCreated={p=>{setCreationDirty(false);setCreateOpen(false);router.push(`/pages/${encodeURIComponent(p.id)}`);}}/>}
+ {trashOpen&&workspaceId&&<TrashDialog workspaceId={workspaceId} spaces={availableSpaces} onClose={()=>setTrashOpen(false)} onRestored={id=>{setTrashOpen(false);open(id);}}/>}
+ {accessOpen&&workspaceId&&<WorkspaceAccessDialog workspaceId={workspaceId} onClose={()=>setAccessOpen(false)} onExportPolicy={()=>{setAccessOpen(false);setPolicyOpen(true);}}/>}
+ {policyOpen&&workspaceId&&<ExportPolicyDialog key={workspaceId} workspaceId={workspaceId} onClose={()=>setPolicyOpen(false)}/>}
+ {importOpen&&space&&<ImportDialog spaces={availableSpaces} initialSpaceId={space} onClose={()=>setImportOpen(false)} onCreated={()=>{}} onOpen={open}/>}
+ {templatesOpen&&space&&<TemplatesDialog workspaceId={workspaceId} initialSpaceId={space} spaces={availableSpaces} onClose={()=>setTemplatesOpen(false)} onCreated={id=>{setTemplatesOpen(false);open(id);}}/>}
+ </main>;
 }
