@@ -117,13 +117,13 @@
     "rollbackScope": "Only pending or committed paths created by the current failed attempt; never live application paths or pre-existing lock state."
   },
   "bootstrapPacket": {
-    "manifest": "deployment/HOLY-127-BOOTSTRAP-PACKET.json",
-    "script": "scripts/holy127_qualifier_bootstrap.py",
-    "scriptSha256": "3dc8e484e8f579e976ebb8d9619843bb468947a02973f266fca2bb859a0860d8",
-    "payload": "deployment/HOLY-127-BOOTSTRAP-PAYLOAD-d140c7f.tar",
-    "payloadSha256": "aad7fbc7d4b44944029536c7fb49a53a0bd70839cd8dfe977c47739c5edb1f45",
+    "manifest": "deployment/HOLY-127-BOOTSTRAP-PACKET-RUNPATH-V2.json",
+    "script": "scripts/holy127_qualifier_bootstrap_runpath_v2.py",
+    "scriptSha256": "c51d11f105a47e10ef68f8fee4935aa4c2db49e974cb37e286f25827752b0dfe",
+    "payload": "deployment/HOLY-127-BOOTSTRAP-PAYLOAD-86bfdfe.tar",
+    "payloadSha256": "97399256fc32b2a7009f3615391cb61ad910ef7c2324faa531ffbbe9be99b3d7",
     "payloadSizeBytes": 143360,
-    "sourceCommit": "d140c7f951fc1412a5fe3deb3f67727b85b100a2",
+    "sourceCommit": "86bfdfe313f55630a1589f58788d16fa1142e951",
     "reviewOnly": true
   },
   "orderedOperatorSteps": [

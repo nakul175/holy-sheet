@@ -13,8 +13,8 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent
 REPO = ROOT.parent
-BOOTSTRAP_PATH = ROOT / "holy127_qualifier_bootstrap.py"
-ARCHIVE_PATH = REPO / "deployment/HOLY-127-BOOTSTRAP-PAYLOAD-d140c7f.tar"
+BOOTSTRAP_PATH = ROOT / "holy127_qualifier_bootstrap_runpath_v2.py"
+ARCHIVE_PATH = REPO / "deployment/HOLY-127-BOOTSTRAP-PAYLOAD-86bfdfe.tar"
 SPEC = importlib.util.spec_from_file_location("holy127_bootstrap", BOOTSTRAP_PATH)
 assert SPEC and SPEC.loader
 mod = importlib.util.module_from_spec(SPEC)
@@ -25,7 +25,7 @@ class Harness:
     def __init__(self, root):
         self.root = root; self.uid = os.getuid(); self.gid = os.getgid()
         self.incoming = root / "incoming"; self.incoming.mkdir(mode=0o700)
-        self.archive = self.incoming / "holy127-payload-d140c7f.tar"
+        self.archive = self.incoming / "holy127-payload-86bfdfe.tar"
         shutil.copyfile(ARCHIVE_PATH, self.archive); self.archive.chmod(0o400)
         self.sbin = root / "sbin"; self.sbin.mkdir(mode=0o755)
         self.source_parent = root / "installer-root"
@@ -78,7 +78,7 @@ class BootstrapTest(unittest.TestCase):
 
     def test_transfer_surface_and_invocation_are_fixed(self):
         source = BOOTSTRAP_PATH.read_text()
-        self.assertIn("/root/holy127-transfer-inbox/holy127-payload-d140c7f.tar", source)
+        self.assertIn("/root/holy127-transfer-inbox-runpath-v2/holy127-payload-86bfdfe.tar", source)
         self.assertIn("/usr/local/sbin/holy127-q-f4f5a94-install", source)
         self.assertNotIn("shell=True", source)
         self.assertNotIn("deploy.sh", source)
