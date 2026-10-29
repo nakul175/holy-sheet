@@ -26,7 +26,7 @@ class QualifierEntrypointContractTest(unittest.TestCase):
         collect = self.read("holy127_qualifier_receipt_collect.sh")
         cleanup = self.read("holy127_qualifier_receipt_cleanup.sh")
         for source in (collect, cleanup):
-            self.assertIn("/run/lock/holy-sheet-release/release.lock", source)
+            self.assertIn("/run/holy-sheet-release/release.lock", source)
             self.assertIn("/usr/bin/flock -n 9", source)
             self.assertIn("unset DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG PYTHONPATH PYTHONHOME", source)
             self.assertIn('test "$(/usr/bin/stat -c %u:%g:%a /var/tmp)" = "0:0:1777"', source)

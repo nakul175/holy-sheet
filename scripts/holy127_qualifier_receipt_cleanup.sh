@@ -6,8 +6,8 @@ unset DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG PYTHONPATH PYTHONHOME
 test "$#" -eq 0
 directory=/var/tmp/holy127-q-f4f5a94-20261029a
 receipt=$directory/qualification.json
-lock=/run/lock/holy-sheet-release/release.lock
-for ancestor in /run /run/lock /run/lock/holy-sheet-release; do
+lock=/run/holy-sheet-release/release.lock
+for ancestor in /run /run/holy-sheet-release; do
   test ! -L "$ancestor"
   test "$(/usr/bin/stat -c %u:%g "$ancestor")" = "0:0"
   mode=$(/usr/bin/stat -c %a "$ancestor")

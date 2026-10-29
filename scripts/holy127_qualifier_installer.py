@@ -20,20 +20,20 @@ RENAME_NOREPLACE = 1
 AT_FDCWD = -100
 CAUGHT_SIGNALS = {signal.SIGHUP, signal.SIGINT, signal.SIGTERM}
 PAYLOAD_HASHES = {
-    "scripts/holy127_disposable_staging_qualifier.py": "4c1fdbda6becaf76b7ca33698737074b50af5d0884d845f1a1c52ff3c0fa8b86",
+    "scripts/holy127_disposable_staging_qualifier.py": "4db35d5e5018d39150574b88630437363f68e66c52229f66ef8c4cf5e514b604",
     "scripts/holy127_backup_orchestrator.py": "f1f4655f0129167ae9a2c85e5165780674ad5272aacb59e457eaa8e81ee1d79c",
-    "scripts/hs_release_guard.py": "2732a41da67239772b5232c4a616638f22d5de947763e142f1a95a32644c8495",
+    "scripts/hs_release_guard.py": "11f13274f4f2e9255bc6382cfebef607ff201c2aa27e6a758ffdd3e8d1ed7f98",
     "scripts/holy127_bounded_stream.py": "8c874d97c9f6e86be0581ed82c4fff5ab1e539bf57b562c598c5c846040077e2",
     "scripts/test_holy127_disposable_staging_qualifier.py": "a93f11d5d7455bc812a292ee41f135f0dbe6e42fb704d16b79714fe27492ac01",
-    "scripts/test_holy127_qualifier_entrypoints.py": "c723c84148b958238ff8c629fd57eb7f217a6deee8a6f29633bbc0a8adf3d925",
+    "scripts/test_holy127_qualifier_entrypoints.py": "976db013443a248f1657b7a5f315ebc2d96d388ab15842318a14166313473751",
     "scripts/test_holy127_backup_orchestrator.py": "8e56992b0d2f71292b3295f592f7a03766e374b9f659239abf8c8c9b73906724",
     "scripts/test_holy127_bounded_stream.py": "d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44",
     "scripts/test_hs_release_guard.py": "6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40",
-    "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md": "2286b1e4d04e69553bdeaefc84b3563ce591b970aa33b0bce545ccd1c726dc5f",
-    "deployment/HOLY-127-RELEASE-PACKET.md": "bcd7993cbb39d8c7dcbd088377e9ef99840e09f0d034f3e19af1a3ed59298336",
-    "scripts/holy127_qualifier_entrypoint.sh": "b8a7c8162e8167b7cd35abde7189c7308a0fba15fe9af79ff9add056b1ed1fa7",
-    "scripts/holy127_qualifier_receipt_collect.sh": "64b4f1311029bb64b265824c40a541c806ae3955bfe0b1558eff4e7dd6a8b695",
-    "scripts/holy127_qualifier_receipt_cleanup.sh": "349297d0f11330568dffaf8c3486ff4e21af962237ba982324020ac76646910a",
+    "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md": "d7c373322217ca0ede0eb57567028031d5630d5ae385d48344294a97cf04cc13",
+    "deployment/HOLY-127-RELEASE-PACKET.md": "7aa0cd5fe1d9e5cdeacefc8ae617c01170f832c1e03b2a88936b4d07fe618633",
+    "scripts/holy127_qualifier_entrypoint.sh": "4b6204c8058a071351ea76d66d886a7d9d6bd526dae86f32b99745402f237a46",
+    "scripts/holy127_qualifier_receipt_collect.sh": "c031f2e8f09caca22fd22bc74348a64e8295900a39b1b4882cc1486d157cf187",
+    "scripts/holy127_qualifier_receipt_cleanup.sh": "ab2d1abfce156136cf94f40676f13e9434ecbb15e2a9cf40c015eb9a74716c8b",
 }
 BUNDLE_FILES = {
     "holy127_disposable_staging_qualifier.py": "scripts/holy127_disposable_staging_qualifier.py",
@@ -66,8 +66,8 @@ class Config:
     sbin: pathlib.Path = pathlib.Path("/usr/local/sbin")
     sudoers_dir: pathlib.Path = pathlib.Path("/etc/sudoers.d")
     sudoers: pathlib.Path = pathlib.Path("/etc/sudoers.d/holy127-q-f4f5a94")
-    lock_parent: pathlib.Path = pathlib.Path("/run/lock/holy-sheet-release")
-    lock_file: pathlib.Path = pathlib.Path("/run/lock/holy-sheet-release/release.lock")
+    lock_parent: pathlib.Path = pathlib.Path("/run/holy-sheet-release")
+    lock_file: pathlib.Path = pathlib.Path("/run/holy-sheet-release/release.lock")
     visudo: pathlib.Path = pathlib.Path("/usr/sbin/visudo")
     expected_uid: int = 0
     expected_gid: int = 0

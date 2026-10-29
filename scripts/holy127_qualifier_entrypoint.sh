@@ -36,9 +36,9 @@ verify_file() {
   test "$actual" = "$expected"
 }
 
-verify_file 4c1fdbda6becaf76b7ca33698737074b50af5d0884d845f1a1c52ff3c0fa8b86 "$bundle/holy127_disposable_staging_qualifier.py"
+verify_file 4db35d5e5018d39150574b88630437363f68e66c52229f66ef8c4cf5e514b604 "$bundle/holy127_disposable_staging_qualifier.py"
 verify_file f1f4655f0129167ae9a2c85e5165780674ad5272aacb59e457eaa8e81ee1d79c "$bundle/holy127_backup_orchestrator.py"
-verify_file 2732a41da67239772b5232c4a616638f22d5de947763e142f1a95a32644c8495 "$bundle/hs_release_guard.py"
+verify_file 11f13274f4f2e9255bc6382cfebef607ff201c2aa27e6a758ffdd3e8d1ed7f98 "$bundle/hs_release_guard.py"
 
 umask 077
 exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin DOCKER_HOST=unix:///var/run/docker.sock /usr/bin/python3 -I -c 'import runpy,sys;sys.path.insert(0,"/opt/holy-sheet-qualification/holy127-4c1fdbda6becaf76");runpy.run_path("/opt/holy-sheet-qualification/holy127-4c1fdbda6becaf76/holy127_disposable_staging_qualifier.py",run_name="__main__")'

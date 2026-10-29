@@ -13,7 +13,7 @@
     {
       "source": "scripts/holy127_disposable_staging_qualifier.py",
       "installedName": "holy127_disposable_staging_qualifier.py",
-      "sha256": "4c1fdbda6becaf76b7ca33698737074b50af5d0884d845f1a1c52ff3c0fa8b86",
+      "sha256": "4db35d5e5018d39150574b88630437363f68e66c52229f66ef8c4cf5e514b604",
       "owner": 0,
       "group": 0,
       "mode": "0444"
@@ -29,7 +29,7 @@
     {
       "source": "scripts/hs_release_guard.py",
       "installedName": "hs_release_guard.py",
-      "sha256": "2732a41da67239772b5232c4a616638f22d5de947763e142f1a95a32644c8495",
+      "sha256": "11f13274f4f2e9255bc6382cfebef607ff201c2aa27e6a758ffdd3e8d1ed7f98",
       "owner": 0,
       "group": 0,
       "mode": "0444"
@@ -38,18 +38,18 @@
   "reviewOnlyFiles": [
     {"source": "scripts/holy127_bounded_stream.py", "sha256": "8c874d97c9f6e86be0581ed82c4fff5ab1e539bf57b562c598c5c846040077e2"},
     {"source": "scripts/test_holy127_disposable_staging_qualifier.py", "sha256": "a93f11d5d7455bc812a292ee41f135f0dbe6e42fb704d16b79714fe27492ac01"},
-    {"source": "scripts/test_holy127_qualifier_entrypoints.py", "sha256": "c723c84148b958238ff8c629fd57eb7f217a6deee8a6f29633bbc0a8adf3d925"},
+    {"source": "scripts/test_holy127_qualifier_entrypoints.py", "sha256": "976db013443a248f1657b7a5f315ebc2d96d388ab15842318a14166313473751"},
     {"source": "scripts/test_holy127_backup_orchestrator.py", "sha256": "8e56992b0d2f71292b3295f592f7a03766e374b9f659239abf8c8c9b73906724"},
     {"source": "scripts/test_holy127_bounded_stream.py", "sha256": "d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44"},
     {"source": "scripts/test_hs_release_guard.py", "sha256": "6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40"},
-    {"source": "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md", "sha256": "2286b1e4d04e69553bdeaefc84b3563ce591b970aa33b0bce545ccd1c726dc5f"},
-    {"source": "deployment/HOLY-127-RELEASE-PACKET.md", "sha256": "bcd7993cbb39d8c7dcbd088377e9ef99840e09f0d034f3e19af1a3ed59298336"}
+    {"source": "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md", "sha256": "d7c373322217ca0ede0eb57567028031d5630d5ae385d48344294a97cf04cc13"},
+    {"source": "deployment/HOLY-127-RELEASE-PACKET.md", "sha256": "7aa0cd5fe1d9e5cdeacefc8ae617c01170f832c1e03b2a88936b4d07fe618633"}
   ],
   "rootOwnedEntrypoints": [
     {
       "source": "scripts/holy127_qualifier_entrypoint.sh",
       "installedPath": "/usr/local/sbin/holy127-q-f4f5a94",
-      "sha256": "b8a7c8162e8167b7cd35abde7189c7308a0fba15fe9af79ff9add056b1ed1fa7",
+      "sha256": "4b6204c8058a071351ea76d66d886a7d9d6bd526dae86f32b99745402f237a46",
       "owner": 0,
       "group": 0,
       "mode": "0555",
@@ -58,7 +58,7 @@
     {
       "source": "scripts/holy127_qualifier_receipt_collect.sh",
       "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-receipt",
-      "sha256": "64b4f1311029bb64b265824c40a541c806ae3955bfe0b1558eff4e7dd6a8b695",
+      "sha256": "c031f2e8f09caca22fd22bc74348a64e8295900a39b1b4882cc1486d157cf187",
       "owner": 0,
       "group": 0,
       "mode": "0555",
@@ -67,7 +67,7 @@
     {
       "source": "scripts/holy127_qualifier_receipt_cleanup.sh",
       "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-cleanup",
-      "sha256": "349297d0f11330568dffaf8c3486ff4e21af962237ba982324020ac76646910a",
+      "sha256": "ab2d1abfce156136cf94f40676f13e9434ecbb15e2a9cf40c015eb9a74716c8b",
       "owner": 0,
       "group": 0,
       "mode": "0555",
@@ -93,7 +93,7 @@
   "sudoPolicy": "Permit only the three exact no-argument installed entrypoints above; do not permit shells, Python, Docker, cat, rm, arbitrary paths or arguments.",
   "installationMechanism": {
     "source": "scripts/holy127_qualifier_installer.py",
-    "sha256": "212184f578c567595ebbc547d0486af2e635b4306c68a6435935222676cb3e1e",
+    "sha256": "737e05787e93d585371e89734256a6745dc3595093b64ff9b4a85ffb852950a3",
     "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-install",
     "allowedInvocation": "/usr/local/sbin/holy127-q-f4f5a94-install",
     "operatorOnly": true,

@@ -43,7 +43,7 @@ class BootstrapTest(unittest.TestCase):
             harness = Harness(pathlib.Path(temporary)); subject = FakeBootstrap(harness.config()); subject.invoked = False
             subject.run()
             self.assertTrue(subject.invoked)
-            self.assertEqual(subject.config.installer.read_bytes(), (REPO / mod.INSTALLER_RELATIVE).read_bytes())
+            self.assertEqual(__import__("hashlib").sha256(subject.config.installer.read_bytes()).hexdigest(), mod.INSTALLER_SHA256)
             self.assertEqual(subject.config.installer.stat().st_mode & 0o777, 0o555)
             for relative, digest in mod.PAYLOAD_HASHES.items():
                 self.assertEqual(__import__("hashlib").sha256((subject.config.source_root / relative).read_bytes()).hexdigest(), digest)
