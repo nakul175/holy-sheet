@@ -13,6 +13,7 @@ import { backlinks } from './page-references';
 import {prepareImport,changeImport} from './document-imports';
 import {createExport,downloadExport,cancelExport,changeExportPolicy} from './page-exports';
 import { connectedSearch } from './connected-search';
+import {changePublishing,publishingState} from './document-publishing';
 import {SharedRecordRepository,type RecordContext} from './shared-records';
 import {SharedRecordReferenceListRepository} from './shared-record-reference-lists';
 import {SharedRecordConditionRepository} from './shared-record-conditions';
@@ -33,6 +34,15 @@ import {mkdir,writeFile} from 'node:fs/promises';
 const url=process.env.HS_TEST_POSTGRES_URL;
 let db:Database,r:Repository;
 describe.skipIf(!url)('real PostgreSQL isolated acceptance',()=>{
+  it('HOLY-63 serializes concurrent publication retries and stale withdrawal without changing the editor draft',async()=>{
+    const reviewer={id:'publication-pg-'+crypto.randomUUID()},p=await r.create(localActor,'PostgreSQL publication','space-product');
+    await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[reviewer.id]);await db.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-aplyd',$1)",[reviewer.id]);await db.query("INSERT INTO hs_grants(page_id,subject,role) VALUES($1,$2,'editor')",[p.id,reviewer.id]);
+    const command=(actor:typeof reviewer,fields:Record<string,unknown>)=>publishingState(r,actor,p.id).then(s=>changePublishing(r,actor,p.id,{operationId:crypto.randomUUID(),expectedVersion:s.version,...fields}));
+    await command(localActor,{action:'configure',reviewers:[reviewer.id]});const submitted=(await command(localActor,{action:'submit',sourceVersion:1})).applied as {reviewId:string;snapshotHash:string};const review={reviewId:submitted.reviewId,snapshotHash:submitted.snapshotHash};await command(reviewer,{action:'approve',...review,reason:'Independent PostgreSQL review'});
+    const input={action:'publish',...review,operationId:crypto.randomUUID(),expectedVersion:(await publishingState(r,localActor,p.id)).version};const result=await Promise.all([changePublishing(r,localActor,p.id,input),changePublishing(r,localActor,p.id,input)]);expect(result.filter(x=>x.replayed)).toHaveLength(1);expect(result[0].applied).toEqual(result[1].applied);expect((await db.query('SELECT id FROM hs_document_publications WHERE page_id=$1',[p.id])).rows).toHaveLength(1);
+    await expect(changePublishing(r,localActor,p.id,{action:'withdraw',operationId:crypto.randomUUID(),expectedVersion:input.expectedVersion,reason:'Stale concurrent withdrawal'})).rejects.toMatchObject({code:'publication_conflict'});expect((await r.get(p.id,localActor)).version).toBe(1);
+    await db.close();db=await createDatabase();r=new Repository(db);expect((await publishingState(r,localActor,p.id)).publicationId).toBeTruthy();
+  });
   async function sharedFixture(){const tenantId=crypto.randomUUID(),workspaceId='data-pg-'+crypto.randomUUID();await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$2)',[workspaceId,'Isolated shared-record PG workspace']);await db.query('INSERT INTO hs_members(workspace_id,user_id) VALUES($1,$2)',[workspaceId,localActor.id]);await db.query('INSERT INTO hs_data_tenants(id,name) VALUES($1,$2)',[tenantId,'Synthetic suite tenant']);await db.query('INSERT INTO hs_data_workspaces(workspace_id,tenant_id,review_reference) VALUES($1,$2,$3)',[workspaceId,tenantId,'Isolated fixture; not a real suite mapping']);await db.query("INSERT INTO hs_data_collections(tenant_id,id,name,core) VALUES($1,'organisations','Organisations',true)",[tenantId]);await db.query("INSERT INTO hs_data_collection_grants(tenant_id,user_id,collection,capabilities) VALUES($1,$2,'organisations',$3)",[tenantId,localActor.id,['view','create','edit']]);const context:RecordContext={actor:localActor,tenantId,workspaceId};const authority={verify:async(c:RecordContext)=>({subject:c.actor.id,tenantId:c.tenantId,workspaceId:c.workspaceId,active:true,tenantAdministrator:false,revision:'synthetic-pg-mapping'})};return {context,authority,records:new SharedRecordRepository(r,authority)};}
   it('serializes initial custom-collection reference fields and preserves retry identity after catalogue deprecation',async()=>{
     const {context,authority}=await sharedFixture(),central={verify:async(c:RecordContext)=>({...await authority.verify(c),tenantAdministrator:true})},lists=new SharedRecordReferenceListRepository(r,central),collections=new SharedRecordCollectionRepository(r,central);

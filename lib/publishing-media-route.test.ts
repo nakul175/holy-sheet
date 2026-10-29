@@ -1,0 +1,15 @@
+import {beforeEach,afterEach,it,expect,vi} from 'vitest';
+import {createHash} from 'node:crypto';
+import {DocumentError} from './document';
+const mocks=vi.hoisted(()=>({access:vi.fn(),object:vi.fn(),repository:vi.fn()}));
+vi.mock('./repository',()=>({repository:mocks.repository}));
+vi.mock('./media',()=>({mediaAccess:mocks.access,getObject:mocks.object}));
+import {GET} from '../app/api/media/[id]/route';
+const id='11111111-1111-4111-8111-111111111111',body=Buffer.from('Reviewed file bytes'),context={params:Promise.resolve({id})};
+const metadata={id,page_id:'governed-page',object_key:'private-object',mime:'text/plain',name:'review.txt',sha256:createHash('sha256').update(body).digest('hex')};
+beforeEach(()=>{vi.stubEnv('NODE_ENV','test');vi.stubEnv('HS_LOCAL_PREVIEW','1');vi.clearAllMocks();mocks.repository.mockResolvedValue({});mocks.access.mockResolvedValue(metadata);mocks.object.mockResolvedValue(body);});
+afterEach(()=>vi.unstubAllEnvs());
+it('delivers verified attachment bytes only after a second current publication access check',async()=>{const response=await GET(new Request('http://localhost/api/media/'+id),context);expect(response.status).toBe(200);expect(await response.text()).toBe(body.toString());expect(mocks.access).toHaveBeenCalledTimes(2);expect(response.headers.get('cache-control')).toBe('private, no-store');});
+it('denies delivery when the publication is withdrawn while object retrieval is in flight',async()=>{mocks.access.mockResolvedValueOnce(metadata).mockRejectedValueOnce(new DocumentError('Publication unavailable','publication_unavailable',404));const response=await GET(new Request('http://localhost/api/media/'+id),context);expect(response.status).toBe(404);expect(await response.text()).not.toContain('Reviewed file bytes');});
+it('denies mismatched object bytes even when database metadata is unchanged',async()=>{mocks.object.mockResolvedValue(Buffer.from('Unreviewed object replacement'));const response=await GET(new Request('http://localhost/api/media/'+id),context);expect(response.status).toBe(409);expect((await response.json()).code).toBe('media_integrity');});
+it('denies an attachment whose digest changed during retrieval',async()=>{mocks.access.mockResolvedValueOnce(metadata).mockResolvedValueOnce({...metadata,sha256:'b'.repeat(64)});const response=await GET(new Request('http://localhost/api/media/'+id,{headers:{range:'bytes=0-3'}}),context);expect(response.status).toBe(409);expect((await response.json()).code).toBe('media_integrity');});

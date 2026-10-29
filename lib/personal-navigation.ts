@@ -12,16 +12,10 @@ export async function personalNavigation(r:Repository,actor:Actor,workspaceId?:s
   SELECT p.id,p.workspace_id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
   WHERE p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
   UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN reachable a ON c.parent_id=a.id AND c.workspace_id=a.workspace_id WHERE c.deleted_at IS NULL
- ), permitted AS (SELECT DISTINCT id,workspace_id FROM reachable), permitted_paths(id,titles) AS (
-  SELECT p.id,ARRAY[]::text[] FROM hs_pages p JOIN permitted a ON a.id=p.id
-  WHERE p.parent_id IS NULL OR NOT EXISTS(SELECT 1 FROM permitted parent_access WHERE parent_access.id=p.parent_id)
-  UNION ALL
-  SELECT child.id,path.titles||parent.title FROM permitted_paths path JOIN hs_pages parent ON parent.id=path.id
-  JOIN hs_pages child ON child.parent_id=parent.id JOIN permitted child_access ON child_access.id=child.id
- ) SELECT p.id,p.title,p.workspace_id AS "workspaceId",w.name AS "workspaceName",p.space_id AS "spaceId",s.name AS "spaceName",path.titles AS "ancestorTitles"
+ ), permitted AS (SELECT DISTINCT id,workspace_id FROM reachable) SELECT p.id,p.title,p.workspace_id AS "workspaceId",w.name AS "workspaceName",p.space_id AS "spaceId",s.name AS "spaceName",ARRAY[]::text[] AS "ancestorTitles"
  FROM ${table} n JOIN permitted a ON a.id=n.page_id JOIN hs_pages p ON p.id=n.page_id JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
- JOIN permitted_paths path ON path.id=p.id
- WHERE n.user_id=$1 AND p.deleted_at IS NULL AND ($2::text IS NULL OR p.workspace_id=$2) ORDER BY ${order}`,[actor.id,workspaceId??null]);return rows;};
+ WHERE n.user_id=$1 AND p.deleted_at IS NULL AND ($2::text IS NULL OR p.workspace_id=$2) ORDER BY ${order}`,[actor.id,workspaceId??null]);
+ const visible:NavigationEntry[]=[];for(const row of rows){try{const page=await r.get(row.id,actor);const ancestorTitles:string[]=[];let parent=page.parentPageId;const seen=new Set([page.id]);while(parent&&!seen.has(parent)){seen.add(parent);try{const ancestor=await r.get(parent,actor);if(ancestor.workspaceId!==page.workspaceId)break;ancestorTitles.unshift(ancestor.title);parent=ancestor.parentPageId;}catch(e){if(e instanceof DocumentError&&e.status===404)break;throw e;}}visible.push({...row,title:page.title,ancestorTitles});}catch(e){if(!(e instanceof DocumentError)||e.status!==404)throw e;}}return visible;};
  // Read current page metadata only after access checks. No stale titles or activity are stored in these tables.
  return {version:version.rows[0]?.version??0,favourites:await read('hs_favourites','n.position,n.page_id'),recents:await read('hs_recents','n.opened_at DESC,n.page_id')};
 }
