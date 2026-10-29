@@ -168,6 +168,16 @@ class DisposableQualifierTest(unittest.TestCase):
                 q.cleanup({"base": False, "network": True, "container": True}, preserve_receipt=True)
         self.assertEqual(commands[-1], (q.DOCKER, "network", "rm", q.NETWORK))
 
+    def test_backend_cancellation_reports_natural_absence(self):
+        with patch.object(q, "backend_count", side_effect=[1, 0]), patch.object(q.time, "sleep", return_value=None), patch.object(q, "terminate_backend") as terminate:
+            self.assertFalse(q.require_cancelled("owned-disposable"))
+        terminate.assert_not_called()
+
+    def test_backend_cancellation_explicitly_terminates_only_named_disposable_backend(self):
+        with patch.object(q.time, "monotonic", side_effect=[0, 2, 2, 3]), patch.object(q, "backend_count", return_value=0), patch.object(q, "terminate_backend") as terminate:
+            self.assertTrue(q.require_cancelled("owned-disposable"))
+        terminate.assert_called_once_with("owned-disposable")
+
     def test_failed_cleanup_removes_only_known_operation_files(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder) / q.OP

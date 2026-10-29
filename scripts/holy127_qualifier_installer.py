@@ -20,20 +20,20 @@ RENAME_NOREPLACE = 1
 AT_FDCWD = -100
 CAUGHT_SIGNALS = {signal.SIGHUP, signal.SIGINT, signal.SIGTERM}
 PAYLOAD_HASHES = {
-    "scripts/holy127_disposable_staging_qualifier.py": "4db35d5e5018d39150574b88630437363f68e66c52229f66ef8c4cf5e514b604",
+    "scripts/holy127_disposable_staging_qualifier.py": "3a8b0e8f9e2d382b0ba00dc5a0fb5b5c2be3d366913a4ac14f4d05b46b4070fd",
     "scripts/holy127_backup_orchestrator.py": "f1f4655f0129167ae9a2c85e5165780674ad5272aacb59e457eaa8e81ee1d79c",
     "scripts/hs_release_guard.py": "11f13274f4f2e9255bc6382cfebef607ff201c2aa27e6a758ffdd3e8d1ed7f98",
     "scripts/holy127_bounded_stream.py": "8c874d97c9f6e86be0581ed82c4fff5ab1e539bf57b562c598c5c846040077e2",
-    "scripts/test_holy127_disposable_staging_qualifier.py": "a93f11d5d7455bc812a292ee41f135f0dbe6e42fb704d16b79714fe27492ac01",
-    "scripts/test_holy127_qualifier_entrypoints.py": "976db013443a248f1657b7a5f315ebc2d96d388ab15842318a14166313473751",
+    "scripts/test_holy127_disposable_staging_qualifier.py": "004893b54f7cacdd708f3b67ca0a98fb9f5bc025f2a3b3715004c1cda7e8facc",
+    "scripts/test_holy127_qualifier_entrypoints.py": "cfefb50406020ae23fbcb96dc8f01c69fb78d56c7573319dfe4dd94dbc2ec7e1",
     "scripts/test_holy127_backup_orchestrator.py": "8e56992b0d2f71292b3295f592f7a03766e374b9f659239abf8c8c9b73906724",
     "scripts/test_holy127_bounded_stream.py": "d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44",
     "scripts/test_hs_release_guard.py": "6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40",
-    "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md": "d7c373322217ca0ede0eb57567028031d5630d5ae385d48344294a97cf04cc13",
-    "deployment/HOLY-127-RELEASE-PACKET.md": "7aa0cd5fe1d9e5cdeacefc8ae617c01170f832c1e03b2a88936b4d07fe618633",
-    "scripts/holy127_qualifier_entrypoint.sh": "4b6204c8058a071351ea76d66d886a7d9d6bd526dae86f32b99745402f237a46",
-    "scripts/holy127_qualifier_receipt_collect.sh": "c031f2e8f09caca22fd22bc74348a64e8295900a39b1b4882cc1486d157cf187",
-    "scripts/holy127_qualifier_receipt_cleanup.sh": "ab2d1abfce156136cf94f40676f13e9434ecbb15e2a9cf40c015eb9a74716c8b",
+    "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md": "71c5a1ea4f2571890d227ba071e5f3604b9e1d4d22c74cda38a5e8ae3aa3b7d2",
+    "deployment/HOLY-127-RELEASE-PACKET.md": "6362e0a3847bc8b88b645124b29a73afada63d0a3d09ac4de243274a48b35c5f",
+    "scripts/holy127_qualifier_entrypoint.sh": "ab5efb6d8ba83f1dba6ec93495e593659f9eeba0b9e104d23cf1ba34e69165f2",
+    "scripts/holy127_qualifier_receipt_collect.sh": "7f7e66316a1fa8adcf3b47f6a86dedc2e4c637fda470cf4deca930b7221326fd",
+    "scripts/holy127_qualifier_receipt_cleanup.sh": "e2ead68983d9c0119515129125652eb8026557f16cdbef931adfb0ae8f1471e5",
 }
 BUNDLE_FILES = {
     "holy127_disposable_staging_qualifier.py": "scripts/holy127_disposable_staging_qualifier.py",

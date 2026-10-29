@@ -55,7 +55,8 @@ class QualifierEntrypointContractTest(unittest.TestCase):
         for name in ("holy127_qualifier_receipt_collect.sh", "holy127_qualifier_receipt_cleanup.sh"):
             source = self.read(name)
             self.assertLess(source.index('test ! -L "$lock"'), source.index('exec 9<>"$lock"'))
-            self.assertLess(source.index('"0:660:regular file"'), source.index('exec 9<>"$lock"'))
+            self.assertLess(source.index('test -f "$lock"'), source.index('exec 9<>"$lock"'))
+            self.assertLess(source.index('"0:660"'), source.index('exec 9<>"$lock"'))
             self.assertGreaterEqual(source.count("0$mode & 0022"), 2)
 
 

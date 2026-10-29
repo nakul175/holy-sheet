@@ -53,7 +53,7 @@ The image must already be present and is not counted as new allocation. Host fil
 
 ## Acceptance and disposition
 
-Pass requires baseline success, timeout cancellation success, SIGTERM cancellation success, all capacity checkpoints, exact cleanup, and unchanged live staging resource IDs. The executable candidate is `scripts/holy127_disposable_staging_qualifier.py`; it still requires hash freeze and Product review before a slot can be granted. Any missing reviewed helper, operator permission, image, headroom, slot, or cancellation proof parks HOLY-127 with evidence; it does not authorize a broader helper, pruning, image pulls, or changes to live staging. No deployment switch and no production action are part of this qualification.
+Pass requires baseline success, timeout cancellation success, SIGTERM cancellation success, all capacity checkpoints, exact cleanup, and unchanged live staging resource IDs. Because terminating a Docker CLI process group does not itself guarantee cancellation of the server-side exec, each probe may explicitly terminate only its uniquely named PostgreSQL backend inside the owned disposable container, then must prove that backend, the container `pg_dump`, and the host command are all absent. It never targets the live application database. The executable candidate is `scripts/holy127_disposable_staging_qualifier.py`; it still requires hash freeze and Product review before a slot can be granted. Any missing reviewed helper, operator permission, image, headroom, slot, or cancellation proof parks HOLY-127 with evidence; it does not authorize a broader helper, pruning, image pulls, or changes to live staging. No deployment switch and no production action are part of this qualification.
 
 ## Fixed installation mechanism
 

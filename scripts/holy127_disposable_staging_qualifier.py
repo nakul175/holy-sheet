@@ -300,14 +300,19 @@ def lock_table() -> subprocess.Popen[bytes]:
     raise QualificationFailure("fixture lock was not acquired")
 
 
-def require_cancelled(app_name: str) -> None:
+def require_cancelled(app_name: str) -> bool:
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline:
+        if backend_count(app_name) == 0:
+            return False
+        time.sleep(.1)
+    terminate_backend(app_name)
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         if backend_count(app_name) == 0:
-            return
+            return True
         time.sleep(.1)
-    terminate_backend(app_name)
-    raise QualificationFailure("Docker exec cancellation left a PostgreSQL backend")
+    raise QualificationFailure("owned disposable PostgreSQL backend survived explicit cancellation")
 
 
 def dump_is_waiting(app_name: str) -> bool:
@@ -372,7 +377,7 @@ def require_container_absent() -> None:
     raise QualificationFailure("container pg_dump process survived cancellation")
 
 
-def timeout_probe(on_blocked: Callable[[], None] | None = None) -> None:
+def timeout_probe(on_blocked: Callable[[], None] | None = None) -> bool:
     app_name = "holy127-dump-timeout"
     locker = lock_table()
     child = backup_child(app_name, 2)
@@ -383,9 +388,10 @@ def timeout_probe(on_blocked: Callable[[], None] | None = None) -> None:
         child.wait(timeout=10)
         if child.returncode == 0:
             raise QualificationFailure("blocked pg_dump did not time out")
-        require_cancelled(app_name)
+        backend_terminated = require_cancelled(app_name)
         require_host_absent(app_name)
         require_container_absent()
+        return backend_terminated
     finally:
         if child.poll() is None:
             os.killpg(child.pid, signal.SIGKILL)
@@ -394,7 +400,7 @@ def timeout_probe(on_blocked: Callable[[], None] | None = None) -> None:
         locker.wait(timeout=10)
 
 
-def sigterm_probe(on_blocked: Callable[[], None] | None = None) -> None:
+def sigterm_probe(on_blocked: Callable[[], None] | None = None) -> bool:
     app_name = "holy127-dump-sigterm"
     locker = lock_table()
     child = backup_child(app_name, 30)
@@ -406,9 +412,10 @@ def sigterm_probe(on_blocked: Callable[[], None] | None = None) -> None:
         child.wait(timeout=10)
         if child.returncode == 0:
             raise QualificationFailure("SIGTERM probe unexpectedly succeeded")
-        require_cancelled(app_name)
+        backend_terminated = require_cancelled(app_name)
         require_host_absent(app_name)
         require_container_absent()
+        return backend_terminated
     finally:
         if child.poll() is None:
             os.killpg(child.pid, signal.SIGKILL)
@@ -492,11 +499,11 @@ def run() -> dict[str, object]:
                 final.unlink()
                 receipt.unlink()
                 evidence.append({"capacity": guard.check("before-timeout"), "memoryAvailableBytes": memory_available()})
-                timeout_probe(lambda: evidence.append({"capacity": guard.check("timeout-peak"), "memoryAvailableBytes": memory_available(), "container": resource_snapshot(), "lockWaitProven": True}))
-                evidence.append({"phase": "timeout", "backendAbsent": backend_count("holy127-dump-timeout") == 0, "hostCommandAbsent": host_command_count("holy127-dump-timeout") == 0, "containerPgDumpAbsent": container_pg_dump_count() == 0})
+                timeout_backend_terminated = timeout_probe(lambda: evidence.append({"capacity": guard.check("timeout-peak"), "memoryAvailableBytes": memory_available(), "container": resource_snapshot(), "lockWaitProven": True}))
+                evidence.append({"phase": "timeout", "disposableBackendTerminationApplied": timeout_backend_terminated, "backendAbsent": backend_count("holy127-dump-timeout") == 0, "hostCommandAbsent": host_command_count("holy127-dump-timeout") == 0, "containerPgDumpAbsent": container_pg_dump_count() == 0})
                 evidence.append({"capacity": guard.check("before-sigterm"), "memoryAvailableBytes": memory_available()})
-                sigterm_probe(lambda: evidence.append({"capacity": guard.check("sigterm-peak"), "memoryAvailableBytes": memory_available(), "container": resource_snapshot(), "lockWaitProven": True}))
-                evidence.append({"phase": "sigterm", "backendAbsent": backend_count("holy127-dump-sigterm") == 0, "hostCommandAbsent": host_command_count("holy127-dump-sigterm") == 0, "containerPgDumpAbsent": container_pg_dump_count() == 0})
+                sigterm_backend_terminated = sigterm_probe(lambda: evidence.append({"capacity": guard.check("sigterm-peak"), "memoryAvailableBytes": memory_available(), "container": resource_snapshot(), "lockWaitProven": True}))
+                evidence.append({"phase": "sigterm", "disposableBackendTerminationApplied": sigterm_backend_terminated, "backendAbsent": backend_count("holy127-dump-sigterm") == 0, "hostCommandAbsent": host_command_count("holy127-dump-sigterm") == 0, "containerPgDumpAbsent": container_pg_dump_count() == 0})
             except BaseException as error:
                 failure = error
             finally:

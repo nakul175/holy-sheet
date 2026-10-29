@@ -36,7 +36,7 @@ verify_file() {
   test "$actual" = "$expected"
 }
 
-verify_file 4db35d5e5018d39150574b88630437363f68e66c52229f66ef8c4cf5e514b604 "$bundle/holy127_disposable_staging_qualifier.py"
+verify_file 3a8b0e8f9e2d382b0ba00dc5a0fb5b5c2be3d366913a4ac14f4d05b46b4070fd "$bundle/holy127_disposable_staging_qualifier.py"
 verify_file f1f4655f0129167ae9a2c85e5165780674ad5272aacb59e457eaa8e81ee1d79c "$bundle/holy127_backup_orchestrator.py"
 verify_file 11f13274f4f2e9255bc6382cfebef607ff201c2aa27e6a758ffdd3e8d1ed7f98 "$bundle/hs_release_guard.py"
 

@@ -14,7 +14,8 @@ for ancestor in /run /run/holy-sheet-release; do
   test $((0$mode & 0022)) -eq 0
 done
 test ! -L "$lock"
-test "$(/usr/bin/stat -c %u:%a:%F "$lock")" = "0:660:regular file"
+test -f "$lock"
+test "$(/usr/bin/stat -c %u:%a "$lock")" = "0:660"
 exec 9<>"$lock"
 /usr/bin/flock -n 9
 for ancestor in /var /usr/local /usr/local/sbin; do
