@@ -16,7 +16,7 @@ let schema:ReturnType<typeof getSchema>|undefined;
 export function richSchema(){
   return schema??=getSchema([
     StarterKit.configure({heading:{levels:[1,2,3]},codeBlock:false}),TextStyle,Color,Highlight.configure({multicolor:true}),TaskList,TaskItem.configure({nested:true}),TableKit,
-    CodeBlock,Image.extend({addAttributes(){return {...this.parent?.(),attachmentId:{default:null},caption:{default:""},width:{default:640}};}}),
+    CodeBlock,Image.extend({addAttributes(){const parent={...(this.parent?.()??{})};delete (parent as {height?:unknown}).height;return {...parent,attachmentId:{default:null},caption:{default:""},width:{default:640}};}}),
     Details,DetailsContent,DetailsSummary,
     Node.create({name:"callout",group:"block",content:"paragraph+",addAttributes(){return {theme:{default:"neutral"},icon:{default:"✦"}};}}),
     Node.create({name:"tableOfContents",group:"block",atom:true}),

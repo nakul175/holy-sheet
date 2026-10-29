@@ -1,0 +1,10 @@
+.focused.focused { grid-template-columns:minmax(0,1fr); padding-top:0; }
+.focused :global(.suite-bar),.focused :global(.sidebar),.focused :global(.navigation-scrim),.focused :global(.page-command-bar),.focused :global(.breadcrumbs),.focused :global(.page-kicker),.focused :global(.page-io-actions),.focused :global(.page-footer),.focused :global(.editor-toolbox) { display:none; }
+.focused :global(.document) { grid-column:1; margin-right:0; }
+.focused :global(.document)>article { margin:32px auto 70px; }
+.focused :global(.doc-header) { position:sticky; top:0; min-height:60px; height:auto; padding:8px 16px; gap:12px; flex-wrap:wrap; }
+.focused :global(.document-state) { margin-left:auto; flex-wrap:wrap; gap:8px; }
+.focused :global(.discussion-panel) { display:none; }
+.exit { min-height:44px; padding:9px 14px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); font:inherit; }
+.exit:focus-visible { outline:2px solid var(--navy); outline-offset:3px; }
+@media(max-width:850px) { .focused :global(.document)>article { margin:16px auto 48px; } .focused :global(.doc-header) { padding:8px 12px; } }
