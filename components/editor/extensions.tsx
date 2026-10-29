@@ -6,6 +6,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { useEffect, useState,useRef } from "react";
 import { openSectionsForNavigation,restoreTemporarySections,type TemporarySection } from "./section-navigation";
+import { findLiteralRanges } from "./find-matches";
 
 export const Callout = Node.create({
   name:"callout",group:"block",content:"paragraph+",defining:true,
@@ -48,21 +49,19 @@ function FileView({node,editor,getPos}:NodeViewProps){
 }
 export const FileBlock = Node.create({name:"file",group:"block",atom:true,draggable:true,addAttributes(){return {attachmentId:{default:null},title:{default:''}};},parseHTML:()=>[{tag:"div[data-hs-file]"}],renderHTML({HTMLAttributes}){return ["div",mergeAttributes(HTMLAttributes,{"data-hs-file":""})];},addNodeView(){return ReactNodeViewRenderer(FileView);}});
 
-export type FindState = {labels:Record<string,string>;query:string;matchCase:boolean;matches:{from:number;to:number}[];decorations:DecorationSet};
+export type FindState = {labels:Record<string,string>;query:string;matchCase:boolean;wholeWords:boolean;matches:{from:number;to:number}[];decorations:DecorationSet};
 export const findKey = new PluginKey<FindState>("holy-find");
 function publishFindLabel(editor:Editor,id:unknown,label:string){if(typeof id==='string'&&!editor.isDestroyed)editor.view.dispatch(editor.state.tr.setMeta(findKey,{labels:{[id]:label}}).setMeta('addToHistory',false));}
-export function collectMatches(doc:PMNode,query:string,matchCase=false,labels:Record<string,string>={}){
+export function collectMatches(doc:PMNode,query:string,matchCase=false,labels:Record<string,string>={},wholeWords=false){
   const matches:{from:number;to:number}[]=[];if([...query.trim()].length<2)return matches;
-  // Unicode regex matching retains source UTF-16 offsets; lowercasing whole strings can change length.
-  const pattern=new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),matchCase?'gu':'giu');
   doc.descendants((node,pos)=>{
     if(['image','file','pageLink'].includes(node.type.name)){
       const label=node.type.name==='image'?[node.attrs.alt,node.attrs.caption].filter(Boolean).join('\n'):(labels[String(node.attrs.id)]??(node.type.name==='file'?String(node.attrs.title??''):''));
-      pattern.lastIndex=0;for(const _ of label.matchAll(pattern))matches.push({from:pos,to:pos+node.nodeSize});return false;
+      for(const _ of findLiteralRanges(label,query,{matchCase,wholeWords}))matches.push({from:pos,to:pos+node.nodeSize});return false;
     }
     if(!node.isTextblock)return true;
     let hay='';node.forEach(child=>{hay+=child.isText?child.text:child.type.name==='hardBreak'?'\n':'\uFFFC';});
-    pattern.lastIndex=0;for(const hit of hay.matchAll(pattern))matches.push({from:pos+1+hit.index!,to:pos+1+hit.index!+hit[0].length});return false;
+    for(const hit of findLiteralRanges(hay,query,{matchCase,wholeWords}))matches.push({from:pos+1+hit.index,to:pos+1+hit.index+hit.length});return false;
   });return matches;
 }
-export const FindExtension = Extension.create({name:"holyFind",addProseMirrorPlugins(){return [new Plugin<FindState>({key:findKey,state:{init:()=>({labels:{},query:"",matchCase:false,matches:[],decorations:DecorationSet.empty}),apply(tr,old){const meta=tr.getMeta(findKey) as Partial<FindState>|undefined;const query=meta?.query??old.query, matchCase=meta?.matchCase??old.matchCase;if(!tr.docChanged&&!meta)return old;const labels={...old.labels,...meta?.labels};const visible=new Set<string>();tr.doc.descendants(node=>{if(['file','pageLink'].includes(node.type.name))visible.add(String(node.attrs.id));});for(const id of Object.keys(labels))if(!visible.has(id))delete labels[id];const matches=collectMatches(tr.doc,query,matchCase,labels);return {labels,query,matchCase,matches,decorations:DecorationSet.create(tr.doc,matches.map(m=>{const node=tr.doc.nodeAt(m.from);return node?.isAtom&&!node.isText?Decoration.node(m.from,m.to,{class:'find-match'}):Decoration.inline(m.from,m.to,{class:"find-match"});}))};}},props:{decorations:state=>findKey.getState(state)?.decorations}})];}});
+export const FindExtension = Extension.create({name:"holyFind",addProseMirrorPlugins(){return [new Plugin<FindState>({key:findKey,state:{init:()=>({labels:{},query:"",matchCase:false,wholeWords:false,matches:[],decorations:DecorationSet.empty}),apply(tr,old){const meta=tr.getMeta(findKey) as Partial<FindState>|undefined;const query=meta?.query??old.query, matchCase=meta?.matchCase??old.matchCase,wholeWords=meta?.wholeWords??old.wholeWords;if(!tr.docChanged&&!meta)return old;const labels={...old.labels,...meta?.labels};const visible=new Set<string>();tr.doc.descendants(node=>{if(['file','pageLink'].includes(node.type.name))visible.add(String(node.attrs.id));});for(const id of Object.keys(labels))if(!visible.has(id))delete labels[id];const matches=collectMatches(tr.doc,query,matchCase,labels,wholeWords);return {labels,query,matchCase,wholeWords,matches,decorations:DecorationSet.create(tr.doc,matches.map(m=>{const node=tr.doc.nodeAt(m.from);return node?.isAtom&&!node.isText?Decoration.node(m.from,m.to,{class:'find-match'}):Decoration.inline(m.from,m.to,{class:"find-match"});}))};}},props:{decorations:state=>findKey.getState(state)?.decorations}})];}});

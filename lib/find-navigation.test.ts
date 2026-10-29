@@ -32,6 +32,10 @@ for(const editable of [true,false])it(`reveals the first hidden match while quer
     expect(body(1).hidden).toBe(true);
     updateFindQuery(editor,{query:'Orchid',matchCase:true},'qa',entries,true);
     expect(body(0).hidden).toBe(false);
+    updateFindQuery(editor,{query:'Orchid',matchCase:true,wholeWords:true},'qa',entries,true);
+    expect(findKey.getState(editor.state)?.wholeWords).toBe(true);
+    const findState=findKey.getState(editor.state);editor.commands.setTextSelection(2);
+    expect(findKey.getState(editor.state)).toBe(findState);
     restoreTemporarySections(entries);expect(body(0).hidden).toBe(true);
     expect(editor.getJSON()).toEqual(before);expect(editor.can().undo()).toBe(false);
     for(const section of documentValue.content!)expect(localStorage.getItem(`hs-collapse:qa:${section.attrs!.id}`)).toBe('closed');
