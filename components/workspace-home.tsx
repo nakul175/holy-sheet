@@ -10,7 +10,7 @@ import TrashDialog from './trash-dialog';
 import WorkspaceAccessDialog from './workspace-access-dialog';
 import CreatePage from './create-page-dialog';
 import CreateWorkspaceDialog from './create-workspace-dialog';
-import {SignInLink,SignOutButton} from './session-boundary';
+import {SignInLink,SignOutButton,continueToSignIn} from './session-boundary';
 import {ApiError,requestJson} from './editor/use-document-session';
 
 export default function WorkspaceHome({chooseWorkspace=false}:{chooseWorkspace?:boolean}){
@@ -26,7 +26,7 @@ export default function WorkspaceHome({chooseWorkspace=false}:{chooseWorkspace?:
    if(!Array.isArray(a.pages)||!Array.isArray(b.spaces)||!Array.isArray(c.workspaces))throw new Error('Workspace navigation unavailable. Please reload.');
    if(!chooseWorkspace&&a.pages.length){router.replace(`/pages/${encodeURIComponent(a.pages[0].id)}`);return;}
    setWorkspaces(c.workspaces);setWorkspaceId(c.workspaces[0]?.id??'');setSpaces(b.spaces);setPages(a.pages);setLoading(false);
-  }).catch(e=>{if(active){setError(e instanceof Error?e.message:'Workspace unavailable');setNeedsSignIn(e instanceof ApiError&&e.status===401);setLoading(false);}});
+  }).catch(e=>{if(active){if(e instanceof ApiError&&e.status===401&&window.self===window.top){continueToSignIn();return;}setError(e instanceof Error?e.message:'Workspace unavailable');setNeedsSignIn(e instanceof ApiError&&e.status===401);setLoading(false);}});
   return()=>{active=false;};
  },[router,chooseWorkspace]);
  const availableSpaces=spaces.filter(s=>s.workspaceId===workspaceId),space=availableSpaces[0]?.id??'',workspacePages=pages.filter(p=>p.workspaceId===workspaceId);
