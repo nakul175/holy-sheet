@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
+import { EditorContent, ReactNodeViewRenderer, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import { Extension } from "@tiptap/core";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
@@ -47,6 +47,7 @@ import type { AnchorInput } from '../../lib/comment-anchors';
 import { tablePosition,tablePositionKey,tablePositionText } from './table-position';
 import { TablePositionStatus } from './table-position-status';
 import { LinkInspector,inspectedTextLink,type InspectedLink } from './link-inspector';
+import {ProtectedImageView} from './image-viewer';
 
 const noThreads:ThreadView[]=[];
 const comparableDocument=(value:RichNode)=>stableStringify(semanticRichDocument(value));
@@ -58,6 +59,7 @@ type RichEditorProps={document:RichNode;editable:boolean;onChange:(doc:RichNode)
 const ProtectedImage=Image.extend({
   addAttributes(){return {...this.parent?.(),attachmentId:{default:null},caption:{default:""},width:{default:640}};},
   renderHTML({HTMLAttributes}){const {caption,...attrs}=HTMLAttributes;return ["figure",{"data-hs-image":""},["img",attrs],...(caption?[["figcaption",{},String(caption)]]:[])];},
+  addNodeView(){return ReactNodeViewRenderer(ProtectedImageView);},
 });
 type Insert = {name:string;description:string;type:string;level?:number};
 const catalogue:Insert[]=[
