@@ -46,6 +46,7 @@ import type { ThreadView } from '../../lib/discussion-types';
 import type { AnchorInput } from '../../lib/comment-anchors';
 import { tablePosition,tablePositionKey,tablePositionText } from './table-position';
 import { TablePositionStatus } from './table-position-status';
+import { LinkInspector,inspectedTextLink,type InspectedLink } from './link-inspector';
 import {ProtectedImageView} from './image-viewer';
 import { createCodePositionReader } from './code-position';
 import { CodePositionStatus } from './code-position-status';
@@ -102,17 +103,19 @@ export default function RichEditor(props:RichEditorProps){
 function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId,preferenceKey,onComment,onOpenComments,onOpenHistory,onCreateSubpage,commentsReady=true,threads=noThreads,activeThreadId=null,onOpenThread,navigateThread=0,mediaEnabled=true,recoveryActorId,resumeUpload,onRecoveryClosed,collaboration}:{collaboration?:(CollaborationStart&{clientId:string})}&RichEditorProps){
   const [insertOpen,setInsertOpen]=useState(false),[query,setQuery]=useState(""),[active,setActive]=useState(0),[notice,setNotice]=useState(""),[linkOpen,setLinkOpen]=useState(false),[pageOpen,setPageOpen]=useState(false),[media,setMedia]=useState<"image"|"file"|null>(null),[findOpen,setFindOpen]=useState(false),[findQuery,setFindQuery]=useState(""),[matchCase,setMatchCase]=useState(false),[matchIndex,setMatchIndex]=useState(0);
   const [transformOpen,setTransformOpen]=useState(false),[transformPlan,setTransformPlan]=useState<TransformPlan|null>(null);
+  const [inspectedLink,setInspectedLink]=useState<InspectedLink|null>(null);
   const [toolboxOpen,setToolboxOpen]=useState(true),[toolboxPinned,setToolboxPinned]=useState(true),[moreBlocks,setMoreBlocks]=useState(false);
   const [pasteReview,setPasteReview]=useState<{source:TablePasteSource;point:PastePoint}|null>(null),[plainPoint,setPlainPoint]=useState<PastePoint|null>(null);
   const plainPasteUntil=useRef(0),findButton=useRef<HTMLButtonElement>(null),collaborationWake=useRef<(()=>void)|null>(null),presenceWake=useRef<(()=>void)|null>(null);
   const [collaborators,setCollaborators]=useState<Collaborator[]>(collaboration?.collaborators??[]);
   const [mediaFile,setMediaFile]=useState<File|null>(null),[mediaTarget,setMediaTarget]=useState<MediaPlacement|null>(null),[mediaRecovered,setMediaRecovered]=useState<RecoveredUpload|null>(null);
-  useEffect(()=>{const logout=()=>{closeMedia();setTransformOpen(false);setTransformPlan(null);setPasteReview(null);setPlainPoint(null);};window.addEventListener('holy-sheet:logout',logout);return()=>window.removeEventListener('holy-sheet:logout',logout);},[]);
+  useEffect(()=>{const logout=()=>{closeMedia();setTransformOpen(false);setTransformPlan(null);setPasteReview(null);setPlainPoint(null);setInspectedLink(null);};window.addEventListener('holy-sheet:logout',logout);return()=>window.removeEventListener('holy-sheet:logout',logout);},[]);
+  useEffect(()=>setInspectedLink(null),[pageId,preferenceKey,editable]);
   const slash=useRef(false),insertAt=useRef<number|null>(null),onChangeRef=useRef(onChange),collaborativeChangeRef=useRef(onCollaborativeChange),lastEmitted=useRef(stableStringify(document)),restoring=useRef(false),savedFindSelection=useRef<FindSelection|null>(null),temporaryOpen=useRef<TemporarySection[]>([]),discussionOpen=useRef<TemporarySection[]>([]);
   onChangeRef.current=onChange;collaborativeChangeRef.current=onCollaborativeChange;
   const collaborationExtension=useRef(collaboration?Extension.create({name:'holySheetCollaboration',addProseMirrorPlugins(){return [collab({version:collaboration.stepVersion,clientID:collaboration.clientId}),new Plugin<DecorationSet>({key:presencePluginKey,state:{init:()=>DecorationSet.empty,apply(transaction,current){return transaction.getMeta(presencePluginKey)??current.map(transaction.mapping,transaction.doc);}},props:{decorations(state){return presencePluginKey.getState(state)??null;}}})];}}):null);
   const editor=useEditor({immediatelyRender:false,editable,content:document,extensions:[
-    StarterKit.configure({heading:{levels:[1,2,3]},codeBlock:false,undoRedo:{depth:100,newGroupDelay:750},link:{openOnClick:false,autolink:false,linkOnPaste:false,isAllowedUri:url=>safeUrl(url),HTMLAttributes:{target:"_blank",rel:"noopener noreferrer"}}}),
+    StarterKit.configure({heading:{levels:[1,2,3]},codeBlock:false,undoRedo:{depth:100,newGroupDelay:750},link:{openOnClick:false,autolink:false,linkOnPaste:false,isAllowedUri:url=>safeUrl(url),HTMLAttributes:{target:"_blank",rel:"noopener noreferrer",tabindex:"0"}}}),
     TextStyle,Color,Highlight.configure({multicolor:true}),TaskList,TaskItem.configure({nested:true}),TableKit.configure({table:{resizable:true,allowTableNodeSelection:true}}),
     LazyCodeBlock.configure({defaultLanguage:"plaintext"}),CodeWrapping.configure({scope:preferenceKey}),ProtectedImage.configure({allowBase64:false}),Details.configure({persist:false}),DetailsSummary,DetailsContent,Callout,TableOfContents,PageLink.configure({sourcePageId:pageId}),FileBlock,FindExtension,DiscussionAnchors.configure({onOpen:id=>onOpenThread?.(id)}),
     UniqueID.configure({types:idTypes,attributeName:"id",generateID:()=>crypto.randomUUID()}),...(collaborationExtension.current?[collaborationExtension.current]:[]),
@@ -210,7 +213,8 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
     <label className="colour-control">Highlight<select aria-label="Text highlight" disabled={!editable} value={state?.format.highlight??""} onChange={e=>e.target.value?editor.chain().focus().setHighlight({color:e.target.value}).run():editor.chain().focus().unsetHighlight().run()}><option value="">None</option>{state?.format.highlight===mixedPaletteValue&&<option value={mixedPaletteValue} disabled>Mixed highlights</option>}{highlights.map((c,i)=><option key={c} value={c}>{["Amber","Blue","Green","Red","Purple"][i]}</option>)}</select></label>
   </div>;}
   const insertKind=(type:string)=>{const item=catalogue.find(candidate=>candidate.type===type);if(item)insert(item);};
-  return <div className="rich-editor" data-editable={editable} data-preference-key={preferenceKey} data-has-selection={!editor.state.selection.empty}>
+  const inspect=(target:EventTarget|null,event:{preventDefault():void;stopPropagation():void})=>{const link=inspectedTextLink(target);if(!link)return;event.preventDefault();event.stopPropagation();link.anchor.focus({preventScroll:true});setInspectedLink(link);};
+  return <div className="rich-editor" data-editable={editable} data-preference-key={preferenceKey} data-has-selection={!editor.state.selection.empty} onClickCapture={event=>{if(event.button===0&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey)inspect(event.target,event);}} onKeyDownCapture={event=>{if(event.key==='Enter'&&!event.nativeEvent.isComposing&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey)inspect(event.target,event);}}>
     {collaboration&&<div className="live-collaborators" role="status" aria-live="polite" aria-label="People editing this page">{collaborators.filter(person=>person.clientId!==collaboration.clientId).slice(0,5).map(person=><span key={person.sessionId} title={`${person.name} is editing`}>{person.name.slice(0,1).toUpperCase()}</span>)}{collaborators.filter(person=>person.clientId!==collaboration.clientId).length>5&&<span>+{collaborators.length-6}</span>}</div>}
     <div className="editor-actions" role="toolbar" aria-label="Document tools">
       {button("Undo","↶",()=>editor.chain().focus().undo().run(),false,!state?.undo)}{button("Redo","↷",()=>editor.chain().focus().redo().run(),false,!state?.redo)}
@@ -246,6 +250,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
     {plainPoint&&<PlainPasteDialog editor={editor} point={plainPoint} onClose={()=>setPlainPoint(null)}/>}
     {transformOpen&&<TransformDialog editor={editor} initialPlan={transformPlan} onClose={()=>{setTransformOpen(false);setTransformPlan(null);}}/>}
     {linkOpen&&<LinkDialog editor={editor} onClose={()=>setLinkOpen(false)}/>}
+    {inspectedLink&&<LinkInspector link={inspectedLink} onClose={()=>setInspectedLink(null)}/>}
     {pageOpen&&<PageDialog sourcePageId={pageId} onClose={()=>setPageOpen(false)} onSelect={id=>{editor.chain().focus().insertContent({type:'pageLink',attrs:{id:crypto.randomUUID(),pageId:id}}).run();setPageOpen(false);}}/>}
     {media&&mediaTarget&&<UploadDialog key={mediaRecovered?.recordId??mediaTarget.insertId??`${media}:${mediaTarget.blockId}`} pageId={pageId} actorId={recoveryActorId} type={media} initialFile={mediaFile} target={mediaTarget} recovered={mediaRecovered} writable={editable} onClose={closeMedia} onReady={(id,alt,caption,name)=>{applyReadyMedia(editor,mediaTarget,{id,alt,caption,name});closeMedia();}}/>}
   </div>;
