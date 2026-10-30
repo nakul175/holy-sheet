@@ -97,6 +97,7 @@ it("preserves a creation draft when server validation fails", async () => {
     .mockResolvedValueOnce(await response({ schemaVersion: 1, results: [], nextCursor: null }))
     .mockResolvedValueOnce(await response({ schemaVersion: 1, fields: [], collectionCapabilities: ["view", "create"], canManage: false }))
     .mockResolvedValueOnce(await response({ error: "Tenant administrator and schema permission are required." }, 403))
+    .mockResolvedValueOnce(await response({ views: [] }))
     .mockResolvedValueOnce(await response({ error: "Name is invalid." }, 422));
   const view = await mount();
   try {
@@ -129,6 +130,7 @@ it("uses record version and schema version for edits without clearing a failed e
     )
     .mockResolvedValueOnce(await response({ schemaVersion: 4, fields: [], collectionCapabilities: ["view", "edit"], canManage: false }))
     .mockResolvedValueOnce(await response({ error: "Tenant administrator and schema permission are required." }, 403))
+    .mockResolvedValueOnce(await response({ views: [] }))
     .mockResolvedValueOnce(
       await response({
         id: "record-a",
@@ -380,8 +382,8 @@ it("saves record and sensitive-field flags for another member without a hidden v
     await select(view.host.querySelector("select")!, "contacts");
     await act(async () => view.host.querySelector<HTMLButtonElement>("li button")!.click());
     await act(async () => view.host.querySelector<HTMLButtonElement>('section[aria-label="Record permissions"] button')!.click());
-    const email = view.host.querySelector('fieldset legend')!.parentElement!.querySelector("fieldset") ?? view.host.querySelectorAll("fieldset")[1];
-    await act(async () => email.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    const sensitive = [...view.host.querySelectorAll('form[aria-label="Edit member access"] fieldset')].find((fieldset) => fieldset.querySelector("legend")?.textContent === "Email")!;
+    await act(async () => sensitive.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     await act(async () => view.host.querySelector<HTMLFormElement>('form[aria-label="Edit member access"]')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     const body = JSON.parse(fetchMock.mock.calls.find((call) => call[1]?.method === "POST")![1].body);
     expect(body).toMatchObject({ subjectId: "record-viewer", recordGrant: { recordId: "record-a", expectedVersion: 0 }, fields: [{ key: "core:email", canView: true, canWrite: false, canHistory: false, expectedVersion: 0 }] });
@@ -457,6 +459,81 @@ it("reviews and applies a custom field without reading record values or editing 
     expect(posts.at(-1)).toMatchObject({ kind: "apply", previewId: preview.previewId, reviewHash: preview.reviewHash });
     expect(JSON.stringify(posts)).not.toContain("hidden-record-value@example.org");
     expect(view.host.textContent).toContain("Custom field saved.");
+  } finally {
+    await view.dispose();
+  }
+});
+it("saves a personal table view, runs permitted columns, and publishes an explicit shared copy", async () => {
+  const ids = ["00000000-0000-4000-8000-0000000000d1", "00000000-0000-4000-8000-0000000000d2", "00000000-0000-4000-8000-0000000000d3", "00000000-0000-4000-8000-0000000000d4"];
+  const random = vi.spyOn(crypto, "randomUUID").mockImplementation(() => ids.shift() as ReturnType<typeof crypto.randomUUID>);
+  let catalogue: { views: Array<Record<string, unknown>> } = { views: [] };
+  const fields = [{ key: "core:domain", label: "Domain", kind: "url", sensitive: false, choices: [], canWrite: true, canHistory: false }];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (init?.method === "POST" && url.includes("/record-views")) {
+      const body = JSON.parse(String(init.body));
+      catalogue = { views: [...catalogue.views, { id: body.id, collection: body.collection, scope: body.scope, name: body.name, version: 1, canManage: true, unavailable: false, definition: body.definition }] };
+      return response({ id: body.id, appliedVersion: 1, currentVersion: 1, deleted: false, replayed: false });
+    }
+    if (url.includes("/record-views/")) {
+      const view = catalogue.views.find((item) => url.includes(String(item.id)));
+      return response({ view, fields: [{ key: "core:domain", label: "Domain", kind: "url" }], schemaVersion: 1, results: [{ id: "record-a", name: "Acme", collection: "organisations", state: "active", version: 1, values: { "core:domain": "https://acme.example" } }], nextCursor: null });
+    }
+    if (url.includes("/record-views")) return response(catalogue);
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 1, fields, collectionCapabilities: ["view", "manage-views"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    return response({ schemaVersion: 1, results: [{ id: "record-a", name: "Acme", collection: "organisations", state: "active", version: 1, values: { "core:notes": "hidden-secret" } }], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    const form = view.host.querySelector<HTMLFormElement>('form[aria-label="Save table view"]')!;
+    expect(form.querySelector<HTMLInputElement>('input[value="workspace"]')!.disabled).toBe(false);
+    await input(form.querySelector<HTMLInputElement>('input[name="view-name"]')!, "Open organisations");
+    const domain = [...form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((box) => box.parentElement?.textContent?.includes("Domain"))!;
+    await act(async () => domain.click());
+    await act(async () => form.querySelector<HTMLButtonElement>('button[name="add-filter"]')!.click());
+    const filter = form.querySelector<HTMLFieldSetElement>('fieldset[aria-label="Filter 1"]')!;
+    await select(filter.querySelector<HTMLSelectElement>('select[aria-label="Filter 1 operator"]')!, "prefix");
+    await input(filter.querySelector<HTMLInputElement>('input[aria-label="Filter 1 value"]')!, "Ac");
+    await act(async () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    const table = view.host.querySelector("table")!;
+    expect(table.textContent).toContain("Acme");
+    expect(table.textContent).toContain("https://acme.example");
+    expect(table.textContent).not.toContain("hidden-secret");
+    const saves = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST").map((call) => JSON.parse(String(call[1].body)));
+    expect(saves[0]).toMatchObject({ kind: "save", scope: "private", name: "Open organisations", expectedVersion: 0, collection: "organisations", definition: { columns: ["name", "core:domain"], filters: [{ field: "name", operator: "prefix", value: "Ac" }], sort: [], includeArchived: false } });
+    expect(view.host.textContent).toContain("Audience is fixed.");
+    expect(form.querySelector<HTMLInputElement>('input[value="workspace"]')!.disabled).toBe(true);
+    await act(async () => [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Publish shared copy")!.click());
+    const published = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST").map((call) => JSON.parse(String(call[1].body)));
+    expect(published).toHaveLength(2);
+    expect(published[1]).toMatchObject({ kind: "save", scope: "workspace", name: "Open organisations shared", expectedVersion: 0, definition: saves[0].definition });
+    expect(published[1].id).not.toBe(published[0].id);
+    expect(view.host.textContent).toContain("The personal view was not changed.");
+    expect(view.host.textContent).not.toContain("hidden-secret");
+  } finally {
+    random.mockRestore();
+    await view.dispose();
+  }
+});
+it("shows a generic message for a restricted view and keeps shared audience behind manage-views", async () => {
+  const restrictedId = "00000000-0000-4000-8000-0000000000e1";
+  fetchMock.mockImplementation((url: string) => {
+    if (url.includes("/record-views/") && url.includes(restrictedId)) return response({ view: { id: restrictedId }, results: [{ id: "record-a", name: "Acme", values: { "core:notes": "hidden-secret" } }], fields: [{ key: "core:notes", label: "Notes", kind: "long-text" }] });
+    if (url.includes("/record-views")) return response({ views: [{ id: restrictedId, collection: "organisations", scope: "workspace", name: "Private title", version: 1, canManage: false, unavailable: true, definition: null }] });
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 1, fields: [], collectionCapabilities: ["view"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    return response({ schemaVersion: 1, results: [], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    const form = view.host.querySelector<HTMLFormElement>('form[aria-label="Save table view"]')!;
+    expect(form.querySelector<HTMLInputElement>('input[value="workspace"]')!.disabled).toBe(true);
+    expect(view.host.textContent).toContain("manage-views");
+    await select(view.host.querySelector<HTMLSelectElement>('select[aria-label="Saved view"]')!, restrictedId);
+    expect(view.host.textContent).toContain("This view includes a restricted filter or sort.");
+    expect(view.host.textContent).not.toContain("hidden-secret");
+    expect(view.host.querySelector("table")).toBeNull();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes(`/record-views/${restrictedId}`))).toBe(false);
   } finally {
     await view.dispose();
   }
