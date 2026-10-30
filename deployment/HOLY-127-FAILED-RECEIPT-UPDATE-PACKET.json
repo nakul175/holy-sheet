@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "5bc68a18a1004146e6300ae1e79e24228428ae42",
+  "purpose": "Collect and remove only the preserved failed HOLY-127 receipt, then atomically update the already-installed fixed qualifier surfaces. This packet does not run qualification.",
+  "inbox": {
+    "path": "/root/holy127-transfer-inbox-cancel-v3",
+    "owner": 0,
+    "group": 0,
+    "mode": "0700",
+    "mustBeAbsentBeforeTransfer": true
+  },
+  "files": [
+    {"source": "scripts/holy127_failed_receipt_export.py", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-export-5bc68a1.py", "sha256": "d05987df76b7704a4d18efa4ac22d4e7a00cf098dea17e199550bbc0fbfe5e36", "mode": "0500", "arguments": 0},
+    {"source": "scripts/holy127_failed_receipt_cleanup.py", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1.py", "sha256": "48cb60361669338b222a69780ddbdc8f31395ce0bae98eb36035a5509d2e1b32", "mode": "0500", "arguments": 0},
+    {"source": "scripts/holy127_installed_surface_update.py", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py", "sha256": "069c00711e88bedd373bf789a50c1b7905b5bf91c3d540c87b6662a27d3139a4", "mode": "0500", "arguments": 0},
+    {"source": "deployment/HOLY-127-UPDATE-PAYLOAD-5bc68a1.tar", "destination": "/root/holy127-transfer-inbox-cancel-v3/holy127-payload-5bc68a1.tar", "sha256": "de15ba0fe8714db6f0b2c55c8c67f7f69fca9fdd2f546f4814e603b995b674b3", "sizeBytes": 153600, "mode": "0400", "arguments": 0}
+  ],
+  "preservedReceipt": {
+    "directory": "/var/tmp/holy127-q-f4f5a94-20261029a",
+    "file": "/var/tmp/holy127-q-f4f5a94-20261029a/qualification.json",
+    "expectedRootMetadata": "directory 0700; file 0600",
+    "knownSizeBytes": 3379,
+    "knownStatus": "failed",
+    "knownError": "Docker exec cancellation left a PostgreSQL backend"
+  },
+  "machineReadableExport": {
+    "path": "/var/tmp/holy127-failed-receipt-export-20261029a.json",
+    "owner": 0,
+    "group": 0,
+    "mode": "0444",
+    "mustBeAbsentBeforeExport": true,
+    "capture": "The normal deploy SSH account may read this one root-owned nonsecret file byte-for-byte; it cannot modify or remove it in sticky /var/tmp."
+  },
+  "fixedCommandsInOrder": [
+    "/usr/bin/sha256sum /root/holy127-transfer-inbox-cancel-v3/holy127-receipt-export-5bc68a1.py /root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1.py /root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py /root/holy127-transfer-inbox-cancel-v3/holy127-payload-5bc68a1.tar",
+    "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-export-5bc68a1.py",
+    "/root/holy127-transfer-inbox-cancel-v3/holy127-receipt-cleanup-5bc68a1.py",
+    "/root/holy127-transfer-inbox-cancel-v3/holy127-installed-surface-update-5bc68a1.py"
+  ],
+  "requiredGates": [
+    "After export reports 3379 bytes and a SHA-256, use normal deploy SSH to copy /var/tmp/holy127-failed-receipt-export-20261029a.json off-host byte-for-byte; require non-empty valid JSON, operation holy127-q-f4f5a94-20261029a, status failed, and the same SHA-256 before cleanup.",
+    "Run cleanup only after off-host receipt validation; it requires byte equality between the original and root-owned 0444 export, and its printed SHA-256 must equal the off-host receipt hash. Prove both the fixed receipt directory and export file absent.",
+    "The updater refuses while the preserved receipt directory exists, any installed old hash differs, the shared lock is busy or incompatible, or the new archive differs.",
+    "Require updater JSON status updated and verify all five installed new hashes. Qualification requires a later fresh Product slot and a new exclusive operation ID."
+  ],
+  "mutationScope": [
+    "Exclusively create one root-owned mode-0444 nonsecret export in sticky /var/tmp; after verified off-host capture, remove only that byte-matched export, the exact preserved qualification.json and then its empty fixed receipt directory.",
+    "Replace only five hash-verified root-owned fixed files: disposable qualifier, qualifier entrypoint, receipt collector, receipt cleanup and installer.",
+    "Never touch the live app/database, production, DB settings, secrets, sudo policy, existing /run/lock, or any Docker resource."
+  ],
+  "authorization": "Packet publication is not execution. Product must review the exact packet and use the persisted NJ staging installation authority; a new qualification run still requires a fresh serialized slot."
+}
