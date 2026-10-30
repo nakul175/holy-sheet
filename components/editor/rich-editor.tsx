@@ -134,6 +134,13 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
     handleDOMEvents:{keydown:(view,event)=>{if(view.editable||event.isComposing)return false;if(editor&&handleTableKeyDown(editor,event,()=>findButton.current?.focus(),setNotice))return true;if(isPageFindShortcut(event)){event.preventDefault();if(editor)savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);return true;}return false;}},
     handleKeyDown:(view,event)=>{
       if(event.isComposing)return false;
+      // ProseMirror does not own Ctrl/Cmd+Home/End, and Chromium's contenteditable default is not reliable here.
+      // Move the caret in the document model so the shortcut cannot land inside the first heading.
+      if(!event.altKey&&(event.metaKey||event.ctrlKey)&&(event.key==='Home'||event.key==='End')){
+        const end=event.key==='End',target=TextSelection.near(view.state.doc.resolve(end?view.state.doc.content.size:0),end?-1:1);
+        const selection=event.shiftKey?TextSelection.create(view.state.doc,view.state.selection.anchor,target.head):target;
+        view.dispatch(view.state.tr.setSelection(selection).scrollIntoView());event.preventDefault();return true;
+      }
       if(editor&&handleTableKeyDown(editor,event,()=>findButton.current?.focus(),setNotice))return true;
       if(!view.editable){if(isPageFindShortcut(event)){event.preventDefault();if(editor)savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);return true;}return false;}
       if(editor){const target=transformShortcut(event,{heading:editor.isActive('heading')?editor.getAttributes('heading').level:undefined,quote:editor.isActive('blockquote'),bullet:editor.isActive('bulletList'),number:editor.isActive('orderedList'),checklist:editor.isActive('taskList')});if(target){event.preventDefault();requestTransform(target);return true;}}
