@@ -282,6 +282,25 @@ type ReparentPreview = {
   }[];
   legalPartiesWillChange: false;
 };
+type DeletePreview = {
+  previewId: string;
+  reviewHash: string;
+  recordVersion: number;
+  blocked: boolean;
+  message: string;
+  expiresAt: string;
+  trashDays: number;
+  permanentRemovalAvailable: boolean;
+};
+type TrashRow = {
+  id: string;
+  name: string;
+  collection: string;
+  version: number;
+  deletedAt: string;
+  recoveryDeadline: string;
+  retentionHold: boolean;
+};
 const collections = ["organisations", "accounts", "contacts", "employees", "contracts"] as const;
 const relationshipKind = (collection: string) => (collection === "contacts" ? "contact-account" : collection === "employees" ? "employee-account" : collection === "contracts" ? "contract-account" : null);
 const ids = (value: string) =>
@@ -330,12 +349,18 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [memberId, setMemberId] = useState(""),
     [grantCapabilities, setGrantCapabilities] = useState<string[]>([]),
     [grantFields, setGrantFields] = useState<PermissionMember["fields"]>([]),
+    [includeArchived, setIncludeArchived] = useState(false),
+    [deletePreview, setDeletePreview] = useState<DeletePreview | null>(null),
+    [trashOpen, setTrashOpen] = useState(false),
+    [trashRows, setTrashRows] = useState<TrashRow[]>([]),
+    [trashCursor, setTrashCursor] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
   const permissionsBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-permissions`;
   const schemaBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-schema`;
   const viewsBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-views`;
+  const trashBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-trash`;
   async function json(url: string, init?: RequestInit) {
     const response = await fetch(url, {
         credentials: "same-origin",
@@ -346,11 +371,12 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     if (!response.ok) throw Error(body.error ?? "Record request failed.");
     return body;
   }
-  async function load(reset = true) {
+  async function load(reset = true, archived = includeArchived) {
     setBusy(true);
     setError("");
     try {
       const p = new URLSearchParams({ collection, query });
+      if (archived) p.set("includeArchived", "1");
       if (!reset && cursor) p.set("cursor", cursor);
       const data = await json(`${base}?${p}`);
       setSchemaVersion(data.schemaVersion);
@@ -387,6 +413,11 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
   useEffect(() => {
     setSelected(null);
     setPreview(null);
+    setIncludeArchived(false);
+    setDeletePreview(null);
+    setTrashOpen(false);
+    setTrashRows([]);
+    setTrashCursor(null);
     setDrafts({});
     setEdits({});
     setHistoryEvents([]);
@@ -401,7 +432,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setViewRows([]);
     setViewColumns([]);
     setViewCursor(null);
-    void load(true);
+    void load(true, false);
   }, [collection]);
   async function open(id: string) {
     setBusy(true);
@@ -412,6 +443,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setEditName(record.name);
       setEdits({});
       setPreview(null);
+      setDeletePreview(null);
       setMatrix(null);
       if (record.capabilities?.includes("history")) setHistoryEvents((await json(`${base}/${encodeURIComponent(id)}/history`)).events ?? []);
       else setHistoryEvents([]);
@@ -573,6 +605,127 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setNotice("Account moved. Contract legal parties were not changed.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to move this account.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function postLifecycle(recordId: string, body: Record<string, unknown>) {
+    return json(`${base}/${encodeURIComponent(recordId)}/lifecycle`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+  async function refreshOpen(id: string) {
+    const record = await json(`${base}/${encodeURIComponent(id)}`);
+    setSelected(record);
+    setEditName(record.name);
+    setEdits({});
+    setPreview(null);
+    setDeletePreview(null);
+    setMatrix(null);
+    if (record.capabilities?.includes("history")) setHistoryEvents((await json(`${base}/${encodeURIComponent(id)}/history`)).events ?? []);
+    else setHistoryEvents([]);
+    return record;
+  }
+  async function setArchived(archived: boolean) {
+    if (!selected) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await postLifecycle(selected.id, { kind: "archive", operationId: crypto.randomUUID(), expectedVersion: selected.version, archived });
+      await refreshOpen(selected.id);
+      setNotice(archived ? "Record archived. Its ID, history and references are unchanged." : "Record unarchived. Editing and new links are available again.");
+      await load(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to change archive state.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function reviewDelete() {
+    if (!selected) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const previewResult = await postLifecycle(selected.id, { kind: "preview-delete", expectedVersion: selected.version });
+      setDeletePreview({
+        previewId: previewResult.previewId,
+        reviewHash: previewResult.reviewHash,
+        recordVersion: previewResult.recordVersion,
+        blocked: previewResult.blocked === true,
+        message: typeof previewResult.message === "string" ? previewResult.message : "Review this deletion again.",
+        expiresAt: previewResult.expiresAt,
+        trashDays: previewResult.trashDays,
+        permanentRemovalAvailable: previewResult.permanentRemovalAvailable === true,
+      });
+    } catch (e) {
+      setDeletePreview(null);
+      setError(e instanceof Error ? e.message : "Unable to review deletion.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function confirmTrash() {
+    if (!selected || !deletePreview || deletePreview.blocked || deletePreview.recordVersion !== selected.version) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const removed = await postLifecycle(selected.id, {
+        kind: "trash",
+        operationId: crypto.randomUUID(),
+        previewId: deletePreview.previewId,
+        reviewHash: deletePreview.reviewHash,
+        confirm: "move-to-tenant-trash",
+      });
+      setSelected(null);
+      setDeletePreview(null);
+      setEditName("");
+      setEdits({});
+      setPreview(null);
+      setHistoryEvents([]);
+      setMatrix(null);
+      setNotice(`Moved to Trash until ${removed.recoveryDeadline}. The record ID is unchanged. No permanent removal was performed.`);
+      await load(true);
+      if (trashOpen) await loadTrash(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to move this record to Trash.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function loadTrash(reset = true) {
+    setBusy(true);
+    setError("");
+    try {
+      const p = new URLSearchParams({ collection });
+      if (!reset && trashCursor) p.set("cursor", trashCursor);
+      const data = await json(`${trashBase}?${p}`);
+      const rows = Array.isArray(data.results) ? data.results : [];
+      setTrashRows((old) => (reset ? rows : [...old, ...rows]));
+      setTrashCursor(typeof data.nextCursor === "string" ? data.nextCursor : null);
+      setTrashOpen(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to load Trash.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function restoreTrash(row: TrashRow) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await postLifecycle(row.id, { kind: "restore", operationId: crypto.randomUUID(), expectedVersion: row.version });
+      setNotice("Record restored with the same ID.");
+      await loadTrash(true);
+      await load(true);
+      await open(row.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to restore this record.");
     } finally {
       setBusy(false);
     }
@@ -867,7 +1020,9 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       return next;
     }));
   }
-  const canRelate = !!selected && selected.capabilities.includes("edit") && selected.capabilities.includes("link") && !!relationshipKind(selected.collection);
+  const archivedRecord = selected?.state === "archived";
+  const currentDeletePreview = deletePreview && selected && deletePreview.recordVersion === selected.version ? deletePreview : null;
+  const canRelate = !!selected && !archivedRecord && selected.capabilities.includes("edit") && selected.capabilities.includes("link") && !!relationshipKind(selected.collection);
   const writableFields = fields.filter((field) => field.canWrite);
   return (
     <main className="record-browser">
@@ -899,6 +1054,19 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             <label>
               Find records <input value={query} maxLength={200} onChange={(event) => setQuery(event.target.value)} />
             </label>
+            <label className="record-check">
+              <input
+                type="checkbox"
+                checked={includeArchived}
+                onChange={(event) => {
+                  const next = event.target.checked;
+                  setIncludeArchived(next);
+                  void load(true, next);
+                }}
+              />{" "}
+              Include archived records
+            </label>
+            <p>Archived records stay out of this list until you include them.</p>
             <button disabled={busy}>Search</button>
           </form>
           {activeView?.definition && !activeView.unavailable ? null : (
@@ -906,7 +1074,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             {items.map((item) => (
               <li key={item.id}>
                 <button onClick={() => void open(item.id)} aria-current={selected?.id === item.id ? "true" : undefined}>
-                  {item.name}
+                  {item.name}{item.state === "archived" ? " · archived" : ""}
                 </button>
               </li>
             ))}
@@ -936,6 +1104,26 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               Load 50 more
             </button>
           ))}
+          <section aria-label="Tenant Trash">
+            <h2>Tenant Trash</h2>
+            <p>Recoverable records for this collection, 50 at a time. Restoring keeps the same ID and returns the previous active or archived state. This screen does not permanently remove records.</p>
+            <button type="button" disabled={busy} onClick={() => void loadTrash(true)}>{trashOpen ? "Refresh Trash" : "Open Trash"}</button>
+            {trashOpen && (
+              trashRows.length ? (
+                <ul>
+                  {trashRows.map((row) => (
+                    <li key={row.id}>
+                      <span>{row.name}</span>
+                      <span> Recover until {row.recoveryDeadline}.</span>
+                      {row.retentionHold && <span> A retention hold preserves storage after that deadline. Recovery is still denied then.</span>}
+                      <button type="button" disabled={busy} onClick={() => void restoreTrash(row)}>Restore</button>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p>No recoverable records in Trash.</p>
+            )}
+            {trashOpen && trashCursor && <button type="button" disabled={busy} onClick={() => void loadTrash(false)}>Load 50 more</button>}
+          </section>
           <section aria-label="Saved table views">
             <h2>Saved table views</h2>
             <p>Personal views stay with you. A shared workspace view needs manage-views and does not grant record editing or schema changes. Sharing a personal view creates a new copy; the original stays personal. Trash is excluded. Archived records appear only when the view includes them.</p>
@@ -1088,18 +1276,50 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             <>
               <form onSubmit={save}>
                 <label>
-                  Name <input required minLength={1} maxLength={200} value={editName} onChange={(event) => setEditName(event.target.value)} />
+                  Name <input required minLength={1} maxLength={200} value={editName} disabled={archivedRecord} onChange={(event) => setEditName(event.target.value)} />
                 </label>
-                <button disabled={busy || !selected.capabilities.includes("edit")}>Save changes</button>
-                {fields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy || !selected.capabilities.includes("edit")} value={Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]} onChange={(value) => setEdits((current) => ({ ...current, [field.key]: value }))} />)}
+                <button disabled={busy || archivedRecord || !selected.capabilities.includes("edit")}>Save changes</button>
+                {fields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy || archivedRecord || !selected.capabilities.includes("edit")} value={Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]} onChange={(value) => setEdits((current) => ({ ...current, [field.key]: value }))} />)}
               </form>
+              {archivedRecord && <p>This record is archived and stays readable. Unarchive it before saving changes or adding links.</p>}
               <p>Fields you cannot view are omitted. A name change keeps those hidden values.</p>
               <dl>
                 <dt>Immutable ID</dt>
                 <dd>{selected.id}</dd>
+                <dt>State</dt>
+                <dd>{selected.state}</dd>
                 <dt>Version</dt>
                 <dd>{selected.version}</dd>
               </dl>
+              {(selected.capabilities.includes("archive") || selected.capabilities.includes("delete")) && (
+                <section aria-label="Archive and Trash">
+                  <h3>Archive and Trash</h3>
+                  {selected.capabilities.includes("archive") && (
+                    archivedRecord
+                      ? <button type="button" disabled={busy} onClick={() => void setArchived(false)}>Unarchive record</button>
+                      : <button type="button" disabled={busy} onClick={() => void setArchived(true)}>Archive record</button>
+                  )}
+                  {selected.capabilities.includes("archive") && <p>Archive keeps this ID, history and references, and hides the record from active lists.</p>}
+                  {selected.capabilities.includes("delete") && (
+                    <>
+                      <p>Deletion moves the record to tenant Trash for 30 days. Incoming associations block it. Owned outgoing relationships stay with the Trash record. Nothing is permanently removed.</p>
+                      <button type="button" disabled={busy} onClick={() => void reviewDelete()}>Review deletion</button>
+                      {currentDeletePreview && (
+                        <section aria-label="Deletion review">
+                          <p>{currentDeletePreview.message}</p>
+                          {currentDeletePreview.blocked ? <p role="alert">Deletion is blocked. Resolve the associations, then review again.</p> : (
+                            <>
+                              <p>Review expires {currentDeletePreview.expiresAt}. Trash keeps the record for {currentDeletePreview.trashDays} days.</p>
+                              <p>Permanent removal is not part of this review.</p>
+                              <button type="button" disabled={busy} onClick={() => void confirmTrash()}>Move to Trash</button>
+                            </>
+                          )}
+                        </section>
+                      )}
+                    </>
+                  )}
+                </section>
+              )}
               <h3>Linked documents</h3>
               {selected.documents.length ? (
                 <ul>
@@ -1197,7 +1417,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                   )}
                 </section>
               )}
-              {selected.collection === "accounts" && selected.capabilities.includes("edit") && selected.capabilities.includes("link") && (
+              {selected.collection === "accounts" && !archivedRecord && selected.capabilities.includes("edit") && selected.capabilities.includes("link") && (
                 <form aria-label="Move account" onSubmit={previewReparent}>
                   <label>
                     New parent organisation ID <input required value={newParent} onChange={(event) => setNewParent(event.target.value)} />
@@ -1238,6 +1458,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                 </>
               )}
               {writableFields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy} value={drafts[field.key]} onChange={(value) => setDrafts((current) => ({ ...current, [field.key]: value }))} />)}
+              {(collection === "accounts" || collection === "contracts") && <p>Linked organisations and accounts must be active. Unarchive a record before using it in a new link.</p>}
               <button disabled={busy || !createName.trim() || canCreate === false}>Create record</button>
             </form>
           )}

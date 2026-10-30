@@ -538,3 +538,116 @@ it("shows a generic message for a restricted view and keeps shared audience behi
     await view.dispose();
   }
 });
+const lifecycleRecord = (state: string, version: number) => ({
+  id: "record-a",
+  name: "Acme",
+  collection: "organisations",
+  state,
+  version,
+  schemaVersion: 1,
+  capabilities: ["view", "edit", "archive", "delete", "link"],
+  values: {},
+  documents: [],
+  related: [],
+  parentOrganisation: null,
+});
+it("archives with the expected version, hides archived records until asked, and requires unarchive before editing", async () => {
+  let state = "active", version = 2;
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (init?.method === "POST" && url.includes("/lifecycle")) {
+      const body = JSON.parse(String(init.body));
+      state = body.archived ? "archived" : "active";
+      version += 1;
+      return response({ id: "record-a", state, appliedVersion: version, currentVersion: version, replayed: false });
+    }
+    if (url.includes("/records/record-a")) return response(lifecycleRecord(state, version));
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 1, fields: [], collectionCapabilities: ["view", "archive", "delete"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    if (url.includes("/record-views")) return response({ views: [] });
+    return response({ schemaVersion: 1, results: [{ id: "record-a", name: "Acme", collection: "organisations", state: "active", version: 1, values: {} }], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain("includeArchived=1");
+    await act(async () => view.host.querySelector<HTMLButtonElement>("li button")!.click());
+    const save = [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Save changes") as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    await act(async () => [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Archive record")!.click());
+    const archived = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST").map((call) => JSON.parse(String(call[1].body)));
+    expect(archived.at(-1)).toMatchObject({ kind: "archive", expectedVersion: 2, archived: true });
+    expect(view.host.textContent).toContain("Unarchive it before saving changes or adding links.");
+    expect(( [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Save changes") as HTMLButtonElement).disabled).toBe(true);
+    expect(view.host.querySelector<HTMLInputElement>('section[aria-label="Record editor"] input')!.disabled).toBe(true);
+    const box = [...view.host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((input) => input.parentElement?.textContent?.includes("Include archived records"))!;
+    await act(async () => box.click());
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("includeArchived=1"))).toBe(true);
+    await act(async () => [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Unarchive record")!.click());
+    const restored = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST").map((call) => JSON.parse(String(call[1].body)));
+    expect(restored.at(-1)).toMatchObject({ kind: "archive", expectedVersion: 3, archived: false });
+    expect(view.host.textContent).not.toContain("secret-ref-id");
+  } finally {
+    await view.dispose();
+  }
+});
+it("blocks deletion without hidden association details and restores a Trash row by the same ID", async () => {
+  const secret = "secret-ref-id";
+  let blocked = true;
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (init?.method === "POST" && url.includes("/lifecycle")) {
+      const body = JSON.parse(String(init.body));
+      if (body.kind === "preview-delete") {
+        return response({
+          previewId: "00000000-0000-4000-8000-0000000000aa",
+          reviewHash: "cd".repeat(32),
+          recordId: "record-a",
+          recordVersion: 2,
+          blocked,
+          message: blocked ? "Resolve existing record, document or application associations before deletion." : "The record will enter tenant Trash for exactly 30 days. No permanent removal occurs.",
+          expiresAt: "2026-10-30T23:05:00.000Z",
+          trashDays: 30,
+          permanentRemovalAvailable: false,
+          hiddenId: secret,
+          referenceCount: 7,
+        });
+      }
+      if (body.kind === "trash") return response({ id: "record-a", state: "trashed", appliedVersion: 3, currentVersion: 3, replayed: false, recoveryDeadline: "2026-11-29T23:05:00.000Z" });
+      if (body.kind === "restore") return response({ id: "record-a", state: "active", appliedVersion: 4, currentVersion: 4, replayed: false });
+    }
+    if (url.includes("/record-trash")) return response({ results: [{ id: "record-a", name: "Acme", collection: "organisations", version: 3, deletedAt: "2026-10-30T23:05:00.000Z", recoveryDeadline: "2026-11-29T23:05:00.000Z", retentionHold: false, deletedBy: "actor-hidden" }], nextCursor: null, permanentRemovalAvailable: false });
+    if (url.includes("/records/record-a")) return response(lifecycleRecord("active", 2));
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 1, fields: [], collectionCapabilities: ["view", "delete", "restore"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    if (url.includes("/record-views")) return response({ views: [] });
+    return response({ schemaVersion: 1, results: [{ id: "record-a", name: "Acme", collection: "organisations", state: "active", version: 2, values: {} }], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    await act(async () => view.host.querySelector<HTMLButtonElement>("li button")!.click());
+    await act(async () => [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Review deletion")!.click());
+    expect(view.host.textContent).toContain("Resolve existing record, document or application associations before deletion.");
+    expect(view.host.textContent).not.toContain(secret);
+    expect(view.host.textContent).not.toContain("referenceCount");
+    expect([...view.host.querySelectorAll("button")].some((button) => button.textContent === "Move to Trash")).toBe(false);
+    expect([...view.host.querySelectorAll("button")].some((button) => /purge|permanent/i.test(button.textContent ?? ""))).toBe(false);
+    blocked = false;
+    await act(async () => [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Review deletion")!.click());
+    await act(async () => [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Move to Trash")!.click());
+    const trashed = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST").map((call) => JSON.parse(String(call[1].body)));
+    expect(trashed.at(-1)).toMatchObject({ kind: "trash", confirm: "move-to-tenant-trash", previewId: "00000000-0000-4000-8000-0000000000aa", reviewHash: "cd".repeat(32) });
+    expect(trashed.at(-1).expectedVersion).toBeUndefined();
+    expect(view.host.textContent).not.toContain(secret);
+    await act(async () => [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Open Trash")!.click());
+    const trash = view.host.querySelector('section[aria-label="Tenant Trash"]')!;
+    expect(trash.textContent).toContain("Acme");
+    expect(trash.textContent).toContain("2026-11-29T23:05:00.000Z");
+    expect(trash.textContent).not.toContain("actor-hidden");
+    expect(trash.textContent).not.toContain(secret);
+    await act(async () => [...trash.querySelectorAll("button")].find((button) => button.textContent === "Restore")!.click());
+    const restored = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST").map((call) => JSON.parse(String(call[1].body)));
+    expect(restored.at(-1)).toMatchObject({ kind: "restore", expectedVersion: 3 });
+    expect(view.host.textContent).toContain("Record restored with the same ID.");
+    expect([...view.host.querySelectorAll("button")].some((button) => /purge|delete forever/i.test(button.textContent ?? ""))).toBe(false);
+  } finally {
+    await view.dispose();
+  }
+});
