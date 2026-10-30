@@ -46,6 +46,8 @@ import { openSectionsForNavigation,restoreTemporarySections,markSectionInteracti
 import type { ThreadView } from '../../lib/discussion-types';
 import type { AnchorInput } from '../../lib/comment-anchors';
 import { tablePosition,tablePositionKey,tablePositionText } from './table-position';
+import { checklistProgress } from './checklist-progress';
+import { ChecklistProgressStatus } from './checklist-progress-status';
 import { TablePositionStatus } from './table-position-status';
 import { TableReadingGuides,setTableReadingGuides } from './table-reading-guides';
 import { LinkInspector,inspectedTextLink,type InspectedLink } from './link-inspector';
@@ -171,7 +173,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
   useEffect(()=>{if(!editor||!resumeUpload)return;let active=true,handed=false;void(async()=>{try{const target=resumeUpload.newPlacement?captureMediaPlacement(editor,resumeUpload.payload.type):await rehydrateMediaPlacement(editor,resumeUpload.payload.target);if(!active){await resumeUpload.release?.();return;}setMediaTarget(target);setMediaFile(null);setMediaRecovered(resumeUpload);setMedia(resumeUpload.payload.type);handed=true;}catch(e){if(active){setNotice(e instanceof Error?e.message:'The upload placement needs review.');onRecoveryClosed?.();}await resumeUpload.release?.();}})();return()=>{active=false;if(!handed)void resumeUpload.release?.();};},[editor,resumeUpload]);
   const inspectCodePosition=useMemo(()=>createCodePositionReader(),[pageId,recoveryActorId,editable,preferenceKey]);
   const readUncheckedList=useMemo(()=>createUncheckedListReader(),[pageId,recoveryActorId,editable,preferenceKey]);
-  const state=useEditorState({editor,selector:({editor:e})=>{if(!e)return null;const position=tablePosition(e.state),table=selectedTable(e)?.node??null;return {uncheckedList:readUncheckedList(e.state),selection:e.state.selection.from,selectionEnd:e.state.selection.to,find:findKey.getState(e.state),undo:e.can().undo(),redo:e.can().redo(),table:e.isActive("table"),tableCopyNode:table,tablePosition:tablePositionText(position),tablePositionKey:tablePositionKey(position),code:e.isActive("codeBlock"),codePosition:inspectCodePosition(e.state),image:e.isActive("image"),file:e.isActive("file"),callout:e.isActive("callout"),format:selectionFormat(e.state)};}});
+  const state=useEditorState({editor,selector:({editor:e})=>{if(!e)return null;const position=tablePosition(e.state),table=selectedTable(e)?.node??null;return {uncheckedList:readUncheckedList(e.state),selection:e.state.selection.from,selectionEnd:e.state.selection.to,find:findKey.getState(e.state),undo:e.can().undo(),redo:e.can().redo(),table:e.isActive("table"),tableCopyNode:table,tablePosition:tablePositionText(position),tablePositionKey:tablePositionKey(position),checklistProgress:checklistProgress(e.state),code:e.isActive("codeBlock"),codePosition:inspectCodePosition(e.state),image:e.isActive("image"),file:e.isActive("file"),callout:e.isActive("callout"),format:selectionFormat(e.state)};}});
   useEffect(()=>{tableCopyAttempt.current++;setTableCopyFallback(null);},[pageId,recoveryActorId,editable,state?.tableCopyNode]);
   useEffect(()=>{if(editor)resetCodeWrapping(editor,preferenceKey);},[editor,preferenceKey]);
   useEffect(()=>{setTableGuides(false);if(editor)setTableReadingGuides(editor,false);},[editor,pageId,recoveryActorId,editable]);
@@ -253,6 +255,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
       </div>}
     </aside>}
     <BubbleMenu editor={editor} className="floating-format" shouldShow={()=>editable&&editor.state.selection instanceof TextSelection&&!editor.state.selection.empty&&!editor.isActive('codeBlock')&&(editor.isFocused||!!window.document.activeElement?.closest('.floating-format'))&&matchMedia('(min-width: 761px)').matches}>{toolbar()}</BubbleMenu>
+    <ChecklistProgressStatus key={`checklist:${pageId}:${recoveryActorId??''}:${editable}`} value={state?.checklistProgress??null}/>
     <UncheckedNavigationControls key={JSON.stringify([pageId,recoveryActorId,editable,preferenceKey])} editor={editor} list={state?.uncheckedList??null} preferenceKey={preferenceKey}/>
     <TablePositionStatus key={`${pageId}:${recoveryActorId??''}:${editable}`} contextKey={`${pageId}:${recoveryActorId??''}:${editable}`} description={state?.tablePosition??''}/>
     <CodePositionStatus key={`code-position:${JSON.stringify([pageId,recoveryActorId,editable,preferenceKey])}`} contextKey={JSON.stringify([pageId,recoveryActorId,editable,preferenceKey])} position={state?.codePosition??null}/>
