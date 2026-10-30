@@ -140,6 +140,12 @@ export class Repository {
       await this.writeDocument(tx,id,next,version,nextTitle,actor.id,'api');
       await tx.query("UPDATE hs_media m SET deleted_at=CASE WHEN EXISTS(SELECT 1 FROM hs_blocks b WHERE b.page_id=$1 AND b.type IN ('image','file') AND b.node->'attrs'->>'attachmentId'=m.id::text) THEN NULL ELSE COALESCE(m.deleted_at,now()) END WHERE m.page_id=$1 AND m.state='ready'",[id]);
       await tx.query("UPDATE hs_pages SET title=$2,version=$3,updated_at=clock_timestamp() WHERE id=$1",[id,nextTitle,version]);
+      // A title-only revision does not invalidate already-authorized body step sessions.
+      // Only advance an exactly matching state; a real snapshot body change still resets
+      // the epoch on the next collaboration request, as before.
+      if(stableStringify(next)===stableStringify(current.document))await tx.query(
+        'UPDATE hs_collaboration_pages SET document_version=$2,updated_at=clock_timestamp() WHERE page_id=$1 AND document_version=$3 AND document=$4::jsonb',
+        [id,version,p.version,JSON.stringify(current.document)]);
       await tx.query("INSERT INTO hs_operations(page_id,operation_id,actor_id,request_hash,version) VALUES($1,$2,$3,$4,$5)",[id,input.operationId,actor.id,hash,version]);
       return {page:await this.get(id,actor,tx),acknowledgedOperationId:input.operationId,committedVersion:version,replayed:false,merged};
     });

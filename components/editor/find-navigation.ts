@@ -11,7 +11,7 @@ export function revealFindMatch(editor:Editor,match:{from:number;to:number},pref
   element?.scrollIntoView?.({block:'center'});
 }
 
-export function updateFindQuery(editor:Editor,input:{query:string;matchCase:boolean},preferenceKey:string,entries:TemporarySection[],revealFirst:boolean){
+export function updateFindQuery(editor:Editor,input:{query:string;matchCase:boolean;wholeWords?:boolean},preferenceKey:string,entries:TemporarySection[],revealFirst:boolean){
   entries.splice(0,entries.length,...restoreTemporarySections(entries));
   editor.view.dispatch(editor.state.tr.setMeta(findKey,input));
   const first=findKey.getState(editor.state)?.matches[0];
