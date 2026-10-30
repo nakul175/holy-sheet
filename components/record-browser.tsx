@@ -51,7 +51,103 @@ type PermissionMatrix = {
   sensitiveFields: { key: string; label: string; kind: string }[];
   members: PermissionMember[];
 };
+type SchemaField = {
+  key: string;
+  label: string;
+  kind: string;
+  required: boolean;
+  defaultValue?: unknown;
+  choices: string[];
+  referenceListId?: string;
+  sensitive: boolean;
+  unique: boolean;
+  deprecated: boolean;
+  core: boolean;
+  version: number;
+};
+type SchemaCatalogue = {
+  schemaVersion: number;
+  canManage: boolean;
+  customFieldCount: number;
+  limits: { maxFields: number; maxChoices: number };
+  fields: SchemaField[];
+};
+type SchemaPreview = {
+  previewId: string;
+  fieldKey: string;
+  reviewHash: string;
+  expiresAt: string;
+  impact: {
+    recordCount: number;
+    populatedCount: number;
+    missingCount: number;
+    duplicateValues: number;
+    dependencies: { kind: string; label: string; version: number }[];
+    blockers: string[];
+    changes: string[];
+    defaultBehavior: string;
+  };
+};
+type SchemaDraft = {
+  fieldKey?: string;
+  label: string;
+  kind: string;
+  required: boolean;
+  unique: boolean;
+  sensitive: boolean;
+  deprecated: boolean;
+  choices: string;
+  defaultValue: string;
+  referenceListId?: string;
+  lockedSensitive: boolean;
+};
 const recordPermissionNames = ["view", "edit", "link", "import", "export", "bulk", "archive", "delete", "restore", "merge", "history", "restore-values"] as const;
+const customFieldKinds = ["text", "long-text", "number", "currency", "date", "boolean", "single-select", "multi-select", "email", "phone", "url", "attachment", "record"] as const;
+const emptySchemaDraft = (): SchemaDraft => ({ label: "", kind: "text", required: false, unique: false, sensitive: false, deprecated: false, choices: "", defaultValue: "", lockedSensitive: false });
+function formatSchemaDefault(kind: string, value: unknown) {
+  if (value === undefined) return "";
+  if (kind === "currency" && value && typeof value === "object") {
+    const current = value as { currency?: string; minorUnits?: string; scale?: number };
+    return `${current.currency ?? ""},${current.minorUnits ?? ""},${current.scale ?? 2}`;
+  }
+  if (kind === "multi-select" && Array.isArray(value)) return value.map(String).join("\n");
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return String(value);
+}
+function acceptedSchema(schema: Partial<SchemaCatalogue> | null): SchemaCatalogue | null {
+  if (!schema || schema.canManage !== true || typeof schema.schemaVersion !== "number" || !Array.isArray(schema.fields) || !schema.limits) return null;
+  return schema as SchemaCatalogue;
+}
+function schemaDefinition(draft: SchemaDraft) {
+  const choices = draft.choices.split("\n").map((item) => item.trim()).filter(Boolean);
+  if (choices.length > 100) throw Error("A select field supports at most 100 choices.");
+  const select = draft.kind === "single-select" || draft.kind === "multi-select";
+  const definition: Record<string, unknown> = {
+    label: draft.label.trim(),
+    kind: draft.kind,
+    required: draft.required,
+    sensitive: draft.lockedSensitive ? true : draft.sensitive,
+    unique: draft.unique,
+    deprecated: draft.deprecated,
+    choices: draft.referenceListId || !select ? [] : choices,
+  };
+  if (draft.referenceListId) definition.referenceListId = draft.referenceListId;
+  const raw = draft.defaultValue.trim();
+  if (!raw || draft.kind === "attachment" || draft.kind === "record") return definition;
+  if (draft.kind === "boolean") {
+    if (raw !== "true" && raw !== "false") throw Error("Use true or false for a boolean default.");
+    definition.defaultValue = raw === "true";
+  } else if (draft.kind === "number") {
+    const value = Number(raw);
+    if (!Number.isFinite(value)) throw Error("Use a finite number default.");
+    definition.defaultValue = value;
+  } else if (draft.kind === "multi-select") definition.defaultValue = raw.split("\n").map((item) => item.trim()).filter(Boolean);
+  else if (draft.kind === "currency") {
+    const [currency, minorUnits, scale] = raw.split(",").map((item) => item.trim());
+    definition.defaultValue = { currency, minorUnits, scale: Number(scale) };
+  } else definition.defaultValue = raw;
+  return definition;
+}
 function displayValue(value: unknown) {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "object") return JSON.stringify(value);
@@ -118,6 +214,9 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [edits, setEdits] = useState<Record<string, unknown>>({}),
     [historyEvents, setHistoryEvents] = useState<HistoryEvent[]>([]),
     [matrix, setMatrix] = useState<PermissionMatrix | null>(null),
+    [schemaCatalogue, setSchemaCatalogue] = useState<SchemaCatalogue | null>(null),
+    [schemaDraft, setSchemaDraft] = useState<SchemaDraft>(emptySchemaDraft),
+    [schemaPreview, setSchemaPreview] = useState<SchemaPreview | null>(null),
     [memberId, setMemberId] = useState(""),
     [grantCapabilities, setGrantCapabilities] = useState<string[]>([]),
     [grantFields, setGrantFields] = useState<PermissionMember["fields"]>([]),
@@ -125,6 +224,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
   const permissionsBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-permissions`;
+  const schemaBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-schema`;
   async function json(url: string, init?: RequestInit) {
     const response = await fetch(url, {
         credentials: "same-origin",
@@ -146,16 +246,20 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setItems((old) => (reset ? data.results : [...old, ...data.results]));
       setCursor(data.nextCursor);
       if (reset) {
-        try {
-          const catalogue = await json(`${permissionsBase}?collection=${encodeURIComponent(collection)}`);
-          setFields(Array.isArray(catalogue.fields) ? catalogue.fields : []);
-          setCanManage(catalogue.canManage === true);
-          setCanCreate(Array.isArray(catalogue.collectionCapabilities) ? catalogue.collectionCapabilities.includes("create") : null);
-        } catch {
-          setFields([]);
-          setCanManage(false);
-          setCanCreate(null);
-        }
+        const [permissionResult, schemaResult] = await Promise.all([
+          json(`${permissionsBase}?collection=${encodeURIComponent(collection)}`).then(
+            (catalogue) => catalogue,
+            () => null,
+          ),
+          json(`${schemaBase}?collection=${encodeURIComponent(collection)}`).then(
+            (schema) => acceptedSchema(schema),
+            () => null,
+          ),
+        ]);
+        setFields(Array.isArray(permissionResult?.fields) ? permissionResult.fields : []);
+        setCanManage(permissionResult?.canManage === true);
+        setCanCreate(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("create") : null);
+        setSchemaCatalogue(schemaResult);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load records.");
@@ -170,6 +274,9 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setEdits({});
     setHistoryEvents([]);
     setMatrix(null);
+    setSchemaCatalogue(null);
+    setSchemaDraft(emptySchemaDraft());
+    setSchemaPreview(null);
     void load(true);
   }, [collection]);
   async function open(id: string) {
@@ -403,6 +510,79 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       return next.length && !next.includes("view") ? ["view", ...next] : next;
     });
   }
+  function editSchema(patch: Partial<SchemaDraft>) {
+    setSchemaPreview(null);
+    setSchemaDraft((current) => ({ ...current, ...patch }));
+  }
+  function chooseSchemaField(key: string) {
+    const field = schemaCatalogue?.fields.find((item) => item.key === key && !item.core);
+    setSchemaPreview(null);
+    if (!field) {
+      setSchemaDraft(emptySchemaDraft());
+      return;
+    }
+    setSchemaDraft({
+      fieldKey: field.key,
+      label: field.label,
+      kind: field.kind,
+      required: field.required,
+      unique: field.unique,
+      sensitive: field.sensitive,
+      deprecated: field.deprecated,
+      choices: field.choices.join("\n"),
+      defaultValue: formatSchemaDefault(field.kind, field.defaultValue),
+      referenceListId: field.referenceListId,
+      lockedSensitive: field.sensitive,
+    });
+  }
+  async function previewSchemaChange(event: FormEvent) {
+    event.preventDefault();
+    if (!schemaCatalogue) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      setSchemaPreview(await json(schemaBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "preview",
+          prepareId: crypto.randomUUID(),
+          collection,
+          expectedSchemaVersion: schemaCatalogue.schemaVersion,
+          definition: schemaDefinition(schemaDraft),
+          ...(schemaDraft.fieldKey ? { fieldKey: schemaDraft.fieldKey } : {}),
+        }),
+      }));
+    } catch (e) {
+      setSchemaPreview(null);
+      setError(e instanceof Error ? e.message : "Unable to review this field.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function applySchemaChange() {
+    if (!schemaPreview || schemaPreview.impact.blockers.length) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const applied = await json(schemaBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "apply", previewId: schemaPreview.previewId, reviewHash: schemaPreview.reviewHash, operationId: crypto.randomUUID() }),
+      });
+      if (typeof applied.currentSchemaVersion === "number") setSchemaVersion(applied.currentSchemaVersion);
+      setSchemaCatalogue(acceptedSchema(await json(`${schemaBase}?collection=${encodeURIComponent(collection)}`)));
+      setSchemaDraft(emptySchemaDraft());
+      setSchemaPreview(null);
+      setNotice("Custom field saved. Defaults apply only to future records. Reopen a record before editing it.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to apply this field.");
+    } finally {
+      setBusy(false);
+    }
+  }
   function toggleField(key: string, flag: "canView" | "canWrite" | "canHistory") {
     setGrantFields((current) => current.map((field) => {
       if (field.key !== key) return field;
@@ -459,6 +639,62 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             <button disabled={busy} onClick={() => void load(false)}>
               Load 50 more
             </button>
+          )}
+          {schemaCatalogue && (
+            <section aria-label="Collection fields">
+              <h2>Collection fields</h2>
+              <p>Schema permission does not grant field-value read, write, or history. Defaults apply only to future records. Built-in identity, tenant, and parent rules stay fixed. Sensitivity can be raised here and cannot be lowered. Fields are not deleted.</p>
+              <p>{schemaCatalogue.customFieldCount} of {schemaCatalogue.limits.maxFields} custom fields. Select fields allow {schemaCatalogue.limits.maxChoices} choices.</p>
+              <ul>
+                {schemaCatalogue.fields.filter((field) => field.core).map((field) => <li key={field.key}>{field.label} · built-in · not editable</li>)}
+              </ul>
+              <ul>
+                {schemaCatalogue.fields.filter((field) => !field.core).map((field) => (
+                  <li key={field.key}>
+                    <button type="button" disabled={busy} onClick={() => chooseSchemaField(field.key)}>{field.label}</button>
+                    {field.deprecated ? " · deprecated" : ""}
+                    {field.sensitive ? " · sensitive" : ""}
+                    {field.referenceListId ? " · reference list" : ""}
+                  </li>
+                ))}
+              </ul>
+              <form aria-label="Custom field" onSubmit={previewSchemaChange}>
+                <button type="button" disabled={busy} onClick={() => chooseSchemaField("")}>New custom field</button>
+                <label>Label <input required minLength={1} maxLength={100} value={schemaDraft.label} onChange={(event) => editSchema({ label: event.target.value })} /></label>
+                <label>
+                  Type{" "}
+                  <select value={schemaDraft.kind} disabled={!!schemaDraft.referenceListId} onChange={(event) => editSchema({ kind: event.target.value, choices: "", defaultValue: "" })}>
+                    {customFieldKinds.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
+                  </select>
+                </label>
+                {schemaDraft.referenceListId && <p>Choices come from a reference list. This screen keeps that binding.</p>}
+                {(schemaDraft.kind === "single-select" || schemaDraft.kind === "multi-select") && !schemaDraft.referenceListId && (
+                  <label>Choices, one per line <textarea value={schemaDraft.choices} onChange={(event) => editSchema({ choices: event.target.value })} /></label>
+                )}
+                {schemaDraft.kind !== "attachment" && schemaDraft.kind !== "record" && (
+                  <label>
+                    Default for future records{" "}
+                    <input value={schemaDraft.defaultValue} onChange={(event) => editSchema({ defaultValue: event.target.value })} placeholder={schemaDraft.kind === "currency" ? "USD,1000,2" : schemaDraft.kind === "boolean" ? "true or false" : ""} />
+                  </label>
+                )}
+                <label className="record-check"><input type="checkbox" checked={schemaDraft.required} onChange={(event) => editSchema({ required: event.target.checked })} /> Required for new records</label>
+                <label className="record-check"><input type="checkbox" checked={schemaDraft.unique} onChange={(event) => editSchema({ unique: event.target.checked })} /> Unique</label>
+                <label className="record-check"><input type="checkbox" checked={schemaDraft.sensitive} disabled={schemaDraft.lockedSensitive} onChange={(event) => editSchema({ sensitive: event.target.checked })} /> Sensitive</label>
+                <label className="record-check"><input type="checkbox" checked={schemaDraft.deprecated} onChange={(event) => editSchema({ deprecated: event.target.checked })} /> Deprecated</label>
+                <p>Deprecated fields stay readable under field rights and cannot be edited on records.</p>
+                <button disabled={busy || !schemaDraft.label.trim() || (schemaCatalogue.customFieldCount >= schemaCatalogue.limits.maxFields && !schemaDraft.fieldKey)}>Review field</button>
+              </form>
+              {schemaPreview && (
+                <section aria-label="Schema review">
+                  <p>{schemaPreview.impact.defaultBehavior}</p>
+                  <p>{schemaPreview.impact.recordCount} records, {schemaPreview.impact.populatedCount} populated, {schemaPreview.impact.missingCount} missing, {schemaPreview.impact.duplicateValues} duplicate values.</p>
+                  <p>Review expires {schemaPreview.expiresAt}.</p>
+                  {!!schemaPreview.impact.changes.length && <p>Changes: {schemaPreview.impact.changes.join(", ")}</p>}
+                  {!!schemaPreview.impact.dependencies.length && <p>Dependencies: {schemaPreview.impact.dependencies.map((item) => `${item.kind} ${item.label}`).join(", ")}</p>}
+                  {schemaPreview.impact.blockers.length ? <p role="alert">{schemaPreview.impact.blockers.join(" ")}</p> : <button type="button" disabled={busy} onClick={() => void applySchemaChange()}>Apply reviewed field</button>}
+                </section>
+              )}
+            </section>
           )}
         </section>
         <section aria-label="Record editor">

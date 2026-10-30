@@ -3,16 +3,17 @@ import {z} from 'zod';
 import {resolveRecordReferenceFields} from './record-reference-fields';
 import {DocumentError} from './document';
 import {SharedRecordRepository,type RecordContext} from './shared-records';
-import {recordHash,recordWhitespaceSql,typedRecordValue,type RecordField} from './shared-record-types';
+import {recordHash,recordWhitespaceSql,standardRecordFields,typedRecordValue,type RecordField} from './shared-record-types';
 import {editableLayoutField,type RecordLayoutDefinition} from './record-layout-definition';
 import type {Sql} from './database';
 const uuid=z.string().uuid();
-const definition=z.object({
+export const recordFieldDefinition=z.object({
  label:z.string().trim().min(1).max(100).refine(v=>!/[\p{Cc}]/u.test(v)),
  kind:z.enum(['text','long-text','number','currency','date','boolean','single-select','multi-select','email','phone','url','attachment','record']),
  required:z.boolean().default(false),defaultValue:z.unknown().optional(),choices:z.array(z.string().trim().min(1).max(100).refine(v=>!/[\p{Cc}]/u.test(v))).max(100).default([]),
  referenceListId:uuid.optional(),sensitive:z.boolean().default(false),unique:z.boolean().default(false),deprecated:z.boolean().default(false),
 }).strict();
+const definition=recordFieldDefinition;
 const prepare=z.object({prepareId:uuid,collection:z.string().min(1).max(100),fieldKey:uuid.optional(),expectedSchemaVersion:z.number().int().positive(),definition}).strict();
 const apply=z.object({previewId:uuid,operationId:uuid,reviewHash:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 export type SchemaPrepare=z.input<typeof prepare>;
@@ -46,6 +47,16 @@ export class SharedRecordSchemaRepository extends SharedRecordRepository {
   if(!admin||!(await this.collectionCaps(tx,ctx,key)).includes('schema'))throw fail('Tenant administrator and schema permission are required.','record_schema_forbidden',403);
  }
  private async revisions(tx:Sql,ctx:RecordContext){return (await tx.query<Revisions>('SELECT schema_version,policy_version,data_revision,dependency_revision FROM hs_data_tenants WHERE id=$1',[ctx.tenantId])).rows[0];}
+ private catalogueField(field:RecordField){return {key:field.key,label:field.label,kind:field.kind,required:field.required,...(field.defaultValue!==undefined?{defaultValue:field.defaultValue}:{}),choices:field.referenceListId?[]:field.choices,...(field.referenceListId?{referenceListId:field.referenceListId}:{}),sensitive:field.sensitive,unique:field.unique,deprecated:field.deprecated,core:field.core,version:field.version};}
+ async describeSchema(ctx:RecordContext,collectionKey:string){
+  if(!z.string().min(1).max(100).safeParse(collectionKey).success)throw fail('Review the schema request.','record_schema_validation',400);
+  return this.transaction(ctx,async(tx,t,proof)=>{
+   await this.permission(tx,ctx,collectionKey,proof.tenantAdministrator);
+   const rows=await tx.query<{field_key:string;label:string;kind:RecordField['kind'];required:boolean;default_value:unknown;choices:unknown;sensitive:boolean;unique_value:boolean;deprecated:boolean;version:number;reference_list_id:string|null}>('SELECT field_key,label,kind,required,default_value,choices,sensitive,unique_value,deprecated,version,reference_list_id FROM hs_data_fields WHERE tenant_id=$1 AND collection=$2 ORDER BY field_key',[ctx.tenantId,collectionKey]);
+   const custom=rows.rows.map(row=>this.catalogueField({key:row.field_key,label:row.label,kind:row.kind,required:row.required,...(row.default_value!==null&&row.default_value!==undefined?{defaultValue:row.default_value}:{}),choices:Array.isArray(row.choices)?row.choices.filter((item):item is string=>typeof item==='string'):[],...(row.reference_list_id?{referenceListId:row.reference_list_id}:{}),sensitive:row.sensitive,unique:row.unique_value,deprecated:row.deprecated,core:false,version:Number(row.version)}));
+   return {schemaVersion:t.schema_version,canManage:true,customFieldCount:custom.length,limits:{maxFields:100,maxChoices:100},fields:[...standardRecordFields(collectionKey).map(field=>this.catalogueField(field)),...custom]};
+  });
+ }
  private visiblePreview(p:Preview){return {previewId:p.id,collection:p.collection,fieldKey:p.field_key,proposed:p.proposed,reviewHash:p.review_hash,schemaVersion:p.schema_version,impact:p.impact,expiresAt:new Date(p.expires_at).toISOString()};}
  async previewSchema(ctx:RecordContext,input:SchemaPrepare){
   const parsed=prepare.safeParse(input);if(!parsed.success)throw fail('Review the custom-field definition.','record_schema_validation',400);
