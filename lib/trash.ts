@@ -56,7 +56,7 @@ export async function listTrash(r:Repository,actor:Actor,workspaceId:string,afte
 
 async function batch(tx:Sql,workspaceId:string,id:string){const q=await tx.query<Batch>('SELECT * FROM hs_deletion_batches WHERE id=$1 AND workspace_id=$2 FOR UPDATE',[id,workspaceId]);if(!q.rows.length)throw unavailable();return q.rows[0];}
 async function restoreReview(r:Repository,tx:Sql,actor:Actor,workspaceId:string,batchId:string,input:Pick<LocationIntent,'spaceId'|'parentId'>){
- const w=await workspace(tx,actor,workspaceId),b=await batch(tx,workspaceId,batchId),p=await root(tx,actor,workspaceId,b.root_id);
+ const w=await workspace(tx,actor,workspaceId);if(w.role==='observer')throw new DocumentError('Observers cannot restore page trees','read_only',403);const b=await batch(tx,workspaceId,batchId),p=await root(tx,actor,workspaceId,b.root_id);
  const valid=await tx.query('SELECT id FROM hs_deletion_batches WHERE id=$1 AND restored_at IS NULL AND expires_at>clock_timestamp()',[batchId]);if(!valid.rows.length)throw new DocumentError('The recovery window expired or this batch was already restored','trash_expired',409);
  if(!p.deleted_at||p.deletion_batch_id!==batchId)throw new DocumentError('The deletion batch changed. Refresh Trash.','trash_conflict',409);
  const target=(await tx.query<{id:string;name:string;space_role:string|null}>(`SELECT s.id,s.name,sm.role AS space_role FROM hs_spaces s LEFT JOIN hs_space_members sm ON sm.space_id=s.id AND sm.user_id=$3 AND sm.active=true WHERE s.id=$1 AND s.workspace_id=$2`,[input.spaceId,workspaceId,actor.id])).rows[0];if(!target)throw new DocumentError('Destination space is unavailable','destination_unavailable',404);
