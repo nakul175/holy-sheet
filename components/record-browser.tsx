@@ -24,6 +24,52 @@ type Detail = Summary & {
   documents: { id: string; pageId: string; title: string }[];
   related: Link[];
 };
+type FieldMeta = {
+  key: string;
+  label: string;
+  kind: string;
+  sensitive: boolean;
+  choices: string[];
+  canWrite: boolean;
+  canHistory: boolean;
+};
+type HistoryEvent = {
+  id: string;
+  version: number;
+  kind: string;
+  before: { name: string; values: Record<string, unknown> } | null;
+  after: { name: string; values: Record<string, unknown> };
+};
+type PermissionMember = {
+  id: string;
+  name: string;
+  collection: { capabilities: string[]; version: number };
+  record: { capabilities: string[]; version: number } | null;
+  fields: { key: string; canView: boolean; canWrite: boolean; canHistory: boolean; version: number }[];
+};
+type PermissionMatrix = {
+  sensitiveFields: { key: string; label: string; kind: string }[];
+  members: PermissionMember[];
+};
+const recordPermissionNames = ["view", "edit", "link", "import", "export", "bulk", "archive", "delete", "restore", "merge", "history", "restore-values"] as const;
+function displayValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+function FieldEditor({ field, value, disabled, onChange }: { field: FieldMeta; value: unknown; disabled: boolean; onChange: (value: unknown) => void }) {
+  if (!field.canWrite || disabled) return <p><span>{field.label}</span> {displayValue(value)}{field.sensitive ? " · sensitive" : ""}</p>;
+  if (field.kind === "boolean") return <label className="record-check"><input type="checkbox" checked={value === true} onChange={(event) => onChange(event.target.checked)} /> {field.label}</label>;
+  if (field.kind === "single-select") return <label>{field.label}<select value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value)}><option value="">Choose</option>{field.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select></label>;
+  if (field.kind === "long-text") return <label>{field.label}<textarea value={value === undefined || value === null ? "" : String(value)} onChange={(event) => onChange(event.target.value)} /></label>;
+  if (field.kind === "currency") {
+    const current = value && typeof value === "object" ? value as { currency?: string; minorUnits?: string; scale?: number } : {};
+    const next = (patch: { currency?: string; minorUnits?: string; scale?: number }) => onChange({ currency: current.currency ?? "", minorUnits: current.minorUnits ?? "", scale: current.scale ?? 2, ...patch });
+    return <fieldset><legend>{field.label}</legend><label>Currency code <input value={current.currency ?? ""} maxLength={3} onChange={(event) => next({ currency: event.target.value.toUpperCase() })} /></label><label>Minor units <input value={current.minorUnits ?? ""} onChange={(event) => next({ minorUnits: event.target.value })} /></label><label>Scale <input type="number" min={0} max={4} value={current.scale ?? 2} onChange={(event) => next({ scale: Number(event.target.value) })} /></label></fieldset>;
+  }
+  const type = field.kind === "date" ? "date" : field.kind === "number" ? "number" : field.kind === "email" ? "email" : "text";
+  return <label>{field.label}{field.sensitive ? " (sensitive)" : ""} <input type={type} value={value === undefined || value === null ? "" : String(value)} onChange={(event) => onChange(field.kind === "number" ? Number(event.target.value) : event.target.value)} /></label>;
+}
 type ReparentPreview = {
   previewToken: string;
   expectedVersion: number;
@@ -65,9 +111,20 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [contractRelationKind, setContractRelationKind] = useState<"contract-account" | "contract-legal-party">("contract-account"),
     [newParent, setNewParent] = useState(""),
     [preview, setPreview] = useState<ReparentPreview | null>(null),
+    [fields, setFields] = useState<FieldMeta[]>([]),
+    [canManage, setCanManage] = useState(false),
+    [canCreate, setCanCreate] = useState<boolean | null>(null),
+    [drafts, setDrafts] = useState<Record<string, unknown>>({}),
+    [edits, setEdits] = useState<Record<string, unknown>>({}),
+    [historyEvents, setHistoryEvents] = useState<HistoryEvent[]>([]),
+    [matrix, setMatrix] = useState<PermissionMatrix | null>(null),
+    [memberId, setMemberId] = useState(""),
+    [grantCapabilities, setGrantCapabilities] = useState<string[]>([]),
+    [grantFields, setGrantFields] = useState<PermissionMember["fields"]>([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
+  const permissionsBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-permissions`;
   async function json(url: string, init?: RequestInit) {
     const response = await fetch(url, {
         credentials: "same-origin",
@@ -88,6 +145,18 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setSchemaVersion(data.schemaVersion);
       setItems((old) => (reset ? data.results : [...old, ...data.results]));
       setCursor(data.nextCursor);
+      if (reset) {
+        try {
+          const catalogue = await json(`${permissionsBase}?collection=${encodeURIComponent(collection)}`);
+          setFields(Array.isArray(catalogue.fields) ? catalogue.fields : []);
+          setCanManage(catalogue.canManage === true);
+          setCanCreate(Array.isArray(catalogue.collectionCapabilities) ? catalogue.collectionCapabilities.includes("create") : null);
+        } catch {
+          setFields([]);
+          setCanManage(false);
+          setCanCreate(null);
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load records.");
     } finally {
@@ -97,6 +166,10 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
   useEffect(() => {
     setSelected(null);
     setPreview(null);
+    setDrafts({});
+    setEdits({});
+    setHistoryEvents([]);
+    setMatrix(null);
     void load(true);
   }, [collection]);
   async function open(id: string) {
@@ -106,7 +179,11 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       const record = await json(`${base}/${encodeURIComponent(id)}`);
       setSelected(record);
       setEditName(record.name);
+      setEdits({});
       setPreview(null);
+      setMatrix(null);
+      if (record.capabilities?.includes("history")) setHistoryEvents((await json(`${base}/${encodeURIComponent(id)}/history`)).events ?? []);
+      else setHistoryEvents([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to open this record.");
     } finally {
@@ -137,10 +214,11 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           collection,
           name: createName,
           schemaVersion,
-          values: {},
+          values: Object.fromEntries(Object.entries(drafts).filter(([key]) => fields.some((field) => field.key === key && field.canWrite))),
           ...relationships,
         }),
       });
+      setDrafts({});
       setCreateName("");
       setCreateParent("");
       setCreateLegal("");
@@ -169,10 +247,13 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           expectedVersion: selected.version,
           schemaVersion: selected.schemaVersion,
           name: editName,
+          ...(Object.keys(edits).length ? { values: Object.fromEntries(Object.entries(edits).filter(([key]) => fields.some((field) => field.key === key && field.canWrite))) } : {}),
         }),
       });
       setSelected(data.record);
       setEditName(data.record.name);
+      setEdits({});
+      if (data.record.capabilities?.includes("history")) setHistoryEvents((await json(`${base}/${encodeURIComponent(data.record.id)}/history`)).events ?? []);
       setNotice("Record changes saved.");
       await load(true);
     } catch (e) {
@@ -265,7 +346,74 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setBusy(false);
     }
   }
+  function chooseMember(id: string, source = matrix) {
+    const member = source?.members.find((item) => item.id === id);
+    setMemberId(id);
+    setGrantCapabilities(member?.record?.capabilities ?? []);
+    setGrantFields(member?.fields.map((field) => ({ ...field })) ?? []);
+  }
+  async function loadMatrix() {
+    if (!selected) return;
+    setBusy(true);
+    setError("");
+    try {
+      const next = await json(`${permissionsBase}?collection=${encodeURIComponent(selected.collection)}&recordId=${encodeURIComponent(selected.id)}&manage=1`);
+      setMatrix(next);
+      const initial = next.members.find((member: PermissionMember) => member.id !== selected.id) ?? next.members[0];
+      if (initial) chooseMember(initial.id, next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to load permissions.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function savePermissions(event: FormEvent) {
+    event.preventDefault();
+    if (!selected || !matrix || !memberId) return;
+    const member = matrix.members.find((item) => item.id === memberId);
+    if (!member?.record) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await json(permissionsBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operationId: crypto.randomUUID(),
+          collection: selected.collection,
+          subjectId: memberId,
+          recordGrant: { recordId: selected.id, expectedVersion: member.record.version, capabilities: grantCapabilities },
+          fields: grantFields.map((field) => ({ key: field.key, expectedVersion: field.version, canView: field.canView, canWrite: field.canWrite, canHistory: field.canHistory })),
+        }),
+      });
+      setNotice("Permissions saved. Current access is checked on the next read.");
+      setMatrix(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to save permissions.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function toggleCapability(name: string) {
+    setGrantCapabilities((current) => {
+      const has = current.includes(name);
+      if (name === "view" && has) return [];
+      const next = has ? current.filter((item) => item !== name) : [...current, name];
+      return next.length && !next.includes("view") ? ["view", ...next] : next;
+    });
+  }
+  function toggleField(key: string, flag: "canView" | "canWrite" | "canHistory") {
+    setGrantFields((current) => current.map((field) => {
+      if (field.key !== key) return field;
+      const next = { ...field, [flag]: !field[flag] };
+      if (flag === "canView" && !next.canView) return { ...next, canWrite: false, canHistory: false };
+      if ((flag === "canWrite" || flag === "canHistory") && next[flag]) next.canView = true;
+      return next;
+    }));
+  }
   const canRelate = !!selected && selected.capabilities.includes("edit") && selected.capabilities.includes("link") && !!relationshipKind(selected.collection);
+  const writableFields = fields.filter((field) => field.canWrite);
   return (
     <main className="record-browser">
       <header>
@@ -322,7 +470,9 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                   Name <input required minLength={1} maxLength={200} value={editName} onChange={(event) => setEditName(event.target.value)} />
                 </label>
                 <button disabled={busy || !selected.capabilities.includes("edit")}>Save changes</button>
+                {fields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy || !selected.capabilities.includes("edit")} value={Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]} onChange={(value) => setEdits((current) => ({ ...current, [field.key]: value }))} />)}
               </form>
+              <p>Fields you cannot view are omitted. A name change keeps those hidden values.</p>
               <dl>
                 <dt>Immutable ID</dt>
                 <dd>{selected.id}</dd>
@@ -392,6 +542,40 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                   <button disabled={busy}>Add relationship</button>
                 </form>
               )}
+              {selected.capabilities.includes("history") && (
+                <section aria-label="Visible changes">
+                  <h3>Visible changes</h3>
+                  {historyEvents.length ? historyEvents.map((event) => (
+                    <article key={event.id}>
+                      <p>{event.kind} · version {event.version}</p>
+                      <dl>
+                        {Object.entries(event.after.values).map(([key, value]) => <div key={key}><dt>{fields.find((field) => field.key === key)?.label ?? "Field"}</dt><dd>{displayValue(value)}</dd></div>)}
+                      </dl>
+                    </article>
+                  )) : <p>No visible changes.</p>}
+                </section>
+              )}
+              {canManage && (
+                <section aria-label="Record permissions">
+                  <h3>Record permissions</h3>
+                  <p>Collection access still applies. A record grant adds access to this record; it does not hide records a collection grant already shows. Sensitive fields stay hidden until view is granted. You cannot change your own access here.</p>
+                  {!matrix ? <button type="button" disabled={busy} onClick={() => void loadMatrix()}>Review member access</button> : (
+                    <form aria-label="Edit member access" onSubmit={savePermissions}>
+                      <label>Member <select value={memberId} onChange={(event) => chooseMember(event.target.value)}>{matrix.members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+                      <p>Collection capabilities: {(matrix.members.find((member) => member.id === memberId)?.collection.capabilities ?? []).join(", ") || "none"}</p>
+                      <fieldset>
+                        <legend>This record</legend>
+                        {recordPermissionNames.map((name) => <label className="record-check" key={name}><input type="checkbox" checked={grantCapabilities.includes(name)} onChange={() => toggleCapability(name)} /> {name}</label>)}
+                      </fieldset>
+                      {matrix.sensitiveFields.map((field) => {
+                        const flags = grantFields.find((item) => item.key === field.key);
+                        return <fieldset key={field.key}><legend>{field.label}</legend><label className="record-check"><input type="checkbox" checked={!!flags?.canView} onChange={() => toggleField(field.key, "canView")} /> View</label><label className="record-check"><input type="checkbox" checked={!!flags?.canWrite} onChange={() => toggleField(field.key, "canWrite")} /> Write</label><label className="record-check"><input type="checkbox" checked={!!flags?.canHistory} onChange={() => toggleField(field.key, "canHistory")} /> History</label></fieldset>;
+                      })}
+                      <button disabled={busy || !memberId}>Save permissions</button>
+                    </form>
+                  )}
+                </section>
+              )}
               {selected.collection === "accounts" && selected.capabilities.includes("edit") && selected.capabilities.includes("link") && (
                 <form aria-label="Move account" onSubmit={previewReparent}>
                   <label>
@@ -432,7 +616,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                   </label>
                 </>
               )}
-              <button disabled={busy || !createName.trim()}>Create record</button>
+              {writableFields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy} value={drafts[field.key]} onChange={(value) => setDrafts((current) => ({ ...current, [field.key]: value }))} />)}
+              <button disabled={busy || !createName.trim() || canCreate === false}>Create record</button>
             </form>
           )}
         </section>

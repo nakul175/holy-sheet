@@ -92,7 +92,10 @@ it("lists bounded records, opens detail and exposes only accessible linked docum
   }
 });
 it("preserves a creation draft when server validation fails", async () => {
-  fetchMock.mockResolvedValueOnce(await response({ schemaVersion: 1, results: [], nextCursor: null })).mockResolvedValueOnce(await response({ error: "Name is invalid." }, 422));
+  fetchMock
+    .mockResolvedValueOnce(await response({ schemaVersion: 1, results: [], nextCursor: null }))
+    .mockResolvedValueOnce(await response({ schemaVersion: 1, fields: [], collectionCapabilities: ["view", "create"], canManage: false }))
+    .mockResolvedValueOnce(await response({ error: "Name is invalid." }, 422));
   const view = await mount();
   try {
     const field = view.host.querySelector<HTMLInputElement>('section[aria-label="Record editor"] input')!;
@@ -122,6 +125,7 @@ it("uses record version and schema version for edits without clearing a failed e
         nextCursor: null,
       }),
     )
+    .mockResolvedValueOnce(await response({ schemaVersion: 4, fields: [], collectionCapabilities: ["view", "edit"], canManage: false }))
     .mockResolvedValueOnce(
       await response({
         id: "record-a",
@@ -143,7 +147,7 @@ it("uses record version and schema version for edits without clearing a failed e
     const field = view.host.querySelector<HTMLInputElement>('section[aria-label="Record editor"] input')!;
     await input(field, "My pending edit");
     await act(async () => view.host.querySelector<HTMLFormElement>('section[aria-label="Record editor"] form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
-    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toMatchObject({
+    expect(JSON.parse(fetchMock.mock.calls.find((call) => call[1]?.method === "PATCH")![1].body)).toMatchObject({
       expectedVersion: 7,
       schemaVersion: 4,
       name: "My pending edit",
@@ -296,6 +300,90 @@ it("requires an impact preview before confirming an account reparent", async () 
       confirmed: true,
     });
     expect(view.host.textContent).toContain("Contract legal parties were not changed.");
+  } finally {
+    await view.dispose();
+  }
+});
+it("renders permitted sensitive fields, omits hidden values, and submits only the edited field", async () => {
+  const record = {
+    id: "record-a",
+    name: "Alex",
+    collection: "contacts",
+    state: "active",
+    version: 3,
+    schemaVersion: 2,
+    capabilities: ["view", "edit", "history"],
+    values: { "core:job-title": "Analyst", "core:email": "allowed@example.org" },
+    documents: [],
+    related: [],
+    parentOrganisation: null,
+  };
+  const fields = [
+    { key: "core:job-title", label: "Job title", kind: "text", sensitive: false, choices: [], canWrite: true, canHistory: true },
+    { key: "core:email", label: "Email", kind: "email", sensitive: true, choices: [], canWrite: true, canHistory: true },
+  ];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url.includes("/history")) return response({ events: [{ id: "event-1", version: 2, kind: "update", before: null, after: { name: "Alex", values: { "core:job-title": "Analyst", "core:email": "allowed@example.org" } } }] });
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 2, fields, collectionCapabilities: ["view", "edit", "create", "history"], canManage: false });
+    if (init?.method === "PATCH") return response({ record: { ...record, version: 4 } });
+    if (url.includes("/records/")) return response(record);
+    if (url.includes("collection=contacts")) return response({ schemaVersion: 2, results: [record], nextCursor: null });
+    return response({ schemaVersion: 2, results: [], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    await select(view.host.querySelector("select")!, "contacts");
+    await act(async () => view.host.querySelector<HTMLButtonElement>("li button")!.click());
+    expect(view.host.textContent).toContain("allowed@example.org");
+    expect(view.host.textContent).not.toContain("hidden-secret@example.org");
+    const email = view.host.querySelector<HTMLInputElement>('input[type="email"]')!;
+    await input(email, "updated@example.org");
+    await act(async () => view.host.querySelector('section[aria-label="Record editor"] form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(JSON.parse(fetchMock.mock.calls.find((call) => call[1]?.method === "PATCH")![1].body).values).toEqual({ "core:email": "updated@example.org" });
+    expect(view.host.textContent).toContain("Analyst");
+    expect(view.host.textContent).not.toContain("hidden-secret@example.org");
+  } finally {
+    await view.dispose();
+  }
+});
+it("saves record and sensitive-field flags for another member without a hidden value", async () => {
+  const record = {
+    id: "record-a",
+    name: "Alex",
+    collection: "contacts",
+    state: "active",
+    version: 3,
+    schemaVersion: 2,
+    capabilities: ["view", "edit"],
+    values: { "core:job-title": "Analyst" },
+    documents: [],
+    related: [],
+    parentOrganisation: null,
+  };
+  const matrix = {
+    sensitiveFields: [{ key: "core:email", label: "Email", kind: "email" }],
+    members: [{ id: "record-viewer", name: "Viewer", collection: { capabilities: ["view"], version: 1 }, record: { capabilities: [], version: 0 }, fields: [{ key: "core:email", canView: false, canWrite: false, canHistory: false, version: 0 }] }],
+  };
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url.includes("manage=1")) return response(matrix);
+    if (init?.method === "POST" && url.includes("/record-permissions")) return response({ recordVersion: 1, fieldVersions: { "core:email": 1 }, replayed: false });
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 2, fields: [{ key: "core:job-title", label: "Job title", kind: "text", sensitive: false, choices: [], canWrite: true, canHistory: true }], collectionCapabilities: ["view", "manage-permissions"], canManage: true });
+    if (url.includes("/records/")) return response(record);
+    if (url.includes("collection=contacts")) return response({ schemaVersion: 2, results: [record], nextCursor: null });
+    return response({ schemaVersion: 2, results: [], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    await select(view.host.querySelector("select")!, "contacts");
+    await act(async () => view.host.querySelector<HTMLButtonElement>("li button")!.click());
+    await act(async () => view.host.querySelector<HTMLButtonElement>('section[aria-label="Record permissions"] button')!.click());
+    const email = view.host.querySelector('fieldset legend')!.parentElement!.querySelector("fieldset") ?? view.host.querySelectorAll("fieldset")[1];
+    await act(async () => email.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    await act(async () => view.host.querySelector<HTMLFormElement>('form[aria-label="Edit member access"]')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    const body = JSON.parse(fetchMock.mock.calls.find((call) => call[1]?.method === "POST")![1].body);
+    expect(body).toMatchObject({ subjectId: "record-viewer", recordGrant: { recordId: "record-a", expectedVersion: 0 }, fields: [{ key: "core:email", canView: true, canWrite: false, canHistory: false, expectedVersion: 0 }] });
+    expect(JSON.stringify(body)).not.toContain("hidden-secret@example.org");
+    expect(view.host.textContent).not.toContain("hidden-secret@example.org");
   } finally {
     await view.dispose();
   }
