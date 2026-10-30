@@ -3,8 +3,11 @@ import {DocumentError,stableStringify} from './document';
 import {createHash} from 'node:crypto';
 export const standardCollections=['organisations','accounts','contacts','employees','contracts'] as const;
 export type StandardCollection=typeof standardCollections[number];
-export const recordCapabilities=['view','create','edit','link','import','export','bulk','archive','delete','restore','merge','schema','manage-views','history','restore-values','manage-templates'] as const;
+export const recordCapabilities=['view','create','edit','link','import','export','bulk','archive','delete','restore','merge','schema','manage-views','history','restore-values','manage-templates','manage-permissions'] as const;
 export type RecordCapability=typeof recordCapabilities[number];
+/** Record grants cannot invent collection administration. Matches the record-grant check. */
+export const recordGrantCapabilities=['view','edit','link','import','export','bulk','archive','delete','restore','merge','history','restore-values'] as const;
+export type RecordGrantCapability=typeof recordGrantCapabilities[number];
 export type FieldKind='text'|'long-text'|'number'|'currency'|'date'|'boolean'|'single-select'|'multi-select'|'email'|'phone'|'url'|'attachment'|'record';
 export type RecordField={key:string;label:string;kind:FieldKind;required:boolean;defaultValue?:unknown;choices:string[];referenceListId?:string;referenceList?:{id:string;version:number;items:{id:string;code:string;label:string;deprecated:boolean;translations:Record<string,string>}[]};sensitive:boolean;unique:boolean;deprecated:boolean;core:boolean;version:number};
 export function recordValueEmpty(value:unknown){return value===undefined||value===null||typeof value==='string'&&!value.trim()||Array.isArray(value)&&!value.length;}
