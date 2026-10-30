@@ -651,3 +651,146 @@ it("blocks deletion without hidden association details and restores a Trash row 
     await view.dispose();
   }
 });
+it("shows advisory duplicate matches without an email predicate the caller cannot write", async () => {
+  const secret = "hidden-email@example.org";
+  let duplicateUrl = "";
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url.includes("/record-duplicates")) {
+      duplicateUrl = url;
+      return response({
+        suggestions: [{ id: "dup-1", name: "Acme", collection: "organisations", state: "active", reasons: ["website-domain", "private-reason"], email: secret }, { id: "dup-2", name: "Other", reasons: ["normalised-name"] }],
+        hasMore: true,
+        advisory: true,
+        hidden: secret,
+      });
+    }
+    if (init?.method === "POST" && url.includes("/records")) return response({ record: { id: "created-1" } });
+    if (url.includes("/records/created-1")) return response({ id: "created-1", name: "Acme", collection: "organisations", state: "active", version: 1, schemaVersion: 1, capabilities: ["view"], values: {}, documents: [], related: [], parentOrganisation: null });
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 1, fields: [{ key: "core:domain", label: "Domain", kind: "url", sensitive: false, choices: [], canWrite: true, canHistory: false }], collectionCapabilities: ["view", "create"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    if (url.includes("/record-views")) return response({ views: [] });
+    return response({ schemaVersion: 1, results: [], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    expect(view.host.querySelector('section[aria-label="Merge records"]')).toBeNull();
+    const editor = view.host.querySelector('section[aria-label="Record editor"]')!;
+    await input(editor.querySelector("input")!, "Acme");
+    const domain = [...editor.querySelectorAll("input")].find((field) => field.parentElement?.textContent?.includes("Domain"))!;
+    await input(domain, "https://example.org/team");
+    await act(async () => [...editor.querySelectorAll("button")].find((button) => button.textContent === "Check for duplicates")!.click());
+    expect(duplicateUrl).toContain("collection=organisations");
+    expect(duplicateUrl).toContain("name=Acme");
+    expect(duplicateUrl).toContain("domain=https%3A%2F%2Fexample.org%2Fteam");
+    expect(duplicateUrl).not.toContain("email=");
+    expect(duplicateUrl).not.toContain("limit=");
+    const suggestions = editor.querySelector('section[aria-label="Duplicate suggestions"]')!;
+    expect(suggestions.textContent).toContain("Advisory only");
+    expect(suggestions.textContent).toContain("Acme");
+    expect(suggestions.textContent).toContain("website-domain");
+    expect(suggestions.textContent).toContain("More than ten permitted matches");
+    expect(suggestions.textContent).not.toContain(secret);
+    expect(suggestions.textContent).not.toContain("private-reason");
+    expect([...suggestions.querySelectorAll("li")]).toHaveLength(2);
+    await act(async () => editor.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    const created = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST").map((call) => JSON.parse(String(call[1].body)));
+    expect(created.at(-1)).toMatchObject({ kind: "create", collection: "organisations", name: "Acme" });
+    expect(created.at(-1).allowDuplicates).toBeUndefined();
+  } finally {
+    await view.dispose();
+  }
+});
+it("reviews merge choices and keeps Apply closed until a qualified consumer is connected", async () => {
+  const secret = "hidden-field-secret";
+  const sourceId = "00000000-0000-4000-8000-0000000000a1";
+  const survivorId = "00000000-0000-4000-8000-0000000000a2";
+  const relationship = "contract-account:00000000-0000-4000-8000-0000000000a3";
+  let integrationReady = false;
+  const record = (id: string, name: string) => ({
+    id,
+    name,
+    collection: "accounts",
+    state: "active",
+    version: id === sourceId ? 2 : 4,
+    schemaVersion: 1,
+    capabilities: ["view", "edit", "merge", "link"],
+    values: { secret },
+    documents: [],
+    related: [],
+    parentOrganisation: null,
+  });
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (init?.method === "POST" && url.includes("/record-merges")) {
+      const body = JSON.parse(String(init.body));
+      if (body.kind === "apply") return response({ record: record(survivorId, "Survivor Co"), replayed: false });
+      const blockers = [
+        body.parentFrom ? "" : "Choose the Account parent explicitly.",
+        body.fieldFrom?.["core:notes"] ? "" : "Choose a value for each permitted conflicting field.",
+        body.relationshipFrom?.[relationship] ? "" : "Choose the conflicting relationship metadata.",
+      ].filter(Boolean);
+      return response({
+        previewId: "00000000-0000-4000-8000-0000000000aa",
+        reviewHash: "ef".repeat(32),
+        source: { id: sourceId, name: "Source Co", version: body.sourceVersion },
+        survivor: { id: survivorId, name: "Survivor Co", version: body.survivorVersion },
+        conflicts: [{ key: "core:notes", label: "Notes", source: "Source note", survivor: "Survivor note", secret }],
+        relationshipConflicts: [{ key: relationship, source: { role: "Buyer", is_primary: true, status: "active", secret }, survivor: { role: "Sponsor", is_primary: false, status: "inactive" } }],
+        documents: [{ id: "doc-1", title: "Visible brief", pageId: secret, grant: secret }],
+        blockers,
+        integrationReady,
+        expiresAt: "2026-10-30T23:10:00.000Z",
+        sourceHistoryRetained: true,
+        hiddenField: secret,
+      });
+    }
+    if (url.includes(`/records/${survivorId}`)) return response(record(survivorId, "Survivor Co"));
+    if (url.includes(`/records/${sourceId}`)) return response(record(sourceId, "Source Co"));
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 1, fields: [], collectionCapabilities: ["view", "edit", "merge"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    if (url.includes("/record-views")) return response({ views: [] });
+    return response({ schemaVersion: 1, results: [{ id: sourceId, name: "Source Co", collection: "accounts", state: "active", version: 2, values: {} }], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    await select(view.host.querySelector("select")!, "accounts");
+    await act(async () => view.host.querySelector<HTMLButtonElement>("li button")!.click());
+    const merge = view.host.querySelector('section[aria-label="Merge records"]')!;
+    expect(merge.textContent).toContain("does not grant record or page access");
+    expect(merge.textContent).toContain("authorised parent");
+    await input(merge.querySelector("input")!, survivorId);
+    await act(async () => merge.querySelector<HTMLInputElement>('input[name="merge-parent"][value="source"]')!.click());
+    await act(async () => [...merge.querySelectorAll("button")].find((button) => button.textContent === "Review merge")!.click());
+    const first = JSON.parse(String(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST").at(-1)?.[1].body));
+    expect(first).toMatchObject({ kind: "preview", sourceId, survivorId, sourceVersion: 2, survivorVersion: 4, nameFrom: "survivor", parentFrom: "source", fieldFrom: {}, relationshipFrom: {} });
+    expect(merge.textContent).toContain("Choose a value for each permitted conflicting field.");
+    expect(merge.textContent).toContain("Visible brief");
+    expect(merge.textContent).toContain("Buyer");
+    expect(merge.textContent).not.toContain(secret);
+    expect(( [...merge.querySelectorAll("button")].find((button) => button.textContent === "Apply merge") as HTMLButtonElement).disabled).toBe(true);
+    const field = [...merge.querySelectorAll("input")].find((item) => item.name === "merge-field-core:notes" && item.value === "source")!;
+    const link = [...merge.querySelectorAll("input")].find((item) => item.name === `merge-relationship-${relationship}` && item.value === "source")!;
+    await act(async () => field.click());
+    await act(async () => link.click());
+    expect(( [...merge.querySelectorAll("button")].find((button) => button.textContent === "Apply merge") as HTMLButtonElement).disabled).toBe(true);
+    expect(merge.textContent).toContain("Review the merge again");
+    await act(async () => [...merge.querySelectorAll("button")].find((button) => button.textContent === "Review merge")!.click());
+    const second = JSON.parse(String(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST").at(-1)?.[1].body));
+    expect(second.fieldFrom).toEqual({ "core:notes": "source" });
+    expect(second.relationshipFrom).toEqual({ [relationship]: "source" });
+    expect(second.parentFrom).toBe("source");
+    expect(merge.textContent).toContain("Apply is unavailable");
+    expect(( [...merge.querySelectorAll("button")].find((button) => button.textContent === "Apply merge") as HTMLButtonElement).disabled).toBe(true);
+    integrationReady = true;
+    await act(async () => [...merge.querySelectorAll("button")].find((button) => button.textContent === "Review merge")!.click());
+    const apply = [...merge.querySelectorAll("button")].find((button) => button.textContent === "Apply merge") as HTMLButtonElement;
+    expect(apply.disabled).toBe(false);
+    await act(async () => apply.click());
+    const applied = JSON.parse(String(fetchMock.mock.calls.filter((call) => String(call[1]?.body).includes("merge-and-retain-source-history")).at(-1)?.[1].body));
+    expect(applied).toEqual({ kind: "apply", operationId: applied.operationId, previewId: "00000000-0000-4000-8000-0000000000aa", reviewHash: "ef".repeat(32), confirm: "merge-and-retain-source-history" });
+    expect(applied.grants).toBeUndefined();
+    expect(view.host.textContent).toContain("No access grants were created.");
+    expect(view.host.textContent).not.toContain(secret);
+  } finally {
+    await view.dispose();
+  }
+});

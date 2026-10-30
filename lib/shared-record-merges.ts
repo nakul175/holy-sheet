@@ -47,3 +47,5 @@ export class SharedRecordMergeRepository extends SharedRecordRepository {
   return {suggestions:rows.slice(0,10).map(r=>{const reasons:string[]=[];if(r.name.trim().normalize('NFC').toLowerCase()===name.toLowerCase())reasons.push('normalised-name');if(email&&typeof r.field_values['core:email']==='string'&&(r.field_values['core:email'] as string).toLowerCase()===c.email!.toLowerCase())reasons.push('email');if(domain&&typeof r.field_values['core:domain']==='string'){try{if(new URL(r.field_values['core:domain'] as string).hostname.toLowerCase()===domain)reasons.push('website-domain');}catch{}}return {id:r.id,name:r.name,collection:r.collection,state:r.state,reasons};}),hasMore:rows.length>10,advisory:true};
  });}
 }
+/** Native routes use this factory. No connected-app alias consumer is attached, so preview stays honest and Apply remains unavailable until a qualified adapter is supplied to the repository. */
+export function nativeRecordMergeRepository(pages:Repository,authority:CurrentSuiteTenantAuthority){return new SharedRecordMergeRepository(pages,authority);}

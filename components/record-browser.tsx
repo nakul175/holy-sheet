@@ -301,6 +301,90 @@ type TrashRow = {
   recoveryDeadline: string;
   retentionHold: boolean;
 };
+const duplicateReasons = ["normalised-name", "email", "website-domain"] as const;
+type DuplicateSuggestion = { id: string; name: string; state: "active" | "archived"; reasons: string[] };
+type DuplicateResult = { suggestions: DuplicateSuggestion[]; hasMore: boolean };
+type MergeSide = "source" | "survivor";
+type MergeConflict = { key: string; label: string; source: unknown; survivor: unknown };
+type MergeRelationshipSide = { role: string; is_primary: boolean; status: string };
+type MergeRelationshipConflict = { key: string; source: MergeRelationshipSide; survivor: MergeRelationshipSide };
+type MergePreview = {
+  previewId: string;
+  reviewHash: string;
+  source: { id: string; name: string; version: number };
+  survivor: { id: string; name: string; version: number };
+  conflicts: MergeConflict[];
+  relationshipConflicts: MergeRelationshipConflict[];
+  documents: { id: string; title: string }[];
+  blockers: string[];
+  integrationReady: boolean;
+  expiresAt: string;
+  sourceHistoryRetained: boolean;
+};
+function textValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function businessUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+function acceptedDuplicates(value: unknown): DuplicateResult {
+  const body = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const suggestions = Array.isArray(body.suggestions) ? body.suggestions.slice(0, 10).flatMap((item): DuplicateSuggestion[] => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    if (typeof row.id !== "string" || typeof row.name !== "string") return [];
+    const reasons = Array.isArray(row.reasons) ? row.reasons.filter((reason): reason is DuplicateSuggestion["reasons"][number] => typeof reason === "string" && (duplicateReasons as readonly string[]).includes(reason)) : [];
+    return [{ id: row.id, name: row.name, state: row.state === "archived" ? "archived" : "active", reasons }];
+  }) : [];
+  return { suggestions, hasMore: body.hasMore === true };
+}
+function mergeSideRecord(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== "string" || typeof row.name !== "string" || typeof row.version !== "number") return null;
+  return { id: row.id, name: row.name, version: row.version };
+}
+function relationshipSide(value: unknown): MergeRelationshipSide | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.role !== "string" || typeof row.is_primary !== "boolean" || typeof row.status !== "string") return null;
+  return { role: row.role, is_primary: row.is_primary, status: row.status };
+}
+function acceptedMergePreview(value: unknown): MergePreview | null {
+  if (!value || typeof value !== "object") return null;
+  const body = value as Record<string, unknown>;
+  const source = mergeSideRecord(body.source), survivor = mergeSideRecord(body.survivor);
+  if (typeof body.previewId !== "string" || typeof body.reviewHash !== "string" || !source || !survivor || typeof body.expiresAt !== "string") return null;
+  const conflicts = Array.isArray(body.conflicts) ? body.conflicts.flatMap((item): MergeConflict[] => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    if (typeof row.key !== "string" || typeof row.label !== "string") return [];
+    return [{ key: row.key, label: row.label, source: row.source ?? null, survivor: row.survivor ?? null }];
+  }) : [];
+  const relationshipConflicts = Array.isArray(body.relationshipConflicts) ? body.relationshipConflicts.flatMap((item): MergeRelationshipConflict[] => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    const sourceSide = relationshipSide(row.source), survivorSide = relationshipSide(row.survivor);
+    if (typeof row.key !== "string" || !sourceSide || !survivorSide) return [];
+    return [{ key: row.key, source: sourceSide, survivor: survivorSide }];
+  }) : [];
+  const documents = Array.isArray(body.documents) ? body.documents.flatMap((item): { id: string; title: string }[] => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    if (typeof row.id !== "string" || typeof row.title !== "string") return [];
+    return [{ id: row.id, title: row.title }];
+  }) : [];
+  const blockers = Array.isArray(body.blockers) ? body.blockers.filter((item): item is string => typeof item === "string") : [];
+  return { previewId: body.previewId, reviewHash: body.reviewHash, source, survivor, conflicts, relationshipConflicts, documents, blockers, integrationReady: body.integrationReady === true, expiresAt: body.expiresAt, sourceHistoryRetained: body.sourceHistoryRetained === true };
+}
+function relationshipChoiceLabel(side: MergeRelationshipSide) {
+  return `${side.role || "No role"} · ${side.is_primary ? "primary" : "not primary"} · ${side.status}`;
+}
 const collections = ["organisations", "accounts", "contacts", "employees", "contracts"] as const;
 const relationshipKind = (collection: string) => (collection === "contacts" ? "contact-account" : collection === "employees" ? "employee-account" : collection === "contracts" ? "contract-account" : null);
 const ids = (value: string) =>
@@ -354,6 +438,14 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [trashOpen, setTrashOpen] = useState(false),
     [trashRows, setTrashRows] = useState<TrashRow[]>([]),
     [trashCursor, setTrashCursor] = useState<string | null>(null),
+    [duplicates, setDuplicates] = useState<DuplicateResult | null>(null),
+    [mergeSurvivorId, setMergeSurvivorId] = useState(""),
+    [mergeNameFrom, setMergeNameFrom] = useState<MergeSide>("survivor"),
+    [mergeParentFrom, setMergeParentFrom] = useState<MergeSide | "">(""),
+    [mergeFieldFrom, setMergeFieldFrom] = useState<Record<string, MergeSide>>({}),
+    [mergeRelationshipFrom, setMergeRelationshipFrom] = useState<Record<string, MergeSide>>({}),
+    [mergePreview, setMergePreview] = useState<MergePreview | null>(null),
+    [mergeReviewStale, setMergeReviewStale] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -361,6 +453,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
   const schemaBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-schema`;
   const viewsBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-views`;
   const trashBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-trash`;
+  const duplicatesBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-duplicates`;
+  const mergesBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-merges`;
   async function json(url: string, init?: RequestInit) {
     const response = await fetch(url, {
         credentials: "same-origin",
@@ -418,6 +512,14 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setTrashOpen(false);
     setTrashRows([]);
     setTrashCursor(null);
+    setDuplicates(null);
+    setMergeSurvivorId("");
+    setMergeNameFrom("survivor");
+    setMergeParentFrom("");
+    setMergeFieldFrom({});
+    setMergeRelationshipFrom({});
+    setMergePreview(null);
+    setMergeReviewStale(false);
     setDrafts({});
     setEdits({});
     setHistoryEvents([]);
@@ -444,6 +546,14 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setEdits({});
       setPreview(null);
       setDeletePreview(null);
+      setDuplicates(null);
+      setMergeSurvivorId("");
+      setMergeNameFrom("survivor");
+      setMergeParentFrom("");
+      setMergeFieldFrom({});
+      setMergeRelationshipFrom({});
+      setMergePreview(null);
+      setMergeReviewStale(false);
       setMatrix(null);
       if (record.capabilities?.includes("history")) setHistoryEvents((await json(`${base}/${encodeURIComponent(id)}/history`)).events ?? []);
       else setHistoryEvents([]);
@@ -483,6 +593,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       });
       setDrafts({});
       setCreateName("");
+      setDuplicates(null);
       setCreateParent("");
       setCreateLegal("");
       setCreateAccounts("");
@@ -616,6 +727,109 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       body: JSON.stringify(body),
     });
   }
+  async function checkDuplicates() {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const params = new URLSearchParams({ collection, name: createName });
+      const emailField = fields.find((field) => field.key === "core:email" && field.canWrite);
+      const domainField = fields.find((field) => field.key === "core:domain" && field.canWrite);
+      const email = textValue(drafts["core:email"]);
+      const domain = textValue(drafts["core:domain"]);
+      if (emailField && email) {
+        if (!/^[^\s@]+@[^\s@]+$/.test(email)) throw Error("Enter a valid email to include it in duplicate suggestions.");
+        params.set("email", email);
+      }
+      if (domainField && domain) {
+        if (!businessUrl(domain)) throw Error("Use a valid business website URL to include it in duplicate suggestions.");
+        params.set("domain", domain);
+      }
+      setDuplicates(acceptedDuplicates(await json(`${duplicatesBase}?${params}`)));
+    } catch (e) {
+      setDuplicates(null);
+      setError(e instanceof Error ? e.message : "Unable to check for duplicates.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function chooseMergeSide(kind: "name" | "parent" | "field" | "relationship", side: MergeSide, key = "") {
+    if (kind === "name") setMergeNameFrom(side);
+    if (kind === "parent") setMergeParentFrom(side);
+    if (kind === "field") setMergeFieldFrom((current) => ({ ...current, [key]: side }));
+    if (kind === "relationship") setMergeRelationshipFrom((current) => ({ ...current, [key]: side }));
+    setMergeReviewStale(true);
+  }
+  async function reviewMerge(event: FormEvent) {
+    event.preventDefault();
+    if (!selected) return;
+    const survivorId = mergeSurvivorId.trim();
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      if (survivorId === selected.id) throw Error("Choose two distinct records.");
+      const survivor = await json(`${base}/${encodeURIComponent(survivorId)}`);
+      if (survivor.collection !== selected.collection || survivor.state !== "active") throw Error("Choose an active record in the same collection.");
+      if (!survivor.capabilities?.includes("edit") || !survivor.capabilities?.includes("merge")) throw Error("The survivor needs current edit and merge rights.");
+      if (typeof survivor.version !== "number" || !Number.isInteger(survivor.version) || survivor.version < 1) throw Error("The survivor version is unavailable.");
+      const reviewed = acceptedMergePreview(await json(mergesBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "preview",
+          sourceId: selected.id,
+          survivorId,
+          sourceVersion: selected.version,
+          survivorVersion: survivor.version,
+          nameFrom: mergeNameFrom,
+          fieldFrom: mergeFieldFrom,
+          relationshipFrom: mergeRelationshipFrom,
+          ...(selected.collection === "accounts" && mergeParentFrom ? { parentFrom: mergeParentFrom } : {}),
+        }),
+      }));
+      if (!reviewed) throw Error("The merge review is unavailable.");
+      setMergePreview(reviewed);
+      setMergeReviewStale(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to review this merge.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function applyReviewedMerge() {
+    if (!selected || !mergePreview || mergeReviewStale || mergePreview.blockers.length > 0 || !mergePreview.integrationReady) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const data = await json(mergesBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "apply",
+          operationId: crypto.randomUUID(),
+          previewId: mergePreview.previewId,
+          reviewHash: mergePreview.reviewHash,
+          confirm: "merge-and-retain-source-history",
+        }),
+      });
+      const survivorId = typeof data.record?.id === "string" ? data.record.id : mergePreview.survivor.id;
+      setMergePreview(null);
+      setMergeSurvivorId("");
+      setMergeFieldFrom({});
+      setMergeRelationshipFrom({});
+      setMergeParentFrom("");
+      setMergeNameFrom("survivor");
+      setNotice("Records merged. Source history stays with the old ID, which now opens the survivor. No access grants were created.");
+      await load(true);
+      await open(survivorId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to apply this merge.");
+    } finally {
+      setBusy(false);
+    }
+  }
   async function refreshOpen(id: string) {
     const record = await json(`${base}/${encodeURIComponent(id)}`);
     setSelected(record);
@@ -623,6 +837,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setEdits({});
     setPreview(null);
     setDeletePreview(null);
+    setMergePreview(null);
+    setMergeReviewStale(false);
     setMatrix(null);
     if (record.capabilities?.includes("history")) setHistoryEvents((await json(`${base}/${encodeURIComponent(id)}/history`)).events ?? []);
     else setHistoryEvents([]);
@@ -1023,6 +1239,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
   const archivedRecord = selected?.state === "archived";
   const currentDeletePreview = deletePreview && selected && deletePreview.recordVersion === selected.version ? deletePreview : null;
   const canRelate = !!selected && !archivedRecord && selected.capabilities.includes("edit") && selected.capabilities.includes("link") && !!relationshipKind(selected.collection);
+  const canMerge = !!selected && selected.state === "active" && selected.capabilities.includes("edit") && selected.capabilities.includes("merge");
   const writableFields = fields.filter((field) => field.canWrite);
   return (
     <main className="record-browser">
@@ -1320,6 +1537,67 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                   )}
                 </section>
               )}
+              {canMerge && (
+                <section aria-label="Merge records">
+                  <h3>Merge records</h3>
+                  <p>The open record is the source. Choose a different active record in this collection as the survivor. Both need current read, edit and merge rights. Each field choice needs current write rights, including when the survivor value stays. Unreadable fields block the merge. This does not grant record or page access.</p>
+                  {selected.collection === "contracts" && <p>Legal parties and covered accounts are combined. Conflicting roles, status or primary flags need an explicit choice. More than one primary account blocks the merge until it is reconciled.</p>}
+                  {selected.collection === "accounts" && <p>When the parent organisations differ, choose the current authorised parent. The parent record must be one you can link.</p>}
+                  <form aria-label="Review merge" onSubmit={reviewMerge}>
+                    <label>
+                      Survivor record ID{" "}
+                      <input required value={mergeSurvivorId} onChange={(event) => { setMergeSurvivorId(event.target.value); setMergePreview(null); setMergeFieldFrom({}); setMergeRelationshipFrom({}); setMergeReviewStale(false); }} />
+                    </label>
+                    <fieldset>
+                      <legend>Name</legend>
+                      <label className="record-check"><input type="radio" name="merge-name" value="source" checked={mergeNameFrom === "source"} onChange={() => chooseMergeSide("name", "source")} /> Keep source name</label>
+                      <label className="record-check"><input type="radio" name="merge-name" value="survivor" checked={mergeNameFrom === "survivor"} onChange={() => chooseMergeSide("name", "survivor")} /> Keep survivor name</label>
+                    </fieldset>
+                    {selected.collection === "accounts" && (
+                      <fieldset>
+                        <legend>Account parent</legend>
+                        <label className="record-check"><input type="radio" name="merge-parent" value="source" checked={mergeParentFrom === "source"} onChange={() => chooseMergeSide("parent", "source")} /> Source parent</label>
+                        <label className="record-check"><input type="radio" name="merge-parent" value="survivor" checked={mergeParentFrom === "survivor"} onChange={() => chooseMergeSide("parent", "survivor")} /> Survivor parent</label>
+                      </fieldset>
+                    )}
+                    <button disabled={busy || !mergeSurvivorId.trim() || mergeSurvivorId.trim() === selected.id}>Review merge</button>
+                  </form>
+                  {mergePreview && (
+                    <section aria-label="Merge review">
+                      <p>Source {mergePreview.source.name}, version {mergePreview.source.version}. Survivor {mergePreview.survivor.name}, version {mergePreview.survivor.version}.</p>
+                      <p>Review expires {mergePreview.expiresAt}. {mergePreview.sourceHistoryRetained ? "Source history is retained." : "Review this merge again."}</p>
+                      {mergePreview.conflicts.map((conflict) => (
+                        <fieldset key={conflict.key} aria-label={`Field ${conflict.label}`}>
+                          <legend>{conflict.label}</legend>
+                          <p>Source value: {displayValue(conflict.source)}</p>
+                          <p>Survivor value: {displayValue(conflict.survivor)}</p>
+                          <label className="record-check"><input type="radio" name={`merge-field-${conflict.key}`} value="source" checked={mergeFieldFrom[conflict.key] === "source"} onChange={() => chooseMergeSide("field", "source", conflict.key)} /> Use source value</label>
+                          <label className="record-check"><input type="radio" name={`merge-field-${conflict.key}`} value="survivor" checked={mergeFieldFrom[conflict.key] === "survivor"} onChange={() => chooseMergeSide("field", "survivor", conflict.key)} /> Use survivor value</label>
+                        </fieldset>
+                      ))}
+                      {mergePreview.relationshipConflicts.map((conflict) => (
+                        <fieldset key={conflict.key} aria-label={`Relationship ${conflict.key}`}>
+                          <legend>{conflict.key}</legend>
+                          <p>Source relationship: {relationshipChoiceLabel(conflict.source)}</p>
+                          <p>Survivor relationship: {relationshipChoiceLabel(conflict.survivor)}</p>
+                          <label className="record-check"><input type="radio" name={`merge-relationship-${conflict.key}`} value="source" checked={mergeRelationshipFrom[conflict.key] === "source"} onChange={() => chooseMergeSide("relationship", "source", conflict.key)} /> Use source relationship</label>
+                          <label className="record-check"><input type="radio" name={`merge-relationship-${conflict.key}`} value="survivor" checked={mergeRelationshipFrom[conflict.key] === "survivor"} onChange={() => chooseMergeSide("relationship", "survivor", conflict.key)} /> Use survivor relationship</label>
+                        </fieldset>
+                      ))}
+                      {!!mergePreview.documents.length && (
+                        <>
+                          <p>Permitted document associations to copy. Each page keeps its own access. Merge does not create a page grant.</p>
+                          <ul>{mergePreview.documents.map((document) => <li key={document.id}>{document.title}</li>)}</ul>
+                        </>
+                      )}
+                      {!!mergePreview.blockers.length && <p role="alert">{mergePreview.blockers.join(" ")}</p>}
+                      {mergeReviewStale && <p>Review the merge again so these choices are bound to the current records.</p>}
+                      {!mergePreview.integrationReady && <p>Apply is unavailable. No qualified connected-app alias consumer is connected, so this review cannot be committed.</p>}
+                      <button type="button" disabled={busy || mergeReviewStale || mergePreview.blockers.length > 0 || !mergePreview.integrationReady} onClick={() => void applyReviewedMerge()}>Apply merge</button>
+                    </section>
+                  )}
+                </section>
+              )}
               <h3>Linked documents</h3>
               {selected.documents.length ? (
                 <ul>
@@ -1440,7 +1718,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           ) : (
             <form onSubmit={create}>
               <label>
-                Name <input required minLength={1} maxLength={200} value={createName} onChange={(event) => setCreateName(event.target.value)} />
+                Name <input required minLength={1} maxLength={200} value={createName} onChange={(event) => { setCreateName(event.target.value); setDuplicates(null); }} />
               </label>
               {collection === "accounts" && (
                 <label>
@@ -1457,8 +1735,25 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                   </label>
                 </>
               )}
-              {writableFields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy} value={drafts[field.key]} onChange={(value) => setDrafts((current) => ({ ...current, [field.key]: value }))} />)}
+              {writableFields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy} value={drafts[field.key]} onChange={(value) => { setDrafts((current) => ({ ...current, [field.key]: value })); setDuplicates(null); }} />)}
               {(collection === "accounts" || collection === "contracts") && <p>Linked organisations and accounts must be active. Unarchive a record before using it in a new link.</p>}
+              <section aria-label="Duplicate suggestions">
+                <h3>Duplicate suggestions</h3>
+                <p>Advisory only. At most ten current permitted name, website or email matches are shown. An email match needs current read permission for that field. Hidden or unshared records are omitted and do not change the result. This check does not block creating a record.</p>
+                <button type="button" disabled={busy || !createName.trim()} onClick={() => void checkDuplicates()}>Check for duplicates</button>
+                {duplicates && (duplicates.suggestions.length ? (
+                  <ul>
+                    {duplicates.suggestions.map((item) => (
+                      <li key={item.id}>
+                        <button type="button" disabled={busy} onClick={() => void open(item.id)}>{item.name}</button>
+                        {item.state === "archived" ? " · archived" : ""}
+                        {item.reasons.length ? ` · ${item.reasons.join(", ")}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p>No permitted matches.</p>)}
+                {duplicates?.hasMore && <p>More than ten permitted matches exist. This list stops at ten.</p>}
+              </section>
               <button disabled={busy || !createName.trim() || canCreate === false}>Create record</button>
             </form>
           )}
