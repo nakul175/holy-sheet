@@ -153,6 +153,109 @@ function displayValue(value: unknown) {
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
+type SavedView = {
+  id: string;
+  collection: string;
+  scope: "private" | "workspace";
+  name: string;
+  version: number;
+  canManage: boolean;
+  unavailable: boolean;
+  definition: {
+    columns: string[];
+    filters: { field: string; operator: string; value?: unknown }[];
+    sort: { field: string; direction: "asc" | "desc" }[];
+    includeArchived: boolean;
+  } | null;
+};
+type ViewColumn = { key: string; label: string; kind: string };
+type ViewFilterDraft = { field: string; operator: string; value: string };
+type ViewSortDraft = { field: string; direction: "asc" | "desc" };
+type ViewDraft = {
+  id?: string;
+  version: number;
+  name: string;
+  scope: "private" | "workspace";
+  columns: string[];
+  filters: ViewFilterDraft[];
+  sorts: ViewSortDraft[];
+  includeArchived: boolean;
+  lockedScope: boolean;
+};
+type ViewRow = { id: string; name: string; values: Record<string, unknown> };
+const emptyViewDraft = (): ViewDraft => ({ version: 0, name: "", scope: "private", columns: ["name"], filters: [], sorts: [], includeArchived: false, lockedScope: false });
+function operatorsFor(kind: string) {
+  if (["text", "email", "phone", "url"].includes(kind)) return ["equal", "contains", "prefix", "in", "empty"];
+  if (kind === "long-text") return ["equal", "contains", "prefix", "empty"];
+  if (kind === "number") return ["equal", "greater", "less", "empty"];
+  if (kind === "date") return ["equal", "greater", "less", "in", "empty"];
+  if (kind === "boolean") return ["equal", "empty"];
+  if (kind === "single-select") return ["equal", "in", "empty"];
+  if (["multi-select", "record", "attachment"].includes(kind)) return ["includes", "empty"];
+  if (kind === "currency") return ["empty"];
+  return [];
+}
+function sortableField(kind: string) {
+  return ["text", "email", "phone", "url", "number", "date", "boolean", "single-select"].includes(kind);
+}
+function filterValueText(value: unknown) {
+  if (Array.isArray(value)) return value.map(String).join("\n");
+  if (value === undefined || value === null) return "";
+  return String(value);
+}
+function acceptedViews(body: { views?: SavedView[] } | null): SavedView[] {
+  return Array.isArray(body?.views) ? body.views.filter((view) => view && typeof view.id === "string" && typeof view.name === "string" && (view.scope === "private" || view.scope === "workspace")) : [];
+}
+function draftFrom(view: SavedView): ViewDraft {
+  return {
+    id: view.id,
+    version: view.version,
+    name: view.name,
+    scope: view.scope,
+    columns: view.definition?.columns.length ? view.definition.columns : ["name"],
+    filters: (view.definition?.filters ?? []).map((filter) => ({ field: filter.field, operator: filter.operator, value: filterValueText(filter.value) })),
+    sorts: (view.definition?.sort ?? []).map((item) => ({ field: item.field, direction: item.direction })),
+    includeArchived: view.definition?.includeArchived === true,
+    lockedScope: true,
+  };
+}
+function viewDefinition(draft: ViewDraft, catalogue: ViewColumn[]) {
+  const name = draft.name.trim();
+  if (!name || name.length > 100) throw Error("Use a view name of 1–100 characters.");
+  if (!draft.columns.length || draft.columns.length > 100) throw Error("Choose 1–100 columns.");
+  if (draft.filters.length > 12) throw Error("A view supports at most 12 filters, combined with AND.");
+  if (draft.sorts.length > 3) throw Error("A view supports at most 3 sorts.");
+  const known = new Map(catalogue.map((field) => [field.key, field]));
+  const filters = draft.filters.map((filter) => {
+    const field = known.get(filter.field);
+    const operators = operatorsFor(field?.kind ?? "");
+    if (!field || !operators.includes(filter.operator)) throw Error("A view field, filter or sort is unavailable.");
+    if (filter.operator === "empty") return { field: filter.field, operator: filter.operator };
+    if (filter.operator === "in") {
+      const list = filter.value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
+      if (!list.length || list.length > 100) throw Error("Membership filters need 1–100 values.");
+      return { field: filter.field, operator: filter.operator, value: list };
+    }
+    if (field.kind === "number") {
+      const value = Number(filter.value);
+      if (!Number.isFinite(value)) throw Error("Use a finite number.");
+      return { field: filter.field, operator: filter.operator, value };
+    }
+    if (field.kind === "boolean") {
+      if (filter.value !== "true" && filter.value !== "false") throw Error("Use true or false.");
+      return { field: filter.field, operator: filter.operator, value: filter.value === "true" };
+    }
+    if (!filter.value.trim() || filter.value.length > 200) throw Error("Use a filter value of 1–200 characters.");
+    return { field: filter.field, operator: filter.operator, value: filter.value };
+  });
+  if (new Set(draft.sorts.map((item) => item.field)).size !== draft.sorts.length) throw Error("Each sort field can be used once.");
+  const sort = draft.sorts.map((item) => {
+    const field = known.get(item.field);
+    if (!field || !sortableField(field.kind)) throw Error("A view field, filter or sort is unavailable.");
+    return { field: item.field, direction: item.direction };
+  });
+  return { columns: draft.columns, filters, sort, includeArchived: draft.includeArchived };
+}
 function FieldEditor({ field, value, disabled, onChange }: { field: FieldMeta; value: unknown; disabled: boolean; onChange: (value: unknown) => void }) {
   if (!field.canWrite || disabled) return <p><span>{field.label}</span> {displayValue(value)}{field.sensitive ? " · sensitive" : ""}</p>;
   if (field.kind === "boolean") return <label className="record-check"><input type="checkbox" checked={value === true} onChange={(event) => onChange(event.target.checked)} /> {field.label}</label>;
@@ -217,6 +320,13 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [schemaCatalogue, setSchemaCatalogue] = useState<SchemaCatalogue | null>(null),
     [schemaDraft, setSchemaDraft] = useState<SchemaDraft>(emptySchemaDraft),
     [schemaPreview, setSchemaPreview] = useState<SchemaPreview | null>(null),
+    [views, setViews] = useState<SavedView[]>([]),
+    [canManageViews, setCanManageViews] = useState(false),
+    [activeViewId, setActiveViewId] = useState(""),
+    [viewDraft, setViewDraft] = useState<ViewDraft>(emptyViewDraft),
+    [viewRows, setViewRows] = useState<ViewRow[]>([]),
+    [viewColumns, setViewColumns] = useState<ViewColumn[]>([]),
+    [viewCursor, setViewCursor] = useState<string | null>(null),
     [memberId, setMemberId] = useState(""),
     [grantCapabilities, setGrantCapabilities] = useState<string[]>([]),
     [grantFields, setGrantFields] = useState<PermissionMember["fields"]>([]),
@@ -225,6 +335,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [notice, setNotice] = useState("");
   const permissionsBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-permissions`;
   const schemaBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-schema`;
+  const viewsBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-views`;
   async function json(url: string, init?: RequestInit) {
     const response = await fetch(url, {
         credentials: "same-origin",
@@ -246,7 +357,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setItems((old) => (reset ? data.results : [...old, ...data.results]));
       setCursor(data.nextCursor);
       if (reset) {
-        const [permissionResult, schemaResult] = await Promise.all([
+        const [permissionResult, schemaResult, viewResult] = await Promise.all([
           json(`${permissionsBase}?collection=${encodeURIComponent(collection)}`).then(
             (catalogue) => catalogue,
             () => null,
@@ -255,11 +366,17 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             (schema) => acceptedSchema(schema),
             () => null,
           ),
+          json(`${viewsBase}?collection=${encodeURIComponent(collection)}`).then(
+            (catalogue) => acceptedViews(catalogue),
+            () => [],
+          ),
         ]);
         setFields(Array.isArray(permissionResult?.fields) ? permissionResult.fields : []);
         setCanManage(permissionResult?.canManage === true);
         setCanCreate(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("create") : null);
+        setCanManageViews(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("manage-views") : false);
         setSchemaCatalogue(schemaResult);
+        setViews(viewResult);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load records.");
@@ -277,6 +394,13 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setSchemaCatalogue(null);
     setSchemaDraft(emptySchemaDraft());
     setSchemaPreview(null);
+    setViews([]);
+    setCanManageViews(false);
+    setActiveViewId("");
+    setViewDraft(emptyViewDraft());
+    setViewRows([]);
+    setViewColumns([]);
+    setViewCursor(null);
     void load(true);
   }, [collection]);
   async function open(id: string) {
@@ -583,6 +707,157 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setBusy(false);
     }
   }
+  const viewFieldCatalogue: ViewColumn[] = [{ key: "name", label: "Name", kind: "text" }, ...fields.map((field) => ({ key: field.key, label: field.label, kind: field.kind }))];
+  const activeView = views.find((view) => view.id === activeViewId) ?? null;
+  function editView(patch: Partial<ViewDraft>) {
+    setViewDraft((current) => ({ ...current, ...patch }));
+  }
+  function toggleColumn(key: string) {
+    setViewDraft((current) => ({ ...current, columns: current.columns.includes(key) ? current.columns.filter((item) => item !== key) : [...current.columns, key] }));
+  }
+  async function runView(id: string, reset = true) {
+    setBusy(true);
+    setError("");
+    try {
+      const params = new URLSearchParams();
+      if (!reset && viewCursor) params.set("cursor", viewCursor);
+      const data = await json(`${viewsBase}/${encodeURIComponent(id)}${params.size ? `?${params}` : ""}`);
+      const view = data.view as SavedView;
+      setViews((current) => current.map((item) => (item.id === view.id ? view : item)));
+      if (view.unavailable || !view.definition) {
+        setViewRows([]);
+        setViewColumns([]);
+        setViewCursor(null);
+        setError("This view includes a restricted filter or sort. Review its configuration.");
+        return;
+      }
+      const reported = Array.isArray(data.fields) ? data.fields as ViewColumn[] : [];
+      setViewColumns(view.definition.columns.map((key) => key === "name" ? { key, label: "Name", kind: "text" } : reported.find((field) => field.key === key) ?? { key, label: "Field", kind: "text" }));
+      setViewRows((current) => (reset ? data.results ?? [] : [...current, ...(data.results ?? [])]));
+      setViewCursor(data.nextCursor ?? null);
+      if (view.canManage) setViewDraft(draftFrom(view));
+    } catch (e) {
+      setViewRows([]);
+      setViewColumns([]);
+      setViewCursor(null);
+      setError(e instanceof Error ? e.message : "Unable to run this view.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function chooseView(id: string) {
+    setActiveViewId(id);
+    if (!id) {
+      setViewRows([]);
+      setViewColumns([]);
+      setViewCursor(null);
+      setError("");
+      return;
+    }
+    const view = views.find((item) => item.id === id);
+    if (!view || view.unavailable || !view.definition) {
+      setViewRows([]);
+      setViewColumns([]);
+      setViewCursor(null);
+      setViewDraft(emptyViewDraft());
+      setError("This view includes a restricted filter or sort. Review its configuration.");
+      return;
+    }
+    if (view.canManage) setViewDraft(draftFrom(view));
+    else setViewDraft(emptyViewDraft());
+    void runView(id, true);
+  }
+  async function refreshViews(selectId?: string) {
+    const next = acceptedViews(await json(`${viewsBase}?collection=${encodeURIComponent(collection)}`));
+    setViews(next);
+    if (!selectId) return;
+    setActiveViewId(selectId);
+    const view = next.find((item) => item.id === selectId);
+    if (view?.canManage && view.definition) setViewDraft(draftFrom(view));
+    if (view && !view.unavailable && view.definition) await runView(selectId, true);
+  }
+  async function saveView(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const definition = viewDefinition(viewDraft, viewFieldCatalogue);
+      const id = viewDraft.id ?? crypto.randomUUID();
+      const saved = await json(viewsBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "save",
+          id,
+          operationId: crypto.randomUUID(),
+          collection,
+          scope: viewDraft.scope,
+          name: viewDraft.name.trim(),
+          expectedVersion: viewDraft.id ? viewDraft.version : 0,
+          definition,
+        }),
+      });
+      setNotice(viewDraft.id ? "Saved view updated." : "Saved view created.");
+      await refreshViews(saved.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to save this view.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function publishView() {
+    if (!activeView?.definition || activeView.scope !== "private" || !activeView.canManage || !canManageViews) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const saved = await json(viewsBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "save",
+          id: crypto.randomUUID(),
+          operationId: crypto.randomUUID(),
+          collection,
+          scope: "workspace",
+          name: `${activeView.name.slice(0, 93)} shared`,
+          expectedVersion: 0,
+          definition: activeView.definition,
+        }),
+      });
+      setNotice("Shared copy created. The personal view was not changed.");
+      await refreshViews(saved.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to publish a shared copy.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function removeView() {
+    if (!viewDraft.id) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await json(viewsBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "delete", id: viewDraft.id, operationId: crypto.randomUUID(), expectedVersion: viewDraft.version }),
+      });
+      setActiveViewId("");
+      setViewDraft(emptyViewDraft());
+      setViewRows([]);
+      setViewColumns([]);
+      setViewCursor(null);
+      setViews(acceptedViews(await json(`${viewsBase}?collection=${encodeURIComponent(collection)}`)));
+      setNotice("Saved view deleted. Records were not changed.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to delete this view.");
+    } finally {
+      setBusy(false);
+    }
+  }
   function toggleField(key: string, flag: "canView" | "canWrite" | "canHistory") {
     setGrantFields((current) => current.map((field) => {
       if (field.key !== key) return field;
@@ -626,6 +901,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             </label>
             <button disabled={busy}>Search</button>
           </form>
+          {activeView?.definition && !activeView.unavailable ? null : (
           <ul>
             {items.map((item) => (
               <li key={item.id}>
@@ -635,11 +911,120 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               </li>
             ))}
           </ul>
-          {cursor && (
+          )}
+          {activeView?.definition && !activeView.unavailable ? (
+            <table aria-label={activeView.name}>
+              <caption>{activeView.scope === "private" ? "Personal" : "Shared"} · {activeView.name}</caption>
+              <thead>
+                <tr>
+                  {viewColumns.map((column) => <th key={column.key} scope="col">{column.label}</th>)}
+                  <th scope="col">Open</th>
+                </tr>
+              </thead>
+              <tbody>
+                {viewRows.map((row) => (
+                  <tr key={row.id}>
+                    {viewColumns.map((column) => <td key={column.key}>{column.key === "name" ? row.name : displayValue(row.values?.[column.key])}</td>)}
+                    <td><button type="button" disabled={busy} onClick={() => void open(row.id)}>Open</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+          {activeViewId ? (viewCursor && <button disabled={busy} onClick={() => void runView(activeViewId, false)}>Load 50 more</button>) : (cursor && (
             <button disabled={busy} onClick={() => void load(false)}>
               Load 50 more
             </button>
-          )}
+          ))}
+          <section aria-label="Saved table views">
+            <h2>Saved table views</h2>
+            <p>Personal views stay with you. A shared workspace view needs manage-views and does not grant record editing or schema changes. Sharing a personal view creates a new copy; the original stays personal. Trash is excluded. Archived records appear only when the view includes them.</p>
+            <label>
+              Saved view{" "}
+              <select aria-label="Saved view" value={activeViewId} onChange={(event) => chooseView(event.target.value)}>
+                <option value="">All records</option>
+                {views.filter((view) => view.scope === "private").map((view) => <option key={view.id} value={view.id}>Personal · {view.name}</option>)}
+                {views.filter((view) => view.scope === "workspace").map((view) => <option key={view.id} value={view.id}>Shared · {view.name}</option>)}
+              </select>
+            </label>
+            <form aria-label="Save table view" onSubmit={saveView}>
+              <button type="button" disabled={busy} onClick={() => setViewDraft(emptyViewDraft())}>New view</button>
+              <label>Name <input name="view-name" required minLength={1} maxLength={100} value={viewDraft.name} onChange={(event) => editView({ name: event.target.value })} /></label>
+              <fieldset>
+                <legend>Audience</legend>
+                <label className="record-check"><input type="radio" name="view-audience" value="private" checked={viewDraft.scope === "private"} disabled={viewDraft.lockedScope} onChange={() => editView({ scope: "private" })} /> Personal</label>
+                <label className="record-check"><input type="radio" name="view-audience" value="workspace" checked={viewDraft.scope === "workspace"} disabled={viewDraft.lockedScope || !canManageViews} onChange={() => editView({ scope: "workspace" })} /> Shared workspace</label>
+                {!canManageViews && <p>Shared workspace views need the manage-views capability.</p>}
+                {viewDraft.lockedScope && <p>Audience is fixed. Publish a new shared copy to share a personal view.</p>}
+              </fieldset>
+              <fieldset>
+                <legend>Columns</legend>
+                {viewFieldCatalogue.map((field) => (
+                  <label className="record-check" key={field.key}>
+                    <input type="checkbox" checked={viewDraft.columns.includes(field.key)} onChange={() => toggleColumn(field.key)} /> {field.label}
+                  </label>
+                ))}
+              </fieldset>
+              <label className="record-check"><input type="checkbox" checked={viewDraft.includeArchived} onChange={(event) => editView({ includeArchived: event.target.checked })} /> Include archived records</label>
+              {viewDraft.filters.map((filter, index) => {
+                const field = viewFieldCatalogue.find((item) => item.key === filter.field) ?? viewFieldCatalogue[0];
+                const operators = operatorsFor(field?.kind ?? "");
+                return (
+                  <fieldset key={`${filter.field}-${index}`} aria-label={`Filter ${index + 1}`}>
+                    <legend>Filter {index + 1}</legend>
+                    <label>
+                      Field{" "}
+                      <select value={filter.field} onChange={(event) => {
+                        const next = viewFieldCatalogue.find((item) => item.key === event.target.value);
+                        const nextOperators = operatorsFor(next?.kind ?? "");
+                        setViewDraft((current) => ({ ...current, filters: current.filters.map((item, itemIndex) => itemIndex === index ? { field: event.target.value, operator: nextOperators.includes(item.operator) ? item.operator : nextOperators[0] ?? "empty", value: "" } : item) }));
+                      }}>
+                        {viewFieldCatalogue.filter((item) => operatorsFor(item.kind).length).map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      Operator{" "}
+                      <select aria-label={`Filter ${index + 1} operator`} value={filter.operator} onChange={(event) => setViewDraft((current) => ({ ...current, filters: current.filters.map((item, itemIndex) => itemIndex === index ? { ...item, operator: event.target.value, value: event.target.value === "empty" ? "" : item.value } : item) }))}>
+                        {operators.map((operator) => <option key={operator} value={operator}>{operator}</option>)}
+                      </select>
+                    </label>
+                    {filter.operator !== "empty" && <label>Value <input aria-label={`Filter ${index + 1} value`} value={filter.value} maxLength={2000} onChange={(event) => setViewDraft((current) => ({ ...current, filters: current.filters.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) }))} /></label>}
+                    <button type="button" disabled={busy} onClick={() => setViewDraft((current) => ({ ...current, filters: current.filters.filter((_, itemIndex) => itemIndex !== index) }))}>Remove filter</button>
+                  </fieldset>
+                );
+              })}
+              <button type="button" name="add-filter" disabled={busy || viewDraft.filters.length >= 12} onClick={() => editView({ filters: [...viewDraft.filters, { field: "name", operator: "equal", value: "" }] })}>Add filter</button>
+              {viewDraft.sorts.map((item, index) => (
+                <fieldset key={`${item.field}-${index}`} aria-label={`Sort ${index + 1}`}>
+                  <legend>Sort {index + 1}</legend>
+                  <label>
+                    Field{" "}
+                    <select value={item.field} onChange={(event) => setViewDraft((current) => ({ ...current, sorts: current.sorts.map((sort, sortIndex) => sortIndex === index ? { ...sort, field: event.target.value } : sort) }))}>
+                      {viewFieldCatalogue.filter((field) => sortableField(field.kind)).map((field) => <option key={field.key} value={field.key}>{field.label}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Direction{" "}
+                    <select aria-label={`Sort ${index + 1} direction`} value={item.direction} onChange={(event) => setViewDraft((current) => ({ ...current, sorts: current.sorts.map((sort, sortIndex) => sortIndex === index ? { ...sort, direction: event.target.value as "asc" | "desc" } : sort) }))}>
+                      <option value="asc">Ascending</option>
+                      <option value="desc">Descending</option>
+                    </select>
+                  </label>
+                  <button type="button" disabled={busy} onClick={() => setViewDraft((current) => ({ ...current, sorts: current.sorts.filter((_, sortIndex) => sortIndex !== index) }))}>Remove sort</button>
+                </fieldset>
+              ))}
+              <button type="button" name="add-sort" disabled={busy || viewDraft.sorts.length >= 3} onClick={() => {
+                const used = new Set(viewDraft.sorts.map((item) => item.field));
+                const field = viewFieldCatalogue.find((item) => sortableField(item.kind) && !used.has(item.key));
+                if (field) editView({ sorts: [...viewDraft.sorts, { field: field.key, direction: "asc" }] });
+              }}>Add sort</button>
+              <button disabled={busy || !viewDraft.name.trim() || (viewDraft.scope === "workspace" && !canManageViews && !viewDraft.lockedScope)}>Save view</button>
+            </form>
+            <div className="record-view-actions">
+              {activeView?.scope === "private" && activeView.canManage && activeView.definition && canManageViews && <button type="button" disabled={busy} onClick={() => void publishView()}>Publish shared copy</button>}
+              {viewDraft.id && activeView?.canManage && <button type="button" disabled={busy} onClick={() => void removeView()}>Delete view</button>}
+            </div>
+          </section>
           {schemaCatalogue && (
             <section aria-label="Collection fields">
               <h2>Collection fields</h2>
