@@ -4,6 +4,7 @@ import { richSchema } from "./rich-schema";
 
 export type RichNode = { type: string; text?: string; attrs?: Record<string, unknown>; marks?: { type: string; attrs?: Record<string, unknown> }[]; content?: RichNode[] };
 export const schemaVersion = 2;
+export const documentLimits = {bytes:25_000_000,blocks:10_000,depth:12} as const;
 export const languages = ["plaintext", "bash", "javascript", "typescript", "json", "html", "css", "sql", "python", "java", "csharp", "cpp", "go", "rust", "php", "ruby", "yaml", "markdown"];
 export const palette = ["#171717", "#6b7280", "#1d4ed8", "#15803d", "#92400e", "#b91c1c", "#6d28d9"];
 export const highlights = ["#fef3c7", "#dbeafe", "#dcfce7", "#fee2e2", "#ede9fe"];
@@ -28,14 +29,14 @@ export const saveInput = z.object({ operationId: z.string().uuid(), baseVersion:
 const allowedAttrs = new Set(["id", "level", "start", "checked", "language", "colspan", "rowspan", "colwidth", "align", "theme", "icon", "alt", "title", "caption", "width", "attachmentId", "src", "pageId", "open"]);
 
 export function validateDocument(input: unknown): RichNode {
-  if (new TextEncoder().encode(JSON.stringify(input) ?? "").byteLength > 25_000_000) throw new DocumentError("Document exceeds the 25 MB safety limit. Split the page; your draft is retained.", "payload_too_large", 413);
+  if (new TextEncoder().encode(JSON.stringify(input) ?? "").byteLength > documentLimits.bytes) throw new DocumentError("Document exceeds the 25 MB safety limit. Split the page; your draft is retained.", "payload_too_large", 413);
   const ids = new Set<string>(); let count = 0;
   function visit(value: unknown, depth: number, parent?: string, listDepth = 0, inTable=false): RichNode {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new DocumentError("Invalid block");
     const n = value as RichNode;
     if (!nodeTypes.includes(n.type) || Object.keys(n).some(k => !["type", "text", "attrs", "marks", "content"].includes(k))) throw new DocumentError("Unsupported block or attribute");
     if(inTable&&!["tableRow","tableCell","tableHeader","paragraph","taskList","taskItem","text","hardBreak"].includes(n.type))throw new DocumentError("Unsupported content inside a table cell");
-    if (depth > 12 || (idTypes.includes(n.type) && ++count > 10_000)) throw new DocumentError("Document nesting or block safety limit exceeded; split this page.");
+    if (depth > documentLimits.depth || (idTypes.includes(n.type) && ++count > documentLimits.blocks)) throw new DocumentError("Document nesting or block safety limit exceeded; split this page.");
     if (n.type === "doc" && parent) throw new DocumentError("Nested document");
     if (n.type === "text" && (typeof n.text !== "string" || n.content)) throw new DocumentError("Invalid text");
     if (n.type !== "text" && n.text !== undefined) throw new DocumentError("Text must use structured text nodes");

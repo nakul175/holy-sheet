@@ -13,6 +13,7 @@ export async function maintainStorage(r:Repository,erase:(key:string)=>Promise<v
     AND NOT EXISTS (SELECT 1 FROM hs_pages p LEFT JOIN hs_deletion_batches b ON b.id=p.deletion_batch_id WHERE p.id=m.page_id AND p.deleted_at IS NOT NULL AND COALESCE(b.expires_at,p.deleted_at+interval '30 days')>clock_timestamp())
     AND NOT EXISTS (SELECT 1 FROM hs_drafts d WHERE d.page_id=m.page_id AND d.expires_at>now() AND d.attachment_ids @> jsonb_build_array(m.id::text))
     AND NOT EXISTS (SELECT 1 FROM hs_revision_media rm JOIN hs_revisions v ON v.page_id=rm.page_id AND v.version=rm.version JOIN hs_pages p ON p.id=v.page_id WHERE rm.media_id=m.id AND p.deleted_at IS NULL AND (p.version=v.version OR v.superseded_at>clock_timestamp()-interval '90 days'))
+    AND NOT hs_document_media_retained(m.id)
     ) ORDER BY CASE WHEN m.state IN ('rejected','purging') THEN 0 ELSE 1 END,m.created_at LIMIT 50`);
   const purge:{id:string;key:string}[]=[];
   for(const m of candidates){await r.db.transaction(async tx=>{
@@ -25,7 +26,8 @@ export async function maintainStorage(r:Repository,erase:(key:string)=>Promise<v
     const live=await tx.query("SELECT b.id FROM hs_blocks b JOIN hs_pages p ON p.id=b.page_id WHERE b.page_id=$1 AND p.deleted_at IS NULL AND b.type IN ('image','file') AND b.node->'attrs'->>'attachmentId'=$2 LIMIT 1",[m.page_id,m.id]);
     const lease=await tx.query("SELECT id FROM hs_drafts WHERE page_id=$1 AND expires_at>now() AND attachment_ids @> $2::jsonb LIMIT 1",[m.page_id,JSON.stringify([m.id])]);
     const history=await tx.query("SELECT rm.media_id FROM hs_revision_media rm JOIN hs_revisions v ON v.page_id=rm.page_id AND v.version=rm.version JOIN hs_pages p ON p.id=v.page_id WHERE rm.media_id=$1 AND p.deleted_at IS NULL AND (p.version=v.version OR v.superseded_at>clock_timestamp()-interval '90 days') LIMIT 1",[m.id]);
-    if(live.rows.length||lease.rows.length||history.rows.length)return;
+    const reviewed=await tx.query<{retained:boolean}>('SELECT hs_document_media_retained($1::uuid) AS retained',[m.id]);
+    if(live.rows.length||lease.rows.length||history.rows.length||reviewed.rows[0].retained)return;
     if(current.scanned_at&&!current.deleted_at){await tx.query("UPDATE hs_media SET deleted_at=now() WHERE id=$1",[m.id]);return;}
     const aged=new Date(current.scanned_at?current.deleted_at!:current.created_at).getTime();
     const wait=current.scanned_at?7*86400_000:86400_000;

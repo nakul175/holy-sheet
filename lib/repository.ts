@@ -9,9 +9,11 @@ import { revisionDigest } from './revision';
 import { usableMedia } from './media-authorization';
 import { canEdit,type Page,type PageRole } from './types';
 import { validateNewPageReferences } from './page-references';
+import { publishedDocument } from './document-publishing';
+import {governedAuthoringAllowed,projectionSql,type ProjectionBudget} from './publication-projection';
 
 type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
-export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole};
+export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole;publicationFingerprint?:string};
 export class Repository {
   constructor(public db:Database) {}
   async seedLocal() {
@@ -44,11 +46,20 @@ export class Repository {
     if(edit && !canEdit(rows[0].role)) throw new DocumentError("This page is read only","read_only",403);
     return rows[0];
   }
-  async get(id:string,actor:Actor,tx:Sql=this.db):Promise<DocumentPage> {
+  async get(id:string,actor:Actor,tx:Sql=this.db,work?:ProjectionBudget):Promise<DocumentPage> {
+    tx=projectionSql(tx,work);work?.check();
     const p=await this.access(tx,id,actor);
-    const {rows}=await tx.query<{node:RichNode}>("SELECT node FROM hs_blocks WHERE page_id=$1 AND parent_id IS NULL ORDER BY position",[id]);
-    const document:RichNode={type:"doc",content:rows.map(r=>r.node)};
-    return {id:p.id,workspaceId:p.workspace_id,workspaceName:p.workspace_name,spaceId:p.space_id,spaceName:p.space_name,parentPageId:p.parent_id,parentTitle:p.parent_title,title:p.title,visibility:p.visibility,position:p.position,version:p.version,updatedAt:new Date(p.updated_at).toISOString(),schemaVersion:p.schema_version,role:p.role,document,blocks:(document.content ?? []).map((n,i)=>({id:String(n.attrs?.id),pageId:id,parentBlockId:null,type:n.type==="heading"?"heading":"paragraph",text:plainText(n),position:i}))};
+    const mayAuthor=await governedAuthoringAllowed(tx,actor,p);
+    const published=mayAuthor?null:await publishedDocument(this,tx,actor,id,work);
+    let document:RichNode,publicationFingerprint:string|undefined;
+    if(published){document=published.document;p.title=published.title;p.version=published.version;p.updated_at=published.publishedAt;publicationFingerprint=published.publicationId+':'+revisionDigest(published.title,published.document);work?.check();}
+    else{
+      const {rows}=await tx.query<{node:RichNode}>("SELECT node FROM hs_blocks WHERE page_id=$1 AND parent_id IS NULL ORDER BY position",[id]);
+      document={type:"doc",content:rows.map(r=>r.node)};
+    }
+    const blocks:Page['blocks']=(document.content ?? []).map((n,i)=>{work?.check();const block={id:String(n.attrs?.id),pageId:id,parentBlockId:null,type:n.type==="heading"?"heading" as const:"paragraph" as const,text:plainText(n),position:i};work?.check();return block;});
+    work?.check();
+    return {id:p.id,workspaceId:p.workspace_id,workspaceName:p.workspace_name,spaceId:p.space_id,spaceName:p.space_name,parentPageId:p.parent_id,parentTitle:p.parent_title,title:p.title,visibility:p.visibility,position:p.position,version:p.version,updatedAt:new Date(p.updated_at).toISOString(),schemaVersion:p.schema_version,role:p.role,publicationFingerprint,document,blocks};
   }
   async list(actor:Actor) {
     const {rows}=await this.db.query<{id:string}>(`WITH RECURSIVE permitted AS (

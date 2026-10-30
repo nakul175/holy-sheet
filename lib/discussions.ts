@@ -3,12 +3,13 @@ import type { Actor } from './auth';
 import type { Sql } from './database';
 import type { Repository } from './repository';
 import { canComment,canEdit } from './types';
-import { DocumentError,stableStringify } from './document';
-import { createAnchors,type Anchor } from './comment-anchors';
+import { DocumentError,stableStringify,validateDocument,type RichNode } from './document';
+import { createAnchors,mapAnchors,type Anchor } from './comment-anchors';
 import { drainNotifications } from './notifications';
 import type { DiscussionChange,ThreadView,CommentView } from './discussion-types';
+import {threadVisible,visibleThreadAnchors,viewedPublicationId,bindThreadPublicationAnchors,type ThreadAnchorView} from './discussion-visibility';
 
-type Thread={id:string;page_id:string;creator_id:string;status:'open'|'resolved';version:number;anchors:Anchor[];created_at:string};
+type Thread=ThreadAnchorView&{id:string;page_id:string;creator_id:string;status:'open'|'resolved';version:number;anchors:Anchor[];created_at:string};
 type Comment={id:string;thread_id:string;author_id:string;body:string;version:number;deleted_at:string|null;moderated:boolean};
 type Result={threadId:string;commentId?:string;eventId?:string;unchanged?:boolean};
 const unavailable=()=>new DocumentError('Discussion is restricted or unavailable','not_found',404);
@@ -16,15 +17,16 @@ function validateBody(body:string){if(!body.trim()||body.includes('\0')||[...bod
 
 export async function discussions(r:Repository,actor:Actor,pageId:string,tx:Sql=r.db){
   const page=await r.access(tx,pageId,actor);
-  const threads=await tx.query<Thread>('SELECT * FROM hs_threads WHERE page_id=$1 ORDER BY created_at,id',[pageId]);
+  const visiblePage=await r.get(pageId,actor,tx);
+  const threads=await tx.query<Thread>('SELECT t.*,b.anchors AS publication_anchors,b.publication_id AS anchor_publication_id FROM hs_threads t LEFT JOIN hs_publication_thread_anchors b ON b.thread_id=t.id AND b.publication_id=$2 WHERE t.page_id=$1 ORDER BY t.created_at,t.id',[pageId,viewedPublicationId(visiblePage)??null]);
   const comments=await tx.query<{id:string;thread_id:string;author_id:string;author_name:string;body:string|null;version:number;created_at:string;edited_at:string|null;deleted_at:string|null;moderated:boolean;is_root:boolean;restorable:boolean}>(`SELECT c.id,c.thread_id,c.author_id,u.name AS author_name,CASE WHEN c.deleted_at IS NULL THEN c.body ELSE NULL END AS body,c.version,c.created_at,c.edited_at,c.deleted_at,c.moderated,c.is_root,c.deleted_at>clock_timestamp()-interval '30 days' AS restorable FROM hs_comments c JOIN hs_threads t ON t.id=c.thread_id JOIN hs_users u ON u.id=c.author_id WHERE t.page_id=$1 ORDER BY c.created_at,c.id`,[pageId]);
-  const result:ThreadView[]=threads.rows.map(t=>{
+  const result:ThreadView[]=threads.rows.filter(t=>threadVisible(visiblePage,t)).map(t=>{
     const rows=comments.rows.filter(c=>c.thread_id===t.id),rootDeleted=rows.some(c=>c.is_root&&c.deleted_at!==null);
-    return {id:t.id,creatorId:t.creator_id,status:t.status,version:t.version,createdAt:new Date(t.created_at).toISOString(),anchors:rootDeleted?[]:t.anchors,anchorUnavailable:rootDeleted&&t.anchors.length>0,canResolve:canComment(page.role)&&(t.creator_id===actor.id||canEdit(page.role)),comments:rows.map((c):CommentView=>({id:c.id,authorId:c.author_id,authorName:c.author_name,body:c.body,version:c.version,createdAt:new Date(c.created_at).toISOString(),editedAt:c.edited_at?new Date(c.edited_at).toISOString():null,deletedAt:c.deleted_at?new Date(c.deleted_at).toISOString():null,canEdit:canComment(page.role)&&c.author_id===actor.id&&c.deleted_at===null,canDelete:canComment(page.role)&&(c.author_id===actor.id||page.role==='owner')&&c.deleted_at===null,canRestore:canComment(page.role)&&c.deleted_at!==null&&c.restorable&&(c.moderated?page.role==='owner':c.author_id===actor.id)}))};
+    return {id:t.id,creatorId:t.creator_id,status:t.status,version:t.version,createdAt:new Date(t.created_at).toISOString(),anchors:rootDeleted?[]:visibleThreadAnchors(visiblePage,t)??[],anchorUnavailable:rootDeleted&&t.anchors.length>0,canResolve:canComment(page.role)&&(t.creator_id===actor.id||canEdit(page.role)),comments:rows.map((c):CommentView=>({id:c.id,authorId:c.author_id,authorName:c.author_name,body:c.body,version:c.version,createdAt:new Date(c.created_at).toISOString(),editedAt:c.edited_at?new Date(c.edited_at).toISOString():null,deletedAt:c.deleted_at?new Date(c.deleted_at).toISOString():null,canEdit:canComment(page.role)&&c.author_id===actor.id&&c.deleted_at===null,canDelete:canComment(page.role)&&(c.author_id===actor.id||page.role==='owner')&&c.deleted_at===null,canRestore:canComment(page.role)&&c.deleted_at!==null&&c.restorable&&(c.moderated?page.role==='owner':c.author_id===actor.id)}))};
   });
   return {threads:result,role:page.role};
 }
-async function thread(tx:Sql,pageId:string,id:string){const result=await tx.query<Thread>('SELECT * FROM hs_threads WHERE id=$1 AND page_id=$2 FOR UPDATE',[id,pageId]);if(!result.rows.length)throw unavailable();return result.rows[0];}
+async function thread(tx:Sql,pageId:string,id:string,publicationId?:string){const result=await tx.query<Thread>('SELECT t.*,b.anchors AS publication_anchors,b.publication_id AS anchor_publication_id FROM hs_threads t LEFT JOIN hs_publication_thread_anchors b ON b.thread_id=t.id AND b.publication_id=$3 WHERE t.id=$1 AND t.page_id=$2 FOR UPDATE OF t',[id,pageId,publicationId??null]);if(!result.rows.length)throw unavailable();return result.rows[0];}
 async function comment(tx:Sql,pageId:string,id:string){const result=await tx.query<Comment>('SELECT c.* FROM hs_comments c JOIN hs_threads t ON t.id=c.thread_id WHERE c.id=$1 AND t.page_id=$2 FOR UPDATE OF c',[id,pageId]);if(!result.rows.length)throw unavailable();return result.rows[0];}
 async function audit(tx:Sql,actor:Actor,pageId:string,input:DiscussionChange,result:Result){await tx.query('INSERT INTO hs_audit(id,actor_id,action,page_id,before_value,after_value,correlation_id) VALUES($1,$2,$3,$4,$5,$6,$7)',[randomUUID(),actor.id,`discussion.${input.kind}`,pageId,null,JSON.stringify({threadId:result.threadId,commentId:result.commentId??null}),input.operationId]);}
 
@@ -47,28 +49,34 @@ export async function changeDiscussion(r:Repository,actor:Actor,pageId:string,in
   const hash=createHash('sha256').update(stableStringify(input)).digest('hex');
   const saved=await r.db.transaction(async tx=>{
     const page=await r.access(tx,pageId,actor,false,true);
+    const visiblePage=await r.get(pageId,actor,tx);
+    const permittedThread=async(id:string)=>{const t=await thread(tx,pageId,id,viewedPublicationId(visiblePage));if(!threadVisible(visiblePage,t))throw unavailable();return t;};
     const old=await tx.query<{actor_id:string;request_hash:string;result:Result}>('SELECT * FROM hs_discussion_operations WHERE page_id=$1 AND operation_id=$2',[pageId,input.operationId]);
-    if(old.rows.length){if(old.rows[0].actor_id!==actor.id||old.rows[0].request_hash!==hash)throw new DocumentError('Operation ID reused for different discussion content','operation_mismatch',409);return {...old.rows[0].result,replayed:true};}
+    if(old.rows.length){if(old.rows[0].actor_id!==actor.id||old.rows[0].request_hash!==hash)throw new DocumentError('Operation ID reused for different discussion content','operation_mismatch',409);await permittedThread(old.rows[0].result.threadId);return {...old.rows[0].result,replayed:true};}
     if(!canComment(page.role))throw new DocumentError('Commenter access is required to participate','commenter_required',403);
     let result:Result;
     if(input.kind==='create'||input.kind==='reply'){
       validateBody(input.body);let t:Thread;
       if(input.kind==='create'){
-        if(input.anchors.length&&input.baseVersion!==page.version)throw new DocumentError('The page changed. Review and select the passage again.','anchor_changed',409);
-        const doc=await r.get(pageId,actor,tx),anchors=createAnchors(doc.document,input.anchors),id=randomUUID();
-        await tx.query('INSERT INTO hs_threads(id,page_id,creator_id,anchors) VALUES($1,$2,$3,$4)',[id,pageId,actor.id,JSON.stringify(anchors)]);t=await thread(tx,pageId,id);
-      }else{t=await thread(tx,pageId,input.threadId);if(t.status!=='open')throw new DocumentError('Reopen this discussion before replying','thread_resolved',409);}
+        if(input.anchors.length&&input.baseVersion!==visiblePage.version)throw new DocumentError('The page changed. Review and select the passage again.','anchor_changed',409);
+        const anchors=createAnchors(visiblePage.document,input.anchors),id=randomUUID(),publicationId=viewedPublicationId(visiblePage);let draftAnchors=anchors;
+        if(publicationId&&anchors.length){const raw=(await tx.query<{document:RichNode}>('SELECT document FROM hs_revisions WHERE page_id=$1 AND version=$2',[pageId,page.version])).rows[0];if(!raw)throw new DocumentError('Current draft is unavailable','anchor_changed',409);draftAnchors=mapAnchors(anchors,visiblePage.document,validateDocument(raw.document));}
+        await tx.query('INSERT INTO hs_threads(id,page_id,creator_id,anchors) VALUES($1,$2,$3,$4)',[id,pageId,actor.id,JSON.stringify(draftAnchors)]);
+        if(publicationId)await bindThreadPublicationAnchors(tx,pageId,publicationId,id,visiblePage.document,anchors);
+        else if(anchors.length){const active=(await tx.query<{id:string;document:RichNode}>('SELECT p.id,p.document FROM hs_document_workflows w JOIN hs_document_publications p ON p.id=w.publication_id AND p.page_id=w.page_id WHERE w.page_id=$1 AND p.source_version=$2',[pageId,page.version])).rows[0];if(active)await bindThreadPublicationAnchors(tx,pageId,active.id,id,active.document,anchors);}
+        t=await thread(tx,pageId,id);
+      }else{t=await permittedThread(input.threadId);if(t.status!=='open')throw new DocumentError('Reopen this discussion before replying','thread_resolved',409);}
       const id=randomUUID();await tx.query('INSERT INTO hs_comments(id,thread_id,author_id,body,is_root) VALUES($1,$2,$3,$4,$5)',[id,t.id,actor.id,input.body,input.kind==='create']);
       const targets=new Set(await mentions(r,tx,actor,pageId,id,input.body,input.mentionIds));
       if(input.kind==='reply'){const prior=await tx.query<{author_id:string}>('SELECT DISTINCT author_id FROM hs_comments WHERE thread_id=$1 AND author_id!=$2',[t.id,actor.id]);prior.rows.forEach(p=>targets.add(p.author_id));targets.add(t.creator_id);}
       targets.delete(actor.id);const eventId=randomUUID();await tx.query('INSERT INTO hs_notification_events(id,page_id,thread_id,comment_id,actor_id,recipients) VALUES($1,$2,$3,$4,$5,$6)',[eventId,pageId,t.id,id,actor.id,JSON.stringify([...targets])]);result={threadId:t.id,commentId:id,eventId};
       await tx.query('UPDATE hs_threads SET updated_at=clock_timestamp() WHERE id=$1',[t.id]);
     }else if(input.kind==='resolve'||input.kind==='reopen'){
-      const t=await thread(tx,pageId,input.threadId);if(t.creator_id!==actor.id&&!canEdit(page.role))throw new DocumentError('Only the starter, an Editor or the Owner can resolve discussions','resolve_denied',403);
+      const t=await permittedThread(input.threadId);if(t.creator_id!==actor.id&&!canEdit(page.role))throw new DocumentError('Only the starter, an Editor or the Owner can resolve discussions','resolve_denied',403);
       if(t.version!==input.expectedVersion)throw new DocumentError('Discussion state changed. Refresh before applying.','discussion_conflict',409);
       const status=input.kind==='resolve'?'resolved':'open';if(t.status!==status)await tx.query('UPDATE hs_threads SET status=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1',[t.id,status]);result={threadId:t.id,...(t.status===status?{unchanged:true}:{})};
     }else{
-      const c=await comment(tx,pageId,input.commentId);if(c.version!==input.expectedVersion)throw new DocumentError('This comment changed. Review the latest version.','discussion_conflict',409);
+      const c=await comment(tx,pageId,input.commentId);await permittedThread(c.thread_id);if(c.version!==input.expectedVersion)throw new DocumentError('This comment changed. Review the latest version.','discussion_conflict',409);
       if(input.kind==='edit'){
         if(c.author_id!==actor.id)throw new DocumentError('Only the author can edit this comment','author_required',403);
         if(c.deleted_at)throw new DocumentError('Restore the comment before editing','comment_deleted',409);validateBody(input.body);
