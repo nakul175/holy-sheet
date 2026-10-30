@@ -87,6 +87,7 @@ it("lists bounded records, opens detail and exposes only accessible linked docum
     expect(view.host.textContent).toContain("Immutable ID");
     expect(view.host.textContent).toContain("Accessible brief");
     expect(view.host.querySelector("a")?.getAttribute("href")).toBe("/pages/page-a");
+    expect(view.host.querySelector('section[aria-label="Collection fields"]')).toBeNull();
   } finally {
     await view.dispose();
   }
@@ -95,6 +96,7 @@ it("preserves a creation draft when server validation fails", async () => {
   fetchMock
     .mockResolvedValueOnce(await response({ schemaVersion: 1, results: [], nextCursor: null }))
     .mockResolvedValueOnce(await response({ schemaVersion: 1, fields: [], collectionCapabilities: ["view", "create"], canManage: false }))
+    .mockResolvedValueOnce(await response({ error: "Tenant administrator and schema permission are required." }, 403))
     .mockResolvedValueOnce(await response({ error: "Name is invalid." }, 422));
   const view = await mount();
   try {
@@ -126,6 +128,7 @@ it("uses record version and schema version for edits without clearing a failed e
       }),
     )
     .mockResolvedValueOnce(await response({ schemaVersion: 4, fields: [], collectionCapabilities: ["view", "edit"], canManage: false }))
+    .mockResolvedValueOnce(await response({ error: "Tenant administrator and schema permission are required." }, 403))
     .mockResolvedValueOnce(
       await response({
         id: "record-a",
@@ -384,6 +387,76 @@ it("saves record and sensitive-field flags for another member without a hidden v
     expect(body).toMatchObject({ subjectId: "record-viewer", recordGrant: { recordId: "record-a", expectedVersion: 0 }, fields: [{ key: "core:email", canView: true, canWrite: false, canHistory: false, expectedVersion: 0 }] });
     expect(JSON.stringify(body)).not.toContain("hidden-secret@example.org");
     expect(view.host.textContent).not.toContain("hidden-secret@example.org");
+  } finally {
+    await view.dispose();
+  }
+});
+it("reviews and applies a custom field without reading record values or editing built-in fields", async () => {
+  const fieldKey = "00000000-0000-4000-8000-0000000000aa";
+  const catalogue = {
+    schemaVersion: 4,
+    canManage: true,
+    customFieldCount: 1,
+    limits: { maxFields: 100, maxChoices: 100 },
+    fields: [
+      { key: "core:domain", label: "Domain", kind: "url", required: false, choices: [], sensitive: false, unique: false, deprecated: false, core: true, version: 1 },
+      { key: fieldKey, label: "Badge", kind: "text", required: false, choices: [], sensitive: true, unique: false, deprecated: true, core: false, version: 2 },
+    ],
+  };
+  const preview = {
+    previewId: "00000000-0000-4000-8000-0000000000bb",
+    fieldKey: "00000000-0000-4000-8000-0000000000cc",
+    reviewHash: "ab".repeat(32),
+    expiresAt: "2026-10-30T22:00:00.000Z",
+    impact: {
+      recordCount: 3,
+      populatedCount: 1,
+      missingCount: 2,
+      duplicateValues: 0,
+      dependencies: [],
+      blockers: [] as string[],
+      changes: ["label"],
+      defaultBehavior: "Defaults apply to future creates only. Existing records are not rewritten.",
+    },
+  };
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (init?.method === "POST" && url.includes("/record-schema")) {
+      const body = JSON.parse(String(init.body));
+      if (body.definition?.deprecated) return response({ ...preview, impact: { ...preview.impact, blockers: ["Resolve the listed views, import mappings or integrations before this change."] } });
+      return response(preview);
+    }
+    if (url.includes("/record-schema")) return response(catalogue);
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 4, fields: [], collectionCapabilities: ["schema"], canManage: false });
+    return response({ schemaVersion: 4, results: [], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    expect(view.host.textContent).toContain("Domain · built-in · not editable");
+    expect(view.host.textContent).toContain("does not grant field-value read");
+    const fields = view.host.querySelector('section[aria-label="Collection fields"]')!;
+    await act(async () => fields.querySelectorAll("button")[0].click());
+    const form = view.host.querySelector<HTMLFormElement>('form[aria-label="Custom field"]')!;
+    const boxes = form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    expect(boxes[2].checked).toBe(true);
+    expect(boxes[2].disabled).toBe(true);
+    await act(async () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(view.host.querySelector('section[aria-label="Schema review"] button')).toBeNull();
+    expect(view.host.textContent).toContain("Resolve the listed views");
+    const reviewed = JSON.parse(fetchMock.mock.calls.find((call) => call[1]?.method === "POST")![1].body);
+    expect(reviewed).toMatchObject({ kind: "preview", collection: "organisations", fieldKey, expectedSchemaVersion: 4, definition: { label: "Badge", kind: "text", sensitive: true, deprecated: true, choices: [] } });
+    expect(JSON.stringify(reviewed)).not.toContain("hidden-record-value@example.org");
+    await act(async () => form.querySelector("button")!.click());
+    await input(form.querySelector("input")!, "Department");
+    await act(async () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(view.host.textContent).toContain("Defaults apply to future creates only");
+    expect(view.host.textContent).toContain("3 records, 1 populated, 2 missing, 0 duplicate values.");
+    await act(async () => view.host.querySelector<HTMLButtonElement>('section[aria-label="Schema review"] button')!.click());
+    const posts = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST").map((call) => JSON.parse(String(call[1].body)));
+    expect(posts.at(-2)).toMatchObject({ kind: "preview", collection: "organisations", expectedSchemaVersion: 4, definition: { label: "Department", kind: "text", required: false, sensitive: false, unique: false, deprecated: false, choices: [] } });
+    expect(posts.at(-2).fieldKey).toBeUndefined();
+    expect(posts.at(-1)).toMatchObject({ kind: "apply", previewId: preview.previewId, reviewHash: preview.reviewHash });
+    expect(JSON.stringify(posts)).not.toContain("hidden-record-value@example.org");
+    expect(view.host.textContent).toContain("Custom field saved.");
   } finally {
     await view.dispose();
   }

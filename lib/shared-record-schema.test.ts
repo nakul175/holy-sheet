@@ -19,6 +19,20 @@ async function record(values:Record<string,unknown>={}){return (await data.creat
 beforeAll(async()=>{db=await createDatabase(':memory:');pages=new Repository(db);await pages.seedLocal();await db.query('INSERT INTO hs_users(id,name) VALUES($1,$1)',[viewer.id]);data=new SharedRecordSchemaRepository(pages,authority);});
 beforeEach(async()=>{vi.mocked(authority.verify).mockReset().mockImplementation(async c=>proof(c));const tenantId=crypto.randomUUID(),workspaceId='schema-'+crypto.randomUUID();ctx={actor:owner,tenantId,workspaceId};await db.query('INSERT INTO hs_workspaces(id,name) VALUES($1,$1)',[workspaceId]);for(const actor of [owner,viewer])await db.query('INSERT INTO hs_members(workspace_id,user_id) VALUES($1,$2)',[workspaceId,actor.id]);await db.query('INSERT INTO hs_data_tenants(id,name) VALUES($1,$2)',[tenantId,'Synthetic tenant']);await db.query('INSERT INTO hs_data_workspaces(workspace_id,tenant_id,review_reference) VALUES($1,$2,$3)',[workspaceId,tenantId,'Synthetic fixture only']);await db.query("INSERT INTO hs_data_collections(tenant_id,id,name,core) VALUES($1,'organisations','Organisations',true)",[tenantId]);for(const actor of [owner,viewer])await db.query("INSERT INTO hs_data_collection_grants(tenant_id,user_id,collection,capabilities) VALUES($1,$2,'organisations',$3)",[tenantId,actor.id,actor.id===owner.id?[...recordCapabilities]:['view','schema']]);});
 afterAll(async()=>db.close());
+it('describes field metadata for a schema administrator and does not grant record values',async()=>{
+ const secret='schema-secret-'+crypto.randomUUID(),added=await add({defaultValue:'Future only'}),row=await record({[added.fieldKey]:secret});
+ const described=await data.describeSchema(ctx,'organisations');
+ expect(described.canManage).toBe(true);expect(described.customFieldCount).toBe(1);expect(described.limits).toEqual({maxFields:100,maxChoices:100});
+ expect(described.fields.find(field=>field.key==='core:domain')).toMatchObject({core:true,label:'Domain',kind:'url'});
+ expect(described.fields.find(field=>field.key===added.fieldKey)).toMatchObject({core:false,label:'Synthetic field',defaultValue:'Future only',version:1});
+ expect(JSON.stringify(described)).not.toContain(secret);expect(JSON.stringify(described)).not.toContain(row.id);
+ await expect(data.describeSchema({...ctx,actor:viewer},'organisations')).rejects.toMatchObject({code:'record_schema_forbidden'});
+ await db.query("UPDATE hs_data_collection_grants SET capabilities=ARRAY['schema'] WHERE tenant_id=$1 AND user_id=$2",[ctx.tenantId,owner.id]);
+ const schemaOnly=await data.describeSchema(ctx,'organisations');
+ expect(schemaOnly.fields.some(field=>field.key===added.fieldKey)).toBe(true);expect(JSON.stringify(schemaOnly)).not.toContain(secret);
+ expect((await data.list(ctx,{collection:'organisations'})).results).toEqual([]);
+ await expect(data.get(ctx,row.id)).rejects.toMatchObject({status:404});
+});
 it('requires both current tenant administration and explicit collection schema permission',async()=>{
  await expect(data.previewSchema({...ctx,actor:{...viewer,role:'admin'} as Actor},input())).rejects.toMatchObject({code:'record_schema_forbidden'});
  await db.query("UPDATE hs_data_collection_grants SET capabilities=ARRAY['view'] WHERE tenant_id=$1 AND user_id=$2",[ctx.tenantId,owner.id]);
