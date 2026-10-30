@@ -15,6 +15,7 @@ import { CodeWrapping,resetCodeWrapping } from './code-wrapping';
 import Image from "@tiptap/extension-image";
 import { Details, DetailsSummary, DetailsContent } from "@tiptap/extension-details";
 import UniqueID from "@tiptap/extension-unique-id";
+import {CollaborationIdentities} from './collaboration-identities';
 import { sanitizePaste } from "../../lib/editor-paste";
 import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -124,7 +125,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
     StarterKit.configure({heading:{levels:[1,2,3]},codeBlock:false,undoRedo:{depth:100,newGroupDelay:750},link:{openOnClick:false,autolink:false,linkOnPaste:false,isAllowedUri:url=>safeUrl(url),HTMLAttributes:{target:"_blank",rel:"noopener noreferrer",tabindex:"0"}}}),
     TextStyle,Color,Highlight.configure({multicolor:true}),TaskList,TaskItem.configure({nested:true}),TableKit.configure({table:{resizable:true,allowTableNodeSelection:true}}),
     LazyCodeBlock.configure({defaultLanguage:"plaintext"}),CodeWrapping.configure({scope:preferenceKey}),ReadingGuide,ProtectedImage.configure({allowBase64:false}),Details.configure({persist:false}),DetailsSummary,DetailsContent,Callout,TableOfContents,PageLink.configure({sourcePageId:pageId}),FileBlock,FindExtension,DiscussionAnchors.configure({onOpen:id=>onOpenThread?.(id)}),
-    UniqueID.configure({types:idTypes,attributeName:"id",generateID:()=>crypto.randomUUID()}),TableReadingGuides,...(collaborationExtension.current?[collaborationExtension.current]:[]),
+    UniqueID.configure({types:idTypes,attributeName:"id",generateID:()=>crypto.randomUUID()}),TableReadingGuides,...(collaborationExtension.current?[CollaborationIdentities,collaborationExtension.current]:[]),
   ],editorProps:{attributes:{class:"rich-prose",role:"textbox",tabindex:"0","aria-label":"Document content","aria-multiline":"true",spellcheck:"true"},transformPastedHTML:sanitizePaste,
     handleDOMEvents:{keydown:(view,event)=>{if(view.editable||event.isComposing)return false;if(editor&&handleTableKeyDown(editor,event,()=>findButton.current?.focus(),setNotice))return true;if(isPageFindShortcut(event)){event.preventDefault();if(editor)savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);return true;}return false;}},
     handleKeyDown:(view,event)=>{

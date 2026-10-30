@@ -18,13 +18,19 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
   const [page,setPage]=useState<DocumentPage|null>(null),[authRequired,setAuthRequired]=useState(false),[status,setStatus]=useState<SaveStatus>("loading"),[error,setError]=useState(""),[recoveryError,setRecoveryError]=useState(""),[candidates,setCandidates]=useState<RecoveryRecord[]>([]),[latest,setLatest]=useState<DocumentPage|null>(null);
   const current=useRef<DocumentPage|null>(null),actor=useRef(""),protection=useRef<DraftProtection|null>(null),pending=useRef<SavePayload|null>(null),saving=useRef(false),dirty=useRef(false),generation=useRef(0),attempts=useRef(0),alive=useRef(true),saveTimer=useRef<ReturnType<typeof setTimeout>|null>(null),maxTimer=useRef<ReturnType<typeof setTimeout>|null>(null),retryTimer=useRef<ReturnType<typeof setTimeout>|null>(null),draftTimer=useRef<ReturnType<typeof setTimeout>|null>(null),saveFunction=useRef<()=>Promise<void>>(async()=>{});
   const blocked=useRef(false),accessReady=useRef(true),permissionEpoch=useRef(0),collaborationActive=useRef(false);
+  const savedTitle=useRef<string|null>(null),collaborativeStatus=useRef<'saved'|'saving'|'offline'|'error'>('saved');
+  const metadataFailure=useRef<{status:SaveStatus;message:string}|null>(null),replacingSnapshot=useRef(false),editorEpoch=useRef(0);
+  const [snapshotPending,setSnapshotPending]=useState(false),[editorRevision,setEditorRevision]=useState(0);
   const [collaborating,setCollaborating]=useState(false);
   const [observedActor,setObservedActor]=useState(""),[accessUnverified,setAccessUnverified]=useState(false);
   const restoredFrom=useRef<string|null>(null);
   const discardRequest=useRef(0);
-  const setCurrent=(next:DocumentPage)=>{current.current=next;setPage(next);};
+  const setCurrent=(next:DocumentPage)=>{if(savedTitle.current===null)savedTitle.current=next.title;current.current=next;setPage(next);};
+  const resetEditor=useCallback(()=>{editorEpoch.current++;setEditorRevision(editorEpoch.current);},[]);
+  function beginSnapshot(){replacingSnapshot.current=true;setSnapshotPending(true);metadataFailure.current=null;resetEditor();}
+  function finishSnapshot(){replacingSnapshot.current=false;setSnapshotPending(false);collaborationActive.current=false;collaborativeStatus.current='saved';setCollaborating(false);resetEditor();}
   const establish=useCallback(async(p:DocumentPage)=>{if(!editableDocument(p))return;try{const epoch=permissionEpoch.current,id=crypto.randomUUID();const response=await requestJson<{id:string;key:string;expiresAt:string}>(`/api/v1/pages/${pageId}/drafts`,post({id}));if(!alive.current||epoch!==permissionEpoch.current)return;const key=await importDraftKey(response.key);if(!alive.current||epoch!==permissionEpoch.current)return;protection.current={id,key,expiresAt:response.expiresAt};setRecoveryError("");}catch{setRecoveryError("Recovery unavailable — keep this tab open until your changes are saved.");}},[pageId]);
-  useEffect(()=>{alive.current=true;let cancelled=false;const epoch=permissionEpoch.current;void (async()=>{try{const d=await requestJson<{page:DocumentPage;actorId:string}>(`/api/v1/pages/${pageId}/document`);if(cancelled||epoch!==permissionEpoch.current)return;actor.current=d.actorId;setObservedActor(d.actorId);window.dispatchEvent(new CustomEvent("holy-sheet:identity",{detail:{userId:d.actorId}}));setCurrent(d.page);setStatus(!editableDocument(d.page)?"readonly":"saved");await establish(d.page);try{const old=await recoveryDrafts(d.actorId,pageId);if(!cancelled&&epoch===permissionEpoch.current&&current.current&&editableDocument(current.current))setCandidates(old);}catch{setRecoveryError("Recovery storage is unavailable in this browser.");}}catch(e){if(!cancelled){setError(e instanceof Error?e.message:"Page unavailable");setAuthRequired(e instanceof ApiError&&e.status===401);setStatus("error");}}})();return()=>{cancelled=true;alive.current=false;protection.current=null;for(const timer of [saveTimer,maxTimer,retryTimer,draftTimer])if(timer.current)clearTimeout(timer.current);};},[pageId,establish]);
+  useEffect(()=>{alive.current=true;let cancelled=false;const epoch=permissionEpoch.current;void (async()=>{try{const d=await requestJson<{page:DocumentPage;actorId:string}>(`/api/v1/pages/${pageId}/document`);if(cancelled||epoch!==permissionEpoch.current)return;actor.current=d.actorId;setObservedActor(d.actorId);window.dispatchEvent(new CustomEvent("holy-sheet:identity",{detail:{userId:d.actorId}}));savedTitle.current=d.page.title;setCurrent(d.page);setStatus(!editableDocument(d.page)?"readonly":"saved");await establish(d.page);try{const old=await recoveryDrafts(d.actorId,pageId);if(!cancelled&&epoch===permissionEpoch.current&&current.current&&editableDocument(current.current))setCandidates(old);}catch{setRecoveryError("Recovery storage is unavailable in this browser.");}}catch(e){if(!cancelled){setError(e instanceof Error?e.message:"Page unavailable");setAuthRequired(e instanceof ApiError&&e.status===401);setStatus("error");}}})();return()=>{cancelled=true;alive.current=false;protection.current=null;for(const timer of [saveTimer,maxTimer,retryTimer,draftTimer])if(timer.current)clearTimeout(timer.current);};},[pageId,establish]);
 
   const checkpoint=useCallback(async()=>{const p=current.current,k=protection.current;if(!p||!k||!dirty.current||!editableDocument(p))return;try{if(Date.parse(k.expiresAt)<=Date.now())throw new Error('Recovery lease expired');await storeDraft(k,actor.current,pageId,{title:p.title,document:p.document,baseVersion:p.version});setRecoveryError("");}catch{setRecoveryError("Recovery storage failed — your changes still need a confirmed save.");}},[pageId]);
   useEffect(()=>{
@@ -58,7 +64,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
         try{
           const data=await requestJson<{page:DocumentPage;actorId:string}>(`/api/v1/pages/${pageId}/document`);
           if(stopped||epoch!==permissionEpoch.current||data.actorId!==observedActor)return;
-          setCurrent(data.page);blocked.current=false;accessReady.current=true;setAccessUnverified(false);setAuthRequired(false);
+          savedTitle.current=data.page.title;finishSnapshot();setCurrent(data.page);blocked.current=false;accessReady.current=true;setAccessUnverified(false);setAuthRequired(false);
           setStatus(editableDocument(data.page)?'saved':'readonly');setError(editableDocument(data.page)?'':'Access changed. This page is now read-only.');
           await establish(data.page);
           if(stopped||epoch!==permissionEpoch.current)return;
@@ -74,7 +80,9 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
   },[pageId,observedActor,checkpoint,establish]);
   useEffect(()=>{let stopped=false;const renew=async()=>{const p=current.current,k=protection.current;if(!p||!k||!editableDocument(p)||!dirty.current||!navigator.onLine)return;try{const ids=new Set<string>();const visit=(n:RichNode)=>{if((n.type==='image'||n.type==='file')&&typeof n.attrs?.attachmentId==='string')ids.add(n.attrs.attachmentId);n.content?.forEach(visit);};visit(p.document);const result=await requestJson<{expiresAt:string}>(`/api/v1/pages/${pageId}/drafts`,post({id:k.id,renew:true,attachmentIds:[...ids],baseVersion:p.version}));if(!stopped&&protection.current===k){k.expiresAt=result.expiresAt;await checkpoint();}}catch{if(!stopped)setRecoveryError('Recovery protection could not be renewed. Keep this tab open until your changes are saved.');}};const timer=setInterval(()=>void renew(),60_000);window.addEventListener('online',renew);return()=>{stopped=true;clearInterval(timer);window.removeEventListener('online',renew);};},[pageId,checkpoint]);
   const save=useCallback(async()=>{
-    if(collaborationActive.current)return;
+    // Body steps have their own durable acknowledgement. Never snapshot a pending body
+    // merely because its title changed; wait for the collaboration acknowledgement.
+    if(collaborationActive.current&&!replacingSnapshot.current&&collaborativeStatus.current!=='saved')return;
     const p=current.current;if(!p||!dirty.current||saving.current||blocked.current||!accessReady.current||!editableDocument(p))return;
     if(!navigator.onLine){setStatus("offline");void checkpoint();return;}
     saving.current=true;setStatus("saving");const token=generation.current,epoch=permissionEpoch.current;
@@ -89,20 +97,28 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
       if(result.page.schemaVersion!==schemaVersion)throw new ApiError('The saved page uses a different document version. Your draft is retained.',409,'schema_version');
       if(result.acknowledgedOperationId!==operation.operationId)throw new Error("Save acknowledgement mismatch");
       pending.current=null;attempts.current=0;succeeded=true;
+      savedTitle.current=result.page.title;metadataFailure.current=null;
       const now=current.current!;
-      const unchanged=token===generation.current&&signature(now.title,now.document)===signature(operation.title,operation.document);
-      if(unchanged){setCurrent(result.page);dirty.current=false;setStatus("saved");if(protection.current)await discardDraft(protection.current.id).catch(()=>{});if(restoredFrom.current){await discardDraft(restoredFrom.current).catch(()=>{});restoredFrom.current=null;}}
+      const unchanged=token===generation.current&&now.version<=result.page.version&&(!collaborationActive.current||replacingSnapshot.current||collaborativeStatus.current==='saved')&&signature(now.title,now.document)===signature(operation.title,operation.document);
+      if(unchanged){setCurrent(result.page);dirty.current=false;setStatus("saved");if(replacingSnapshot.current)finishSnapshot();if(protection.current)await discardDraft(protection.current.id).catch(()=>{});if(restoredFrom.current){await discardDraft(restoredFrom.current).catch(()=>{});restoredFrom.current=null;}}
       else {
         const remoteChanged=signature(result.page.title,result.page.document)!==signature(operation.title,operation.document);
         const merged=remoteChanged?mergeDocuments(operation.document,result.page.document,now.document):now.document;
         const titleConflict=now.title!==operation.title&&result.page.title!==operation.title&&now.title!==result.page.title;
         if(!merged||titleConflict){blocked.current=true;setLatest(result.page);setStatus("conflict");}
-        else{setCurrent({...now,document:merged,title:now.title===operation.title?result.page.title:now.title,version:result.page.version,updatedAt:result.page.updatedAt});setStatus("unsaved");}
+        else{
+          const next={...now,document:merged,title:now.title===operation.title?result.page.title:now.title,version:Math.max(now.version,result.page.version),updatedAt:now.version>result.page.version?now.updatedAt:result.page.updatedAt};
+          setCurrent(next);
+          const acknowledged=collaborationActive.current&&!replacingSnapshot.current&&collaborativeStatus.current==='saved'&&next.title===savedTitle.current&&signature(next.title,next.document)===signature(now.title,now.document);
+          dirty.current=!acknowledged;
+          setStatus(acknowledged?'saved':collaborationActive.current&&collaborativeStatus.current!=='saved'?collaborativeStatus.current:'unsaved');
+        }
       }
-      setError("");onSaved?.();
+      if(!collaborationActive.current||collaborativeStatus.current!=='error')setError("");onSaved?.();
     }catch(e){
       if(!alive.current||epoch!==permissionEpoch.current)return;
       if(e instanceof ApiError&&e.status===401)setAuthRequired(true);const failure=e instanceof ApiError?e:new ApiError("Could not confirm the save. Your draft is retained.",503,"network_error");setError(failure.message);void checkpoint();
+      if(collaborationActive.current)metadataFailure.current={status:failure.status===409?'conflict':[401,404].includes(failure.status)||(failure.status===403&&failure.code==='read_only')?'readonly':navigator.onLine?'error':'offline',message:failure.message};
       if(failure.status===409){blocked.current=true;setStatus("conflict");try{const d=await requestJson<{page:DocumentPage}>(`/api/v1/pages/${pageId}/document`);if(alive.current&&epoch===permissionEpoch.current)setLatest(d.page);}catch{setError("Access changed; reconnect and sign in to recover your draft.");}}
       else if([401,404].includes(failure.status)||(failure.status===403&&failure.code==='read_only')){protection.current=null;setStatus("readonly");if(failure.status!==403){setPage(null);current.current=null;}else if(current.current)setCurrent({...current.current,role:"viewer"});}
       else{setStatus(navigator.onLine?"error":"offline");if(failure.status>=500||failure.status===429){const delay=Math.max(failure.retryAfter*1000,Math.min(30_000,1000*2**attempts.current++));retryTimer.current=setTimeout(()=>void saveFunction.current(),delay+Math.random()*300);}else pending.current=null;}
@@ -110,15 +126,29 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
   },[pageId,onSaved,checkpoint]);
   saveFunction.current=save;
 
-  function change(patch:Partial<Pick<DocumentPage,"title"|"document">>){const p=current.current;if(!p||!editableDocument(p)||!accessReady.current)return;const next={...p,...patch};if(signature(next.title,next.document)===signature(p.title,p.document))return;setCurrent(next);generation.current++;dirty.current=true;setStatus(latest?"conflict":"unsaved");
+  function change(patch:Partial<Pick<DocumentPage,"title"|"document">>){const p=current.current;if(!p||!editableDocument(p)||!accessReady.current||replacingSnapshot.current)return;const next={...p,...patch};if(signature(next.title,next.document)===signature(p.title,p.document))return;metadataFailure.current=null;setCurrent(next);generation.current++;dirty.current=true;setStatus(latest?"conflict":"unsaved");
     if(saveTimer.current)clearTimeout(saveTimer.current);if(draftTimer.current)clearTimeout(draftTimer.current);
     draftTimer.current=setTimeout(()=>void checkpoint(),900);
     if(!latest){saveTimer.current=setTimeout(()=>void saveFunction.current(),750);if(!maxTimer.current)maxTimer.current=setTimeout(()=>{maxTimer.current=null;void saveFunction.current();},5000);}
   }
-  function acceptCollaborative(document:RichNode,version:number,nextStatus:'saved'|'saving'|'offline'|'error'){const p=current.current;if(!p||!editableDocument(p)||!accessReady.current)return;collaborationActive.current=true;setCollaborating(true);dirty.current=nextStatus!=='saved';setCurrent({...p,document,version:Math.max(p.version,version)});setStatus(nextStatus);setError(nextStatus==='error'?'Live changes are retained in this tab and will retry automatically.':'');if(nextStatus==='offline'||nextStatus==='error')void checkpoint();}
+  function acceptCollaborative(document:RichNode,version:number,nextStatus:'saved'|'saving'|'offline'|'error',revision=editorRevision){
+    const p=current.current;if(!p||!editableDocument(p)||!accessReady.current||replacingSnapshot.current||revision!==editorEpoch.current)return;
+    collaborationActive.current=true;collaborativeStatus.current=nextStatus;setCollaborating(true);
+    const titleDirty=p.title!==savedTitle.current;
+    dirty.current=nextStatus!=='saved'||titleDirty||saving.current||!!pending.current;
+    setCurrent({...p,document,version:Math.max(p.version,version)});
+    if(blocked.current||metadataFailure.current){dirty.current=true;setStatus(blocked.current?'conflict':metadataFailure.current!.status);if(metadataFailure.current)setError(metadataFailure.current.message);if(nextStatus==='error'||nextStatus==='offline')void checkpoint();return;}
+    setStatus(nextStatus==='saved'?(saving.current?'saving':titleDirty?'unsaved':'saved'):nextStatus);
+    setError(nextStatus==='error'?'Live changes are retained in this tab and will retry automatically.':'');
+    if(nextStatus==='offline'||nextStatus==='error')void checkpoint();
+    if(nextStatus==='saved'&&titleDirty&&!saving.current&&!blocked.current){
+      if(saveTimer.current)clearTimeout(saveTimer.current);
+      saveTimer.current=setTimeout(()=>void saveFunction.current(),750);
+    }
+  }
   useEffect(()=>{const online=()=>{if(dirty.current&&!latest)void saveFunction.current();};const leave=(e:BeforeUnloadEvent)=>{if(dirty.current){void checkpoint();e.preventDefault();e.returnValue="";}};const hide=()=>{if(document.visibilityState==="hidden")void checkpoint();};const clear=()=>{protection.current=null;};window.addEventListener("online",online);window.addEventListener("beforeunload",leave);document.addEventListener("visibilitychange",hide);window.addEventListener("holy-sheet:logout",clear);window.addEventListener("holy-sheet:checkpoint",checkpoint);return()=>{window.removeEventListener("online",online);window.removeEventListener("beforeunload",leave);document.removeEventListener("visibilitychange",hide);window.removeEventListener("holy-sheet:logout",clear);window.removeEventListener("holy-sheet:checkpoint",checkpoint);};},[checkpoint,latest]);
 
-  async function restore(candidate:RecoveryRecord){if(!accessReady.current||!current.current||!editableDocument(current.current))return;const epoch=permissionEpoch.current;try{const data=await requestJson<{key:string}>(`/api/v1/pages/${pageId}/drafts`,post({id:candidate.id,existingOnly:true}));const draft=await decryptDraft(candidate,await importDraftKey(data.key));if(!alive.current||epoch!==permissionEpoch.current||!accessReady.current||!current.current||!editableDocument(current.current))return;restoredFrom.current=candidate.id;setCurrent({...current.current,title:draft.title,document:draft.document,version:draft.baseVersion});generation.current++;dirty.current=true;pending.current=null;setCandidates([]);setStatus("unsaved");void saveFunction.current();}catch(e){setRecoveryError(e instanceof Error?e.message:"Draft cannot be unlocked");}}
+  async function restore(candidate:RecoveryRecord){if(saving.current){setRecoveryError("Wait for the current save to finish before restoring a draft.");return;}if(!accessReady.current||!current.current||!editableDocument(current.current))return;const epoch=permissionEpoch.current;try{const data=await requestJson<{key:string}>(`/api/v1/pages/${pageId}/drafts`,post({id:candidate.id,existingOnly:true}));const draft=await decryptDraft(candidate,await importDraftKey(data.key));if(!alive.current||epoch!==permissionEpoch.current||!accessReady.current||!current.current||!editableDocument(current.current))return;if(saving.current){setRecoveryError("Wait for the current save to finish before restoring a draft.");return;}restoredFrom.current=candidate.id;beginSnapshot();setCurrent({...current.current,title:draft.title,document:draft.document,version:draft.baseVersion});generation.current++;dirty.current=true;pending.current=null;setCandidates([]);setStatus("unsaved");void saveFunction.current();}catch(e){setRecoveryError(e instanceof Error?e.message:"Draft cannot be unlocked");}}
   async function discard(candidate:RecoveryRecord){await discardDraft(candidate.id);setCandidates(c=>c.filter(x=>x.id!==candidate.id));}
   async function keepLatest(){
     if(!latest||!current.current||!accessReady.current)return;
@@ -131,7 +161,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
       const discardIds=new Set([protection.current?.id,restoredFrom.current].filter((id):id is string=>!!id));
       dirty.current=false;pending.current=null;blocked.current=false;restoredFrom.current=null;
       for(const timer of [saveTimer,maxTimer,retryTimer,draftTimer]){if(timer.current)clearTimeout(timer.current);timer.current=null;}
-      setCurrent(fresh.page);setLatest(null);setStatus(!editableDocument(fresh.page)?'readonly':'saved');setError('');
+      savedTitle.current=fresh.page.title;metadataFailure.current=null;finishSnapshot();setCurrent(fresh.page);setLatest(null);setStatus(!editableDocument(fresh.page)?'readonly':'saved');setError('');
       for(const id of discardIds)await discardDraft(id).catch(()=>setRecoveryError('The discarded recovery checkpoint could not be removed from this device.'));
       onSaved?.();
     }catch(e){
@@ -143,7 +173,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
       }
     }
   }
-  function keepBoth(){if(!latest||!current.current||!accessReady.current||!editableDocument(current.current))return;if(latest.schemaVersion!==schemaVersion){setError('The latest page uses a different document version. Copy your draft or open the page in a compatible editor.');return;}const recovered=ensureIds(current.current.document,true);const heading:RichNode={type:"heading",attrs:{id:crypto.randomUUID(),level:2},content:[{type:"text",text:"Recovered draft"}]};setCurrent({...latest,document:{type:"doc",content:[...(latest.document.content??[]),heading,...(recovered.content??[])]}});generation.current++;pending.current=null;dirty.current=true;blocked.current=false;setLatest(null);setStatus("unsaved");void saveFunction.current();}
-  function acceptExternal(next:DocumentPage){if(!current.current||!accessReady.current)return;if(dirty.current||saving.current||pending.current){blocked.current=true;setLatest(next);setStatus('conflict');return;}setCurrent(next);setStatus(editableDocument(next)?'saved':'readonly');setError('');onSaved?.();}
-  return {page,status,error,accessUnverified,authRequired,recoveryError,candidates,latest,change,save,restore,discard,keepLatest,keepBoth,acceptExternal,acceptCollaborative,collaborating,dirty:()=>dirty.current,checkpoint,actorId:actor.current};
+  function keepBoth(){if(saving.current){setRecoveryError("Wait for the current save to finish before combining drafts.");return;}if(!latest||!current.current||!accessReady.current||!editableDocument(current.current))return;if(latest.schemaVersion!==schemaVersion){setError('The latest page uses a different document version. Copy your draft or open the page in a compatible editor.');return;}savedTitle.current=latest.title;beginSnapshot();const recovered=ensureIds(current.current.document,true);const heading:RichNode={type:"heading",attrs:{id:crypto.randomUUID(),level:2},content:[{type:"text",text:"Recovered draft"}]};setCurrent({...latest,document:{type:"doc",content:[...(latest.document.content??[]),heading,...(recovered.content??[])]}});generation.current++;pending.current=null;dirty.current=true;blocked.current=false;setLatest(null);setStatus("unsaved");void saveFunction.current();}
+  function acceptExternal(next:DocumentPage){if(!current.current||!accessReady.current)return;if(dirty.current||saving.current||pending.current){blocked.current=true;setLatest(next);setStatus('conflict');return;}savedTitle.current=next.title;metadataFailure.current=null;finishSnapshot();setCurrent(next);setStatus(editableDocument(next)?'saved':'readonly');setError('');onSaved?.();}
+  return {page,status,error,accessUnverified,authRequired,recoveryError,candidates,latest,change,save,restore,discard,keepLatest,keepBoth,acceptExternal,acceptCollaborative,collaborating,snapshotPending,editorRevision,dirty:()=>dirty.current,checkpoint,actorId:actor.current};
 }
