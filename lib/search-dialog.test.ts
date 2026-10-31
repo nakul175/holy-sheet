@@ -10,10 +10,29 @@ async function mount(){Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true})
 async function query(host:HTMLElement,value:string){await act(async()=>{const input=host.querySelector('input')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));});await act(async()=>{await vi.advanceTimersByTimeAsync(170);});}
 const result=(id='one')=>({id,title:'Launch budget',preview:'Saved budget passage',path:['Marketing'],updatedAt:'2026-10-28T00:00:00Z',match:'title',spaceId:'s'});
 it('identifies scope, excludes W2 filter names and distinguishes minimum/loading/no-results states',async()=>{
- let resolve!:(v:unknown)=>void;mocks.request.mockReturnValue(new Promise(r=>{resolve=r;}));const v=await mount();try{expect(v.host.textContent).toContain('Marketing workspace');expect(v.host.textContent).not.toContain('Other workspace secret');expect(v.host.textContent).toContain('Enter at least two characters');await query(v.host,'la');expect(v.host.textContent).toContain('Searching');await act(async()=>resolve({results:[],nextCursor:null}));expect(v.host.textContent).toContain('No accessible pages found');expect(mocks.request.mock.calls[0][0]).toContain('workspaceId=w');}finally{await v.dispose();}
+ let resolve!:(v:unknown)=>void;mocks.request.mockReturnValue(new Promise(r=>{resolve=r;}));const v=await mount();try{expect(v.host.textContent).toContain('Marketing workspace');expect(v.host.textContent).not.toContain('Other workspace secret');expect(v.host.textContent).toContain('Enter at least two characters');await query(v.host,'la');expect(v.host.textContent).toContain('Searching');await act(async()=>resolve({results:[],nextCursor:null}));expect(v.host.textContent).toContain('No accessible results found');expect(mocks.request.mock.calls[0][0]).toContain('workspaceId=w');}finally{await v.dispose();}
 });
 it('discards an older response even if its transport ignores cancellation',async()=>{
- let first!:(v:unknown)=>void;mocks.request.mockReturnValueOnce(new Promise(r=>{first=r;})).mockResolvedValueOnce({results:[result('new')],nextCursor:null});const v=await mount();try{await query(v.host,'old');await query(v.host,'budget');await act(async()=>first({results:[{...result('old'),title:'STALE'}],nextCursor:null}));expect(v.host.textContent).not.toContain('STALE');expect(v.host.querySelector('mark')?.textContent).toBe('budget');const input=v.host.querySelector('input')!;await act(async()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true})));expect(document.activeElement?.textContent).toContain('Launch budget');await act(async()=>(document.activeElement as HTMLButtonElement).click());expect(v.open).toHaveBeenCalledWith('new');}finally{await v.dispose();}
+ let first!:(v:unknown)=>void;mocks.request.mockReturnValueOnce(new Promise(r=>{first=r;})).mockResolvedValueOnce({results:[result('new')],nextCursor:null});const v=await mount();try{await query(v.host,'old');await query(v.host,'budget');await act(async()=>first({results:[{...result('old'),title:'STALE'}],nextCursor:null}));expect(v.host.textContent).not.toContain('STALE');expect(v.host.querySelector('mark')?.textContent).toBe('budget');const input=v.host.querySelector('input')!;await act(async()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true})));expect(document.activeElement?.textContent).toContain('Launch budget');await act(async()=>(document.activeElement as HTMLButtonElement).click());expect(v.open).toHaveBeenCalledWith(expect.objectContaining({id:'new'}));}finally{await v.dispose();}
+});
+it('shows type badges, moves to the ends of the list, and sends type filters',async()=>{
+ mocks.request.mockResolvedValue({results:[{...result('page-1'),kind:'page',title:'Launch page'},{...result('record-1'),kind:'record',title:'Launch record',collection:'organisations'}],nextCursor:null});
+ const v=await mount();
+ try{
+  await query(v.host,'launch');
+  expect(v.host.textContent).toContain('Page');expect(v.host.textContent).toContain('Record');
+  expect(mocks.request.mock.calls[0][0]).toContain('type=page%2Cblock%2Crecord%2Cfield%2Cattachment');
+  const options=[...v.host.querySelectorAll('[role="option"]')];
+  await act(async()=>options[0].dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true})));
+  expect(document.activeElement?.textContent).toContain('Launch record');
+  await act(async()=>(document.activeElement as HTMLButtonElement).dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true})));
+  expect(document.activeElement?.textContent).toContain('Launch page');
+  const recordBox=Array.from(v.host.querySelectorAll('input[type="checkbox"]')).find(input=>(input.parentElement?.textContent??'').includes('Record')) as HTMLInputElement;
+  await act(async()=>{recordBox.click();});
+  await act(async()=>{await vi.advanceTimersByTimeAsync(170);});
+  expect(mocks.request.mock.calls.at(-1)?.[0]).toContain('type=page%2Cblock%2Cfield%2Cattachment');
+  expect(mocks.request.mock.calls.at(-1)?.[0]).not.toContain('record%2C');
+ }finally{await v.dispose();}
 });
 it('retries the retained query and filter and loads more without resetting scope',async()=>{
  mocks.request.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({results:[result()],nextCursor:'a'.repeat(43)}).mockResolvedValueOnce({results:[result('two')],nextCursor:null});const v=await mount();try{await act(async()=>{const select=v.host.querySelector('select')!;select.value='s';select.dispatchEvent(new Event('change',{bubbles:true}));});await query(v.host,'budget');await act(async()=>Array.from(v.host.querySelectorAll('button')).find(b=>b.textContent==='Retry search')!.click());await act(async()=>{await vi.advanceTimersByTimeAsync(170);});expect(v.host.querySelector('input')!.value).toBe('budget');expect(v.host.querySelector('select')!.value).toBe('s');await act(async()=>Array.from(v.host.querySelectorAll('button')).find(b=>b.textContent==='Load more')!.click());expect(mocks.request.mock.calls[2][0]).toContain('spaceId=s');expect(mocks.request.mock.calls[2][0]).toContain('cursor=');expect(v.host.querySelectorAll('time')).toHaveLength(2);}finally{await v.dispose();}

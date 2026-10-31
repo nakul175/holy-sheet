@@ -608,9 +608,9 @@ const ids = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: string; tenantId: string }) {
+export default function RecordBrowser({ workspaceId, tenantId, initialCollection, initialRecordId }: { workspaceId: string; tenantId: string; initialCollection?: string; initialRecordId?: string }) {
   const base = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/records`,
-    [collection, setCollection] = useState<(typeof collections)[number]>("organisations"),
+    [collection, setCollection] = useState<(typeof collections)[number]>(collections.includes(initialCollection as (typeof collections)[number]) ? initialCollection as (typeof collections)[number] : "organisations"),
     [query, setQuery] = useState(""),
     [items, setItems] = useState<Summary[]>([]),
     [cursor, setCursor] = useState<string | null>(null),
@@ -810,6 +810,12 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     });
     return () => { cancel = true; };
   }, [collection, selected?.id, selected?.collection, collectionLayout, recordLayout, draftKey, editKey]);
+  useEffect(() => {
+    if (!initialRecordId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(initialRecordId)) return;
+    void open(initialRecordId);
+    // Deep link from search. Collection changes must not reopen a record the reader closed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   async function open(id: string) {
     setBusy(true);
     setError("");
