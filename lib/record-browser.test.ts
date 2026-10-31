@@ -811,6 +811,28 @@ it("shows record import only when the collection grant includes view and import"
     expect(importer?.textContent).toContain("immutable HS ID");
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/record-imports"))).toBe(false);
     expect(importer?.textContent).not.toContain("New field");
+    expect(view.host.querySelector('section[aria-label="Export records"]')).toBeNull();
+  } finally {
+    await view.dispose();
+  }
+});
+it("shows record export only when the collection grant includes view and export", async () => {
+  fetchMock.mockImplementation((url: string) => {
+    if (url.includes("/record-exports")) return response({ error: "export should wait for an explicit action" }, 500);
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 4, fields: [{ key: "core:notes", label: "Notes", kind: "long-text", sensitive: false, choices: [], canWrite: false, canHistory: false }], collectionCapabilities: ["view", "export"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Schema permission is required." }, 403);
+    if (url.includes("/record-views")) return response({ views: [] });
+    return response({ schemaVersion: 4, results: [{ id: "00000000-0000-4000-8000-0000000000a1", name: "Ada", collection: "organisations", state: "active", version: 1, values: {} }], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    const exporter = view.host.querySelector('section[aria-label="Export records"]');
+    expect(exporter).not.toBeNull();
+    expect(exporter?.textContent).toContain("Prepare export");
+    expect(exporter?.textContent).toContain("HS record IDs");
+    expect(exporter?.textContent).toContain("fifteen minutes");
+    expect((exporter?.querySelector('input[value="view"]') as HTMLInputElement).disabled).toBe(true);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/record-exports"))).toBe(false);
   } finally {
     await view.dispose();
   }
