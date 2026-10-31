@@ -1095,3 +1095,71 @@ it("loads a board with choice labels and moves a card without editing calculated
     expect(JSON.stringify(move[0])).not.toContain("Plus");
   } finally { await view.dispose(); }
 });
+it("loads a month calendar with reference labels and reschedules without editing calculated fields", async () => {
+  const active = "11111111-1111-4111-8111-111111111111";
+  const linked = "33333333-3333-4333-8333-333333333333";
+  const month = new Date().toISOString().slice(0, 7);
+  const eventDate = `${month}-15`;
+  const nextDate = `${month}-20`;
+  let savedView: Record<string, unknown> | null = null;
+  let moved = false;
+  const calendar = () => ({
+    view: savedView,
+    dateLabel: "Start date",
+    schemaVersion: 4,
+    range: { from: `${month}-01`, to: `${month}-31` },
+    nextCursor: null,
+    fields: [
+      { key: "status-field", label: "Department", kind: "single-select", choices: [{ id: active, label: "Finance desk" }] },
+      { key: "link-field", label: "Account", kind: "record" },
+    ],
+    events: [{ id: "record-a", name: "Acme", state: "active", version: moved ? 2 : 1, date: moved ? nextDate : eventDate, canReschedule: true, values: { "status-field": active, "link-field": [linked] }, references: [{ fieldKey: "link-field", items: [{ id: linked, label: "Northwind" }] }], calculated: [{ fieldKey: "formula-1", label: "Plus", value: 42, sensitive: false, stale: false, readOnly: true }] }],
+  });
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (init?.method === "POST" && url.includes("/calendar")) {
+      moved = true;
+      return response({ appliedVersion: 2, replayed: false, schemaVersion: 4 });
+    }
+    if (url.includes("/calendar")) return response(calendar());
+    if (init?.method === "POST" && url.includes("/record-views")) {
+      const body = JSON.parse(String(init.body));
+      savedView = { id: body.id, collection: body.collection, scope: body.scope, name: body.name, version: 1, canManage: true, unavailable: false, definition: body.definition };
+      return response({ id: body.id, appliedVersion: 1, currentVersion: 1, deleted: false, replayed: false });
+    }
+    if (url.includes("/record-views/") && !url.includes("/calendar")) return response({ view: savedView, fields: [], schemaVersion: 4, results: [], nextCursor: null });
+    if (url.includes("/record-views")) return response({ views: savedView ? [savedView] : [] });
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 4, fields: [{ key: "start-date", label: "Start date", kind: "date", sensitive: false, choices: [], canWrite: true, canHistory: false }, { key: "status-field", label: "Department", kind: "single-select", sensitive: false, choices: [active], canWrite: true, canHistory: false }, { key: "link-field", label: "Account", kind: "record", sensitive: false, choices: [], canWrite: false, canHistory: false }, { key: "formula-1", label: "Plus", kind: "number", sensitive: false, choices: [], canWrite: false, canHistory: false, calculated: true }], collectionCapabilities: ["view", "edit", "manage-views"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    return response({ schemaVersion: 4, results: [], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    const form = view.host.querySelector<HTMLFormElement>('form[aria-label="Save table view"]')!;
+    await input(form.querySelector<HTMLInputElement>('input[name="view-name"]')!, "Start calendar");
+    await act(async () => form.querySelector<HTMLInputElement>('input[value="calendar"]')!.click());
+    expect(form.querySelector('select[aria-label="Calendar date field"]')!.textContent).toContain("Start date");
+    await act(async () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    const screen = view.host.querySelector('section[aria-label="Record calendar"]')!;
+    expect(screen.textContent).toContain("Keyed by Start date");
+    expect(screen.querySelector(`section[aria-label="${eventDate}"]`)!.textContent).toContain("Acme");
+    expect(screen.textContent).toContain("Finance desk");
+    expect(screen.textContent).toContain("Northwind");
+    expect(screen.textContent).toContain("Plus: 42 · read-only");
+    expect(screen.textContent).not.toContain(active);
+    expect(screen.textContent).not.toContain(linked);
+    expect(screen.textContent).not.toContain("formula-1");
+    expect(screen.textContent).not.toMatch(/\b\d+ events\b/);
+    expect(screen.querySelector('[aria-label="Calculated fields"] input, [aria-label="Calculated fields"] textarea')).toBeNull();
+    const load = fetchMock.mock.calls.find((call) => String(call[0]).includes("/calendar") && call[1]?.method !== "POST");
+    const loaded = new URL(String(load?.[0]), "https://hs.example");
+    expect(loaded.searchParams.get("from")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(loaded.searchParams.get("to")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await input(screen.querySelector<HTMLInputElement>('input[aria-label="Reschedule Acme"]')!, nextDate);
+    const change = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST" && String(call[0]).includes("/calendar")).map((call) => JSON.parse(String(call[1].body)));
+    expect(change[0]).toMatchObject({ kind: "reschedule", recordId: "record-a", expectedVersion: 1, schemaVersion: 4, date: nextDate });
+    expect(JSON.stringify(change[0])).not.toContain("formula-1");
+    expect(JSON.stringify(change[0])).not.toContain("Plus");
+    expect(JSON.stringify(change[0])).not.toContain("values");
+    expect(screen.querySelector(`section[aria-label="${nextDate}"]`)!.textContent).toContain("Acme");
+  } finally { await view.dispose(); }
+});

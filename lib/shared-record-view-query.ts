@@ -5,6 +5,7 @@ const field=z.string().min(1).max(100);
 const presentation=z.discriminatedUnion('kind',[
  z.object({kind:z.literal('table')}).strict(),
  z.object({kind:z.literal('board'),groupBy:field}).strict(),
+ z.object({kind:z.literal('calendar'),dateField:field}).strict(),
 ]);
 export const recordViewDefinition=z.object({
  columns:z.array(field).min(1).max(100),
@@ -77,9 +78,48 @@ export function recordViewKeyset(sort:SortExpression[],last:unknown[],values:unk
  * Multi-value fields, free text, and deprecated fields cannot. */
 export function assertRecordBoard(def:RecordViewDefinition,fields:RecordField[]){
  const presentation=def.presentation;
- if(!presentation||presentation.kind==='table')return;
+ if(!presentation||presentation.kind!=='board')return;
  const group=fields.find(item=>item.key===presentation.groupBy);
  if(!group||group.deprecated||group.kind!=='single-select')throw invalid();
+}
+/** A calendar is keyed by one current date field. Text, numbers, selects and deprecated fields cannot. */
+export function assertRecordCalendar(def:RecordViewDefinition,fields:RecordField[]){
+ const presentation=def.presentation;
+ if(!presentation||presentation.kind!=='calendar')return;
+ const dateField=fields.find(item=>item.key===presentation.dateField);
+ if(!dateField||dateField.deprecated||dateField.kind!=='date')throw invalid();
+}
+export function calendarDate(value:string){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
+ const parsed=new Date(`${value}T00:00:00Z`);
+ if(!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==value)return null;
+ return value;
+}
+/** Inclusive calendar windows stay within one month grid. Invalid or inverted ranges are refused. */
+export function calendarSpan(from:string,to:string){
+ const start=calendarDate(from),end=calendarDate(to);
+ if(!start||!end||start>end)return null;
+ const days=Math.round((Date.parse(`${end}T00:00:00Z`)-Date.parse(`${start}T00:00:00Z`))/86400000)+1;
+ if(days<1||days>42)return null;
+ return {from:start,to:end,days};
+}
+/** Labels for select fields and reference catalogues. Codes and translations stay off this projection. */
+export function referenceChoiceLabels(field:RecordField){
+ if(field.deprecated||(field.kind!=='single-select'&&field.kind!=='multi-select'))return [];
+ if(field.referenceList)return field.referenceList.items.filter(item=>!item.deprecated).map(item=>({id:item.id,label:item.label}));
+ return field.choices.map(choice=>({id:choice,label:choice}));
+}
+/** Field keys and range bounds are parameters. Caller-supplied text is never SQL. */
+export function bindCalendarDate(fieldKey:string,values:unknown[]){
+ values.push(fieldKey);const param='$'+values.length;
+ return {text:`(r.field_values->>${param})`,ordered:`(r.field_values->>${param}) COLLATE "C"`};
+}
+export function calendarRangePredicate(bound:{text:string;ordered:string},from:string,to:string,values:unknown[]){
+ values.push(from,to);
+ return `${bound.text} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND ${bound.ordered} >= $${values.length-1}::text AND ${bound.ordered} <= $${values.length}::text`;
+}
+export function calendarDateOrder(sort:{sql:string;cast:'text'|'numeric'|'boolean'|'uuid';direction:'asc'|'desc'}[],dateSql:string,alreadySorted:boolean){
+ if(!alreadySorted)sort.unshift({sql:dateSql,cast:'text',direction:'asc'});
 }
 export function boardChoiceLabels(field:RecordField){
  if(field.kind!=='single-select'||field.deprecated)return [];
