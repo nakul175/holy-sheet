@@ -159,6 +159,7 @@ it("uses record version and schema version for edits without clearing a failed e
     )
     .mockResolvedValueOnce(await response({ error: "Layout is unavailable." }, 404))
     .mockResolvedValueOnce(await response({ comments: [], truncated: false }))
+    .mockResolvedValueOnce(await response({ responsible: null, pending: null, canOffer: false, canAccept: false, canCancel: false }))
     .mockResolvedValueOnce(await response({ following: false }))
     .mockResolvedValueOnce(await response({ error: "The record changed." }, 409));
   const view = await mount();
