@@ -201,7 +201,7 @@ it('sums calculated metrics as read-only values over visible records only',async
  const p=await saved({scope:'workspace',definition:dash([sumWidget(formulaId,'Plus total'),sumWidget(secret,'Secret sum')])});
  await db.query("UPDATE hs_data_collection_grants SET capabilities=ARRAY[]::text[] WHERE tenant_id=$1 AND user_id=$2",[ctx.tenantId,viewer.id]);
  await db.query("INSERT INTO hs_data_record_grants(tenant_id,record_id,user_id,capabilities) VALUES($1,$2,$3,ARRAY['view'])",[ctx.tenantId,visible.id,viewer.id]);
- const listed=await data.getView(vctx(),p.id);expect(listed.unavailable).toBe(true);expect(listed.definition).toBeNull();expect(JSON.stringify(listed)).not.toContain(secret);expect(JSON.stringify(listed)).not.toContain(formulaId);expect(JSON.stringify(listed)).not.toContain('99');
+ const listed=await data.getView(vctx(),p.id);expect(listed.unavailable).toBe(true);expect(listed.definition).toBeNull();expect(listed).not.toHaveProperty('widgets');expect(JSON.stringify(listed)).not.toContain(secret);expect(JSON.stringify(listed)).not.toContain(formulaId);expect(Object.values(listed)).not.toContain(99);
  await expect(data.queryDashboard(vctx(),p.id)).rejects.toMatchObject({code:'record_view_restricted',message:'This view configuration is unavailable.'});
  const readable=await saved({scope:'workspace',definition:dash([sumWidget(formulaId,'Plus total')])});
  const viewerDash=await data.queryDashboard(vctx(),readable.id),ownerDash=await data.queryDashboard(ctx,readable.id);
