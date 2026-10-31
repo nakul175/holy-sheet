@@ -1747,6 +1747,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/review`}>Record review</a>. Signed-in members submit a record or decide a review they are permitted to decide. Review uses the same permissions and does not grant access.</p>
           <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/quality`}>Record quality</a>. Define completeness and quality checks for this collection, then see how the current record scores. Checks follow the permissions you already have and do not grant access.</p>
           <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/periodic-review`}>Periodic review</a>. Schedule a recurring review for this collection and open records that are due. Starting a review uses the existing review workflow and does not grant access.</p>
+          <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/catalogue?collection=${encodeURIComponent(collection)}`}>Data catalogue</a>. Browse the collections and field definitions you are allowed to view. Restricted definitions stay omitted, and opening the catalogue does not grant access.</p>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -2093,6 +2094,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(selected.collection)}/review?record=${encodeURIComponent(selected.id)}`}>Review this record</a>. Submit it for review, or approve, reject, or request changes when you are permitted to decide.</p>
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(selected.collection)}/quality?record=${encodeURIComponent(selected.id)}`}>Check completeness</a>. See required fields and quality checks you are allowed to view. A failing check does not block saving.</p>
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(selected.collection)}/periodic-review`}>Periodic review for this collection</a>. See whether this collection has records due for a scheduled review you are allowed to view.</p>
+              <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/catalogue?collection=${encodeURIComponent(selected.collection)}`}>Field definitions for this collection</a>. Open the data catalogue for the types, required fields, and reference lists you are allowed to view.</p>
               <dl>
                 <dt>Immutable ID</dt>
                 <dd>{selected.id}</dd>
