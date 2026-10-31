@@ -153,40 +153,32 @@ REFERENCING NEW TABLE AS search_new FOR EACH STATEMENT EXECUTE FUNCTION hs_recor
 CREATE TRIGGER hs_record_search_update AFTER UPDATE ON hs_data_records
 REFERENCING NEW TABLE AS search_new FOR EACH STATEMENT EXECUTE FUNCTION hs_record_search_statement();
 
-CREATE OR REPLACE FUNCTION hs_reindex_record_collection(p_tenant uuid, p_collection text) RETURNS void
-LANGUAGE plpgsql AS $$
-BEGIN
- DELETE FROM hs_record_search s USING hs_data_records r
- WHERE s.tenant_id=r.tenant_id AND s.record_id=r.id AND r.tenant_id=p_tenant AND r.collection=p_collection;
- INSERT INTO hs_record_search(tenant_id, record_id, kind, field_key, source_id, title, body, collection, owner_id, updated_at)
- SELECT r.tenant_id, r.id, 'record', '', '', left(r.name, 200), left(r.name, 200), r.collection, r.created_by, r.updated_at
- FROM hs_data_records r WHERE r.tenant_id=p_tenant AND r.collection=p_collection AND r.merged_into_id IS NULL;
- INSERT INTO hs_record_search(tenant_id, record_id, kind, field_key, source_id, title, body, collection, owner_id, updated_at)
- SELECT r.tenant_id, r.id, 'field', e.key, '', hs_record_field_label(e.key, f.label), left(hs_search_json_text(e.value), 20000), r.collection, r.created_by, r.updated_at
- FROM hs_data_records r
- CROSS JOIN LATERAL jsonb_each(r.field_values) e
- LEFT JOIN hs_data_fields f ON f.tenant_id=r.tenant_id AND f.collection=r.collection AND f.field_key=e.key
- WHERE r.tenant_id=p_tenant AND r.collection=p_collection AND r.merged_into_id IS NULL
-  AND COALESCE(f.deprecated, false)=false AND COALESCE(f.kind, '') NOT IN ('record', 'attachment')
-  AND btrim(hs_search_json_text(e.value))<>'';
- INSERT INTO hs_record_search(tenant_id, record_id, kind, field_key, source_id, title, body, collection, owner_id, updated_at)
- SELECT r.tenant_id, r.id, 'attachment', e.key, elem, left(m.name, 500), left(m.name, 500), r.collection, r.created_by, r.updated_at
- FROM hs_data_records r
- CROSS JOIN LATERAL jsonb_each(r.field_values) e
- JOIN hs_data_fields f ON f.tenant_id=r.tenant_id AND f.collection=r.collection AND f.field_key=e.key AND f.kind='attachment' AND NOT f.deprecated
- CROSS JOIN LATERAL jsonb_array_elements_text(CASE WHEN jsonb_typeof(e.value)='array' THEN e.value ELSE '[]'::jsonb END) elem
- JOIN hs_media m ON m.id::text=elem AND m.state='ready' AND m.deleted_at IS NULL
- WHERE r.tenant_id=p_tenant AND r.collection=p_collection AND r.merged_into_id IS NULL
-  AND elem ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
-END $$;
-
+-- Field DDL must not rebuild a collection. New fields have no stored values yet;
+-- label and deprecation only touch rows already indexed for that field.
 CREATE OR REPLACE FUNCTION hs_record_search_field_change() RETURNS trigger
 LANGUAGE plpgsql AS $$
-DECLARE t uuid; c text;
+DECLARE t uuid; c text; k text;
 BEGIN
- t := COALESCE(NEW.tenant_id, OLD.tenant_id);
- c := COALESCE(NEW.collection, OLD.collection);
- PERFORM hs_reindex_record_collection(t, c);
+ IF TG_OP='INSERT' THEN RETURN NULL; END IF;
+ IF TG_OP='DELETE' THEN
+  DELETE FROM hs_record_search s USING hs_data_records r
+  WHERE s.tenant_id=r.tenant_id AND s.record_id=r.id AND r.tenant_id=OLD.tenant_id AND r.collection=OLD.collection
+   AND s.field_key=OLD.field_key AND s.kind IN ('field','attachment');
+  RETURN NULL;
+ END IF;
+ t:=NEW.tenant_id; c:=NEW.collection; k:=NEW.field_key;
+ IF NEW.deprecated OR NEW.kind IS DISTINCT FROM OLD.kind OR NEW.kind='record' THEN
+  DELETE FROM hs_record_search s USING hs_data_records r
+  WHERE s.tenant_id=r.tenant_id AND s.record_id=r.id AND r.tenant_id=t AND r.collection=c
+   AND s.field_key=k AND s.kind IN ('field','attachment');
+  RETURN NULL;
+ END IF;
+ IF NEW.label IS DISTINCT FROM OLD.label THEN
+  UPDATE hs_record_search s SET title=hs_record_field_label(NEW.field_key, NEW.label)
+  FROM hs_data_records r
+  WHERE s.tenant_id=r.tenant_id AND s.record_id=r.id AND r.tenant_id=t AND r.collection=c
+   AND s.field_key=k AND s.kind='field';
+ END IF;
  RETURN NULL;
 END $$;
 DROP TRIGGER IF EXISTS hs_record_search_fields ON hs_data_fields;
@@ -240,41 +232,40 @@ BEGIN
  RETURN NULL;
 END $$;
 
-INSERT INTO hs_block_search(block_id, page_id, body)
-SELECT b.id, b.page_id, left(hs_search_text(b.node), 20000)
-FROM hs_blocks b
-WHERE b.parent_id IS NULL AND btrim(hs_search_text(b.node))<>''
-AND NOT EXISTS (SELECT 1 FROM hs_block_search s WHERE s.block_id=b.id)
-ON CONFLICT (block_id) DO NOTHING;
--- Missing rows only. Rows written by the statement trigger are left in place so
--- replaying this file does not walk every existing record one at a time.
-INSERT INTO hs_record_search(tenant_id, record_id, kind, field_key, source_id, title, body, collection, owner_id, updated_at)
-SELECT r.tenant_id, r.id, 'field', e.key, '', hs_record_field_label(e.key, f.label), left(hs_search_json_text(e.value), 20000), r.collection, r.created_by, r.updated_at
-FROM hs_data_records r
-CROSS JOIN LATERAL jsonb_each(r.field_values) e
-LEFT JOIN hs_data_fields f ON f.tenant_id=r.tenant_id AND f.collection=r.collection AND f.field_key=e.key
-WHERE r.merged_into_id IS NULL
-AND NOT EXISTS (SELECT 1 FROM hs_record_search s WHERE s.tenant_id=r.tenant_id AND s.record_id=r.id AND s.kind='record')
-AND COALESCE(f.deprecated, false)=false AND COALESCE(f.kind, '') NOT IN ('record', 'attachment')
-AND btrim(hs_search_json_text(e.value))<>''
-ON CONFLICT DO NOTHING;
-INSERT INTO hs_record_search(tenant_id, record_id, kind, field_key, source_id, title, body, collection, owner_id, updated_at)
-SELECT r.tenant_id, r.id, 'attachment', e.key, elem, left(m.name, 500), left(m.name, 500), r.collection, r.created_by, r.updated_at
-FROM hs_data_records r
-CROSS JOIN LATERAL jsonb_each(r.field_values) e
-JOIN hs_data_fields f ON f.tenant_id=r.tenant_id AND f.collection=r.collection AND f.field_key=e.key AND f.kind='attachment' AND NOT f.deprecated
-CROSS JOIN LATERAL jsonb_array_elements_text(CASE WHEN jsonb_typeof(e.value)='array' THEN e.value ELSE '[]'::jsonb END) elem
-JOIN hs_media m ON m.id::text=elem AND m.state='ready' AND m.deleted_at IS NULL
-WHERE r.merged_into_id IS NULL
-AND NOT EXISTS (SELECT 1 FROM hs_record_search s WHERE s.tenant_id=r.tenant_id AND s.record_id=r.id AND s.kind='record')
-AND elem ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-ON CONFLICT DO NOTHING;
-INSERT INTO hs_record_search(tenant_id, record_id, kind, field_key, source_id, title, body, collection, owner_id, updated_at)
-SELECT r.tenant_id, r.id, 'record', '', '', left(r.name, 200), left(r.name, 200), r.collection, r.created_by, r.updated_at
-FROM hs_data_records r
-WHERE r.merged_into_id IS NULL
-AND NOT EXISTS (SELECT 1 FROM hs_record_search s WHERE s.tenant_id=r.tenant_id AND s.record_id=r.id AND s.kind='record')
-ON CONFLICT DO NOTHING;
+-- Replay must not scan a populated index. createDatabase holds an exclusive lock
+-- for this whole script; walking the 100k acceptance rows here stalled every later test.
+DO $$
+BEGIN
+ IF EXISTS (SELECT 1 FROM hs_block_search LIMIT 1) THEN RETURN; END IF;
+ INSERT INTO hs_block_search(block_id, page_id, body)
+ SELECT b.id, b.page_id, left(hs_search_text(b.node), 20000)
+ FROM hs_blocks b
+ WHERE b.parent_id IS NULL AND btrim(hs_search_text(b.node))<>''
+ ON CONFLICT (block_id) DO NOTHING;
+END $$;
+DO $$
+BEGIN
+ IF EXISTS (SELECT 1 FROM hs_record_search LIMIT 1) THEN RETURN; END IF;
+ INSERT INTO hs_record_search(tenant_id, record_id, kind, field_key, source_id, title, body, collection, owner_id, updated_at)
+ SELECT r.tenant_id, r.id, 'field', e.key, '', hs_record_field_label(e.key, f.label), left(hs_search_json_text(e.value), 20000), r.collection, r.created_by, r.updated_at
+ FROM hs_data_records r
+ CROSS JOIN LATERAL jsonb_each(r.field_values) e
+ LEFT JOIN hs_data_fields f ON f.tenant_id=r.tenant_id AND f.collection=r.collection AND f.field_key=e.key
+ WHERE r.merged_into_id IS NULL
+  AND COALESCE(f.deprecated, false)=false AND COALESCE(f.kind, '') NOT IN ('record', 'attachment')
+  AND btrim(hs_search_json_text(e.value))<>'';
+ INSERT INTO hs_record_search(tenant_id, record_id, kind, field_key, source_id, title, body, collection, owner_id, updated_at)
+ SELECT r.tenant_id, r.id, 'attachment', e.key, elem, left(m.name, 500), left(m.name, 500), r.collection, r.created_by, r.updated_at
+ FROM hs_data_records r
+ CROSS JOIN LATERAL jsonb_each(r.field_values) e
+ JOIN hs_data_fields f ON f.tenant_id=r.tenant_id AND f.collection=r.collection AND f.field_key=e.key AND f.kind='attachment' AND NOT f.deprecated
+ CROSS JOIN LATERAL jsonb_array_elements_text(CASE WHEN jsonb_typeof(e.value)='array' THEN e.value ELSE '[]'::jsonb END) elem
+ JOIN hs_media m ON m.id::text=elem AND m.state='ready' AND m.deleted_at IS NULL
+ WHERE r.merged_into_id IS NULL AND elem ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+ INSERT INTO hs_record_search(tenant_id, record_id, kind, field_key, source_id, title, body, collection, owner_id, updated_at)
+ SELECT r.tenant_id, r.id, 'record', '', '', left(r.name, 200), left(r.name, 200), r.collection, r.created_by, r.updated_at
+ FROM hs_data_records r WHERE r.merged_into_id IS NULL;
+END $$;
 INSERT INTO hs_attachment_search(media_id, page_id, name, active)
 SELECT m.id, m.page_id, left(m.name, 500), m.state='ready' AND m.deleted_at IS NULL
 FROM hs_media m
