@@ -1,6 +1,7 @@
 "use client";
 import { FormEvent, useEffect, useState } from "react";
 import RecordBoard, { acceptedBoard, type BoardCard, type BoardColumnModel, type BoardModel } from "./record-board";
+import RecordCalendar, { acceptedCalendar, calendarMonthRange, currentCalendarMonth, type CalendarEvent, type CalendarModel } from "./record-calendar";
 import RecordExport from "./record-export";
 import RecordHistory from "./record-history";
 import RecordImport from "./record-import";
@@ -260,7 +261,7 @@ type SavedView = {
     filters: { field: string; operator: string; value?: unknown }[];
     sort: { field: string; direction: "asc" | "desc" }[];
     includeArchived: boolean;
-    presentation?: { kind: "table" } | { kind: "board"; groupBy: string };
+    presentation?: { kind: "table" } | { kind: "board"; groupBy: string } | { kind: "calendar"; dateField: string };
   } | null;
 };
 type ViewColumn = { key: string; label: string; kind: string };
@@ -276,11 +277,12 @@ type ViewDraft = {
   sorts: ViewSortDraft[];
   includeArchived: boolean;
   lockedScope: boolean;
-  presentation: "table" | "board";
+  presentation: "table" | "board" | "calendar";
   groupBy: string;
+  dateField: string;
 };
 type ViewRow = { id: string; name: string; values: Record<string, unknown> };
-const emptyViewDraft = (): ViewDraft => ({ version: 0, name: "", scope: "private", columns: ["name"], filters: [], sorts: [], includeArchived: false, lockedScope: false, presentation: "table", groupBy: "" });
+const emptyViewDraft = (): ViewDraft => ({ version: 0, name: "", scope: "private", columns: ["name"], filters: [], sorts: [], includeArchived: false, lockedScope: false, presentation: "table", groupBy: "", dateField: "" });
 function operatorsFor(kind: string) {
   if (["text", "email", "phone", "url"].includes(kind)) return ["equal", "contains", "prefix", "in", "empty"];
   if (kind === "long-text") return ["equal", "contains", "prefix", "empty"];
@@ -314,8 +316,9 @@ function draftFrom(view: SavedView): ViewDraft {
     sorts: (view.definition?.sort ?? []).map((item) => ({ field: item.field, direction: item.direction })),
     includeArchived: view.definition?.includeArchived === true,
     lockedScope: true,
-    presentation: view.definition?.presentation?.kind === "board" ? "board" : "table",
+    presentation: view.definition?.presentation?.kind === "board" ? "board" : view.definition?.presentation?.kind === "calendar" ? "calendar" : "table",
     groupBy: view.definition?.presentation?.kind === "board" ? view.definition.presentation.groupBy : "",
+    dateField: view.definition?.presentation?.kind === "calendar" ? view.definition.presentation.dateField : "",
   };
 }
 function viewDefinition(draft: ViewDraft, catalogue: ViewColumn[]) {
@@ -357,6 +360,11 @@ function viewDefinition(draft: ViewDraft, catalogue: ViewColumn[]) {
     const group = known.get(draft.groupBy);
     if (!group || group.kind !== "single-select") throw Error("Choose a select or single reference field.");
     return { columns: draft.columns, filters, sort, includeArchived: draft.includeArchived, presentation: { kind: "board" as const, groupBy: draft.groupBy } };
+  }
+  if (draft.presentation === "calendar") {
+    const dateField = known.get(draft.dateField);
+    if (!dateField || dateField.kind !== "date") throw Error("Choose a date field.");
+    return { columns: draft.columns, filters, sort, includeArchived: draft.includeArchived, presentation: { kind: "calendar" as const, dateField: draft.dateField } };
   }
   return { columns: draft.columns, filters, sort, includeArchived: draft.includeArchived };
 }
@@ -616,6 +624,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [viewColumns, setViewColumns] = useState<ViewColumn[]>([]),
     [viewCursor, setViewCursor] = useState<string | null>(null),
     [board, setBoard] = useState<BoardModel | null>(null),
+    [calendar, setCalendar] = useState<CalendarModel | null>(null),
+    [calendarMonth, setCalendarMonth] = useState(currentCalendarMonth),
     [memberId, setMemberId] = useState(""),
     [grantCapabilities, setGrantCapabilities] = useState<string[]>([]),
     [grantFields, setGrantFields] = useState<PermissionMember["fields"]>([]),
@@ -750,6 +760,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setViewColumns([]);
     setViewCursor(null);
     setBoard(null);
+    setCalendar(null);
+    setCalendarMonth(currentCalendarMonth());
     void load(true, false);
   }, [collection]);
   const draftKey = JSON.stringify(drafts);
@@ -1329,7 +1341,82 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       return { ...current, schemaVersion: next.schemaVersion, columns: current.columns.map((column) => column.key === append.key ? { ...append, cards: [...column.cards, ...append.cards] } : column) };
     });
   }
+  function rememberCalendar(next: CalendarModel | null, append = false) {
+    if (!next) {
+      setCalendar(null);
+      return;
+    }
+    if (!append) {
+      setCalendar(next);
+      return;
+    }
+    setCalendar((current) => {
+      if (!current) return next;
+      const seen = new Set(current.events.map((event) => event.id));
+      return { ...next, events: [...current.events, ...next.events.filter((event) => !seen.has(event.id))] };
+    });
+  }
+  async function runCalendar(id: string, known?: SavedView, month = calendarMonth, cursor?: string) {
+    const range = calendarMonthRange(month);
+    setBusy(true);
+    setError("");
+    try {
+      if (!range) throw Error("Review the calendar range.");
+      const params = new URLSearchParams({ from: range.from, to: range.to });
+      if (cursor) params.set("cursor", cursor);
+      const data = await json(`${viewsBase}/${encodeURIComponent(id)}/calendar?${params}`);
+      const next = acceptedCalendar(data);
+      if (!next) throw Error("This view configuration is unavailable.");
+      const view = data.view as SavedView | undefined;
+      if (view?.id) setViews((current) => current.map((item) => (item.id === view.id ? view : item)));
+      if (view?.unavailable || view?.definition === null) {
+        rememberCalendar(null);
+        setError("This view configuration is unavailable.");
+        return;
+      }
+      rememberCalendar(next, !!cursor);
+      setBoard(null);
+      setViewRows([]);
+      setViewColumns([]);
+      setViewCursor(null);
+      setCalendarMonth(month);
+      if (view?.canManage) setViewDraft(draftFrom(view));
+      else if (known?.canManage && known.definition) setViewDraft(draftFrom(known));
+    } catch (e) {
+      if (!cursor) rememberCalendar(null);
+      setError(e instanceof Error ? e.message : "Unable to load this calendar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function rescheduleCalendarEvent(card: CalendarEvent, date: string) {
+    if (!activeViewId || !calendar || !card.canReschedule || card.date === date) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await json(`${viewsBase}/${encodeURIComponent(activeViewId)}/calendar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "reschedule",
+          operationId: crypto.randomUUID(),
+          recordId: card.id,
+          expectedVersion: card.version,
+          schemaVersion: calendar.schemaVersion,
+          date,
+        }),
+      });
+      setNotice("Record rescheduled.");
+      await runCalendar(activeViewId, undefined, calendarMonth);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to reschedule this record.");
+    } finally {
+      setBusy(false);
+    }
+  }
   async function runBoard(id: string, known?: SavedView, column?: BoardColumnModel) {
+    setCalendar(null);
     setBusy(true);
     setError("");
     try {
@@ -1390,10 +1477,17 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
   async function runView(id: string, reset = true, known?: SavedView) {
     const selected = known ?? views.find((view) => view.id === id);
     if (selected?.definition?.presentation?.kind === "board") {
+      setCalendar(null);
       await runBoard(id, selected);
       return;
     }
+    if (selected?.definition?.presentation?.kind === "calendar") {
+      setBoard(null);
+      await runCalendar(id, selected);
+      return;
+    }
     setBoard(null);
+    setCalendar(null);
     setBusy(true);
     setError("");
     try {
@@ -1430,6 +1524,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setViewColumns([]);
       setViewCursor(null);
       setBoard(null);
+      setCalendar(null);
       setError("");
       return;
     }
@@ -1439,6 +1534,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setViewColumns([]);
       setViewCursor(null);
       setBoard(null);
+      setCalendar(null);
       setViewDraft(emptyViewDraft());
       setError("This view includes a restricted filter or sort. Review its configuration.");
       return;
@@ -1455,7 +1551,10 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     const view = next.find((item) => item.id === selectId);
     if (view?.canManage && view.definition) setViewDraft(draftFrom(view));
     if (view && !view.unavailable && view.definition) await runView(selectId, true, view);
-    else setBoard(null);
+    else {
+      setBoard(null);
+      setCalendar(null);
+    }
   }
   async function saveView(event: FormEvent) {
     event.preventDefault();
@@ -1532,6 +1631,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setViewColumns([]);
       setViewCursor(null);
       setBoard(null);
+      setCalendar(null);
       setViews(acceptedViews(await json(`${viewsBase}?collection=${encodeURIComponent(collection)}`)));
       setNotice("Saved view deleted. Records were not changed.");
     } catch (e) {
@@ -1564,6 +1664,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
       {board && <RecordBoard board={board} busy={busy} onOpen={(id) => void open(id)} onMove={(card, column) => void moveBoardCard(card, column)} onLoadMore={(column) => { if (activeViewId) void runBoard(activeViewId, undefined, column); }} />}
+      {calendar && <RecordCalendar calendar={calendar} month={calendarMonth} busy={busy} onOpen={(id) => void open(id)} onReschedule={(card, date) => void rescheduleCalendarEvent(card, date)} onLoadMore={() => { if (activeViewId && calendar.nextCursor) void runCalendar(activeViewId, undefined, calendarMonth, calendar.nextCursor); }} onMonth={(month) => { if (activeViewId) void runCalendar(activeViewId, undefined, month); }} />}
       <div className="record-browser-grid">
         <section aria-label="Record list">
           <label>
@@ -1611,7 +1712,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             ))}
           </ul>
           )}
-          {activeView?.definition && !activeView.unavailable && activeView.definition.presentation?.kind !== "board" ? (
+          {activeView?.definition && !activeView.unavailable && activeView.definition.presentation?.kind !== "board" && activeView.definition.presentation?.kind !== "calendar" ? (
             <table aria-label={activeView.name}>
               <caption>{activeView.scope === "private" ? "Personal" : "Shared"} · {activeView.name}</caption>
               <thead>
@@ -1630,7 +1731,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               </tbody>
             </table>
           ) : null}
-          {board ? null : activeViewId ? (viewCursor && <button disabled={busy} onClick={() => void runView(activeViewId, false)}>Load 50 more</button>) : (cursor && (
+          {board || calendar ? null : activeViewId ? (viewCursor && <button disabled={busy} onClick={() => void runView(activeViewId, false)}>Load 50 more</button>) : (cursor && (
             <button disabled={busy} onClick={() => void load(false)}>
               Load 50 more
             </button>
@@ -1673,7 +1774,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           </section>
           <section aria-label="Saved table views">
             <h2>Saved table views</h2>
-            <p>Personal views stay with you. A shared workspace view needs manage-views and does not grant record editing or schema changes. Sharing a personal view creates a new copy; the original stays personal. Trash is excluded. Archived records appear only when the view includes them. A board groups the same filtered records by a select or single reference field.</p>
+            <p>Personal views stay with you. A shared workspace view needs manage-views and does not grant record editing or schema changes. Sharing a personal view creates a new copy; the original stays personal. Trash is excluded. Archived records appear only when the view includes them. A board groups the same filtered records by a select or single reference field. A calendar places those records on a date field.</p>
             <label>
               Saved view{" "}
               <select aria-label="Saved view" value={activeViewId} onChange={(event) => chooseView(event.target.value)}>
@@ -1696,6 +1797,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                 <legend>Presentation</legend>
                 <label className="record-check"><input type="radio" name="view-presentation" value="table" checked={viewDraft.presentation === "table"} onChange={() => editView({ presentation: "table" })} /> Table</label>
                 <label className="record-check"><input type="radio" name="view-presentation" value="board" checked={viewDraft.presentation === "board"} onChange={() => editView({ presentation: "board", groupBy: viewDraft.groupBy || viewFieldCatalogue.find((field) => field.kind === "single-select")?.key || "" })} /> Board</label>
+                <label className="record-check"><input type="radio" name="view-presentation" value="calendar" checked={viewDraft.presentation === "calendar"} onChange={() => editView({ presentation: "calendar", dateField: viewDraft.dateField || viewFieldCatalogue.find((field) => field.kind === "date")?.key || "" })} /> Calendar</label>
                 {viewDraft.presentation === "board" && (
                   <label>
                     Group by{" "}
@@ -1705,7 +1807,16 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                     </select>
                   </label>
                 )}
-                <p>A board groups by one select field or a single reference catalogue. Cards use the same permitted columns as the table.</p>
+                {viewDraft.presentation === "calendar" && (
+                  <label>
+                    Date field{" "}
+                    <select aria-label="Calendar date field" value={viewFieldCatalogue.some((field) => field.key === viewDraft.dateField && field.kind === "date") ? viewDraft.dateField : ""} onChange={(event) => editView({ dateField: event.target.value })}>
+                      <option value="">Choose a date field</option>
+                      {viewFieldCatalogue.filter((field) => field.kind === "date").map((field) => <option key={field.key} value={field.key}>{field.label}</option>)}
+                    </select>
+                  </label>
+                )}
+                <p>A board groups by one select field or a single reference catalogue. A calendar places records on one date field. Cards and events use the same permitted columns as the table.</p>
               </fieldset>
               <fieldset>
                 <legend>Columns</legend>
@@ -1783,7 +1894,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               collection={collection}
               schemaVersion={schemaVersion}
               view={activeView?.definition && !activeView.unavailable ? { id: activeView.id, name: activeView.name, version: activeView.version, columns: activeView.definition.columns } : null}
-              records={(activeView?.definition && !activeView.unavailable ? (board ? board.columns.flatMap((column) => column.cards) : viewRows) : items).map((row) => ({ id: row.id, name: row.name }))}
+              records={(activeView?.definition && !activeView.unavailable ? (calendar ? calendar.events : board ? board.columns.flatMap((column) => column.cards) : viewRows) : items).map((row) => ({ id: row.id, name: row.name }))}
               fields={fields.map((field) => ({ key: field.key, label: field.label, kind: field.kind }))}
             />
           )}
