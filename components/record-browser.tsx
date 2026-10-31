@@ -2,6 +2,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import RecordBoard, { acceptedBoard, type BoardCard, type BoardColumnModel, type BoardModel } from "./record-board";
 import RecordComments from "./record-comments";
+import RecordCompare from "./record-compare";
 import RecordGraph from "./record-graph";
 import RecordResponsibility from "./record-responsibility";
 import RecordNotifications from "./record-notifications";
@@ -661,6 +662,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [trashOpen, setTrashOpen] = useState(false),
     [trashRows, setTrashRows] = useState<TrashRow[]>([]),
     [trashCursor, setTrashCursor] = useState<string | null>(null),
+    [compareIds, setCompareIds] = useState<string[]>([]),
     [duplicates, setDuplicates] = useState<DuplicateResult | null>(null),
     [mergeSurvivorId, setMergeSurvivorId] = useState(""),
     [mergeNameFrom, setMergeNameFrom] = useState<MergeSide>("survivor"),
@@ -1709,6 +1711,24 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setBusy(false);
     }
   }
+  function toggleCompare(id: string) {
+    if (compareIds.includes(id)) {
+      setCompareIds(compareIds.filter((item) => item !== id));
+      return;
+    }
+    if (compareIds.length >= 4) {
+      setNotice("Compare up to 4 records.");
+      return;
+    }
+    setCompareIds([...compareIds, id]);
+  }
+  function compareBox(id: string, name: string) {
+    return (
+      <label className="record-check">
+        <input type="checkbox" checked={compareIds.includes(id)} aria-label={`Select ${name} for comparison`} onChange={() => toggleCompare(id)} />
+      </label>
+    );
+  }
   function toggleField(key: string, flag: "canView" | "canWrite" | "canHistory") {
     setGrantFields((current) => current.map((field) => {
       if (field.key !== key) return field;
@@ -1733,9 +1753,10 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       </header>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
-      {board && <RecordBoard board={board} busy={busy} onOpen={(id) => void open(id)} onMove={(card, column) => void moveBoardCard(card, column)} onLoadMore={(column) => { if (activeViewId) void runBoard(activeViewId, undefined, column); }} />}
-      {calendar && <RecordCalendar calendar={calendar} month={calendarMonth} busy={busy} onOpen={(id) => void open(id)} onReschedule={(card, date) => void rescheduleCalendarEvent(card, date)} onLoadMore={() => { if (activeViewId && calendar.nextCursor) void runCalendar(activeViewId, undefined, calendarMonth, calendar.nextCursor); }} onMonth={(month) => { if (activeViewId) void runCalendar(activeViewId, undefined, month); }} />}
+      {board && <RecordBoard board={board} busy={busy} selectedIds={compareIds} onToggleSelect={toggleCompare} onOpen={(id) => void open(id)} onMove={(card, column) => void moveBoardCard(card, column)} onLoadMore={(column) => { if (activeViewId) void runBoard(activeViewId, undefined, column); }} />}
+      {calendar && <RecordCalendar calendar={calendar} month={calendarMonth} busy={busy} selectedIds={compareIds} onToggleSelect={toggleCompare} onOpen={(id) => void open(id)} onReschedule={(card, date) => void rescheduleCalendarEvent(card, date)} onLoadMore={() => { if (activeViewId && calendar.nextCursor) void runCalendar(activeViewId, undefined, calendarMonth, calendar.nextCursor); }} onMonth={(month) => { if (activeViewId) void runCalendar(activeViewId, undefined, month); }} />}
       {dashboard && <RecordDashboard dashboard={dashboard} />}
+      <RecordCompare workspaceId={workspaceId} tenantId={tenantId} recordIds={compareIds} onClear={() => setCompareIds([])} />
       <div className="record-browser-grid">
         <section aria-label="Record list">
           <label>
@@ -1780,7 +1801,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           {activeView?.definition && !activeView.unavailable ? null : (
           <ul>
             {items.map((item) => (
-              <li key={item.id}>
+              <li key={item.id} className="record-compare-pick">
+                {compareBox(item.id, item.name)}
                 <button onClick={() => void open(item.id)} aria-current={selected?.id === item.id ? "true" : undefined}>
                   {item.name}{item.state === "archived" ? " · archived" : ""}
                 </button>
@@ -1793,6 +1815,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               <caption>{activeView.scope === "private" ? "Personal" : "Shared"} · {activeView.name}</caption>
               <thead>
                 <tr>
+                  <th scope="col">Compare</th>
                   {viewColumns.map((column) => <th key={column.key} scope="col">{column.label}</th>)}
                   <th scope="col">Open</th>
                 </tr>
@@ -1800,6 +1823,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               <tbody>
                 {viewRows.map((row) => (
                   <tr key={row.id}>
+                    <td>{compareBox(row.id, row.name)}</td>
                     {viewColumns.map((column) => <td key={column.key}>{column.key === "name" ? row.name : displayFieldValue(fields.find((field) => field.key === column.key), row.values?.[column.key])}</td>)}
                     <td><button type="button" disabled={busy} onClick={() => void open(row.id)}>Open</button></td>
                   </tr>

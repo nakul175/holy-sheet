@@ -108,12 +108,16 @@ export default function RecordBoard({
   onOpen,
   onMove,
   onLoadMore,
+  selectedIds,
+  onToggleSelect,
 }: {
   board: BoardModel;
   busy: boolean;
   onOpen: (id: string) => void;
   onMove: (card: BoardCard, column: BoardColumnModel) => void;
   onLoadMore: (column: BoardColumnModel) => void;
+  selectedIds?: string[];
+  onToggleSelect?: (id: string) => void;
 }) {
   const cards = board.columns.flatMap((column) => column.cards);
   return (
@@ -153,6 +157,11 @@ export default function RecordBoard({
                     }}
                   >
                     <h4>{card.name}{card.state === "archived" ? " · archived" : ""}</h4>
+                    {onToggleSelect && (
+                      <label className="record-check">
+                        <input type="checkbox" checked={selectedIds?.includes(card.id) ?? false} aria-label={`Select ${card.name} for comparison`} onChange={() => onToggleSelect(card.id)} />
+                      </label>
+                    )}
                     <dl>
                       {board.fields.filter((field) => field.key !== "name").map((field) => (
                         <div key={field.key}>
