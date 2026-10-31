@@ -32,14 +32,19 @@ export type Page = {
   blocks: Block[];
 };
 
+export const searchKinds = ["page", "block", "record", "field", "attachment"] as const;
+export type SearchKind = (typeof searchKinds)[number];
 export type SearchResult = {
   id: string;
+  kind?: SearchKind;
   title: string;
   spaceId: string;
   path: string[];
   preview: string;
   updatedAt: string;
-  match: "title-exact" | "title" | "content";
+  match: "title-exact" | "title" | "content" | "field" | "attachment";
+  href?: string;
+  collection?: string;
 };
 
 export type Space = { id: string; workspaceId: string; name: string };
