@@ -66,6 +66,32 @@ it('inserts a resolved member and posts that mention',async()=>{
  }finally{await view.unmount();}
 });
 
+it('follows and unfollows without rendering hidden follow fields',async()=>{
+ fetchMock.mockImplementation(async(url:string,init?:RequestInit)=>{
+  if(String(url).endsWith('/follow')&&init?.method==='PUT')return response({following:true,email:'secret@example.com',capabilities:['secret-cap']});
+  if(String(url).endsWith('/follow')&&init?.method==='DELETE')return response({following:false,email:'secret@example.com'});
+  if(String(url).endsWith('/follow'))return response({following:false,email:'secret@example.com',capabilities:['secret-cap']});
+  return response({comments:[],truncated:false});
+ });
+ const view=await render();
+ try{
+  expect(view.host.textContent).toContain('Following does not grant access.');
+  expect(view.host.textContent).not.toContain('secret@example.com');
+  expect(view.host.textContent).not.toContain('secret-cap');
+  const follow=view.host.querySelector<HTMLButtonElement>('button')!;
+  expect(follow.textContent).toBe('Follow');
+  await act(async()=>{follow.click();});
+  const put=fetchMock.mock.calls.find(call=>call[1]?.method==='PUT')!;
+  expect(String(put[0])).toContain('/follow');
+  expect(put[1].body).toBe('{}');
+  expect(view.host.textContent).toContain('You follow this record.');
+  const unfollow=[...view.host.querySelectorAll('button')].find(button=>button.textContent==='Unfollow')!;
+  await act(async()=>{unfollow.click();});
+  expect(fetchMock.mock.calls.some(call=>call[1]?.method==='DELETE'&&String(call[0]).endsWith('/follow'))).toBe(true);
+  expect(view.host.textContent).toContain('You unfollowed this record.');
+ }finally{await view.unmount();}
+});
+
 it('hides the composer when the record is not available',async()=>{
  fetchMock.mockResolvedValue(response({error:'Record is restricted or unavailable.',code:'record_not_found'},404));
  const view=await render();

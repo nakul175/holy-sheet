@@ -3,6 +3,7 @@ import {z} from 'zod';
 import type {Sql} from './database';
 import {DocumentError} from './document';
 import {acceptedComment,bodyIncludesMention,type RecordComment} from './record-comments-contract';
+import {drainRecordNotifications,enqueueRecordCommentNotification} from './record-notifications';
 import {SharedRecordRepository,type RecordContext,type Stored} from './shared-records';
 import {recordHash} from './shared-record-types';
 
@@ -44,7 +45,7 @@ export class SharedRecordCommentsRepository extends SharedRecordRepository {
   const parsed=create.safeParse(input);
   if(!parsed.success)throw invalid();
   const body=parsed.data.body,mentionIds=[...new Set(parsed.data.mentionIds)].sort(),requestHash=recordHash({kind:'record-comment',recordId,body,mentionIds});
-  return this.transaction(ctx,async tx=>{
+  const saved=await this.transaction(ctx,async tx=>{
    const record=await this.raw(tx,ctx,recordId,'view');
    const prior=await tx.query<{request_hash:string;record_id:string;comment_id:string}>('SELECT request_hash,record_id,comment_id FROM hs_data_record_comment_operations WHERE tenant_id=$1 AND actor_id=$2 AND operation_id=$3',[ctx.tenantId,ctx.actor.id,parsed.data.operationId]);
    if(prior.rows[0]){
@@ -59,8 +60,11 @@ export class SharedRecordCommentsRepository extends SharedRecordRepository {
    for(const mention of mentions)await tx.query('INSERT INTO hs_data_record_comment_mentions(comment_id,user_id) VALUES($1,$2)',[id,mention.id]);
    await tx.query('INSERT INTO hs_data_record_comment_operations(tenant_id,actor_id,operation_id,request_hash,record_id,comment_id) VALUES($1,$2,$3,$4,$5,$6)',[ctx.tenantId,ctx.actor.id,parsed.data.operationId,requestHash,record.id,id]);
    await tx.query('INSERT INTO hs_audit(id,actor_id,action,after_value,correlation_id) VALUES($1,$2,$3,$4,$5)',[randomUUID(),ctx.actor.id,'shared-record.comment',JSON.stringify({tenantId:ctx.tenantId,recordId:record.id,commentId:id}),parsed.data.operationId]);
+   await enqueueRecordCommentNotification(tx,{tenantId:ctx.tenantId,workspaceId:ctx.workspaceId,recordId:record.id,collection:record.collection,commentId:id,actorId:ctx.actor.id,mentionIds:mentions.map(mention=>mention.id)});
    return {comment:await this.saved(tx,ctx,id,record.id),replayed:false};
   });
+  try{await drainRecordNotifications(this.pages.db);}catch{ /* The comment is committed; retain pending delivery for retry. */ }
+  return saved;
  }
  private async resolve(tx:Sql,ctx:RecordContext,record:Stored,body:string,mentionIds:string[]){
   const mentions:{id:string;name:string}[]=[];

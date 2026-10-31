@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { acceptedFollow } from "../lib/record-follow-contract";
 import {
   acceptedComment,
   acceptedCommentList,
@@ -20,6 +21,7 @@ function CommentBody({ body, mentions }: { body: string; mentions: readonly Reco
 
 export default function RecordComments({ workspaceId, tenantId, recordId }: { workspaceId: string; tenantId: string; recordId: string }) {
   const root = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/records/${encodeURIComponent(recordId)}/comments`;
+  const followRoot = root.replace(/\/comments$/, "/follow");
   const [comments, setComments] = useState<RecordComment[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [body, setBody] = useState("");
@@ -31,6 +33,10 @@ export default function RecordComments({ workspaceId, tenantId, recordId }: { wo
   const [denied, setDenied] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [following, setFollowing] = useState<boolean | null>(null);
+  const [followBusy, setFollowBusy] = useState(false);
+  const [followError, setFollowError] = useState("");
+  const [followNotice, setFollowNotice] = useState("");
   const pending = useRef<{ operationId: string; body: string; mentionIds: string[] } | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const tooLong = [...body].length > 10000;
@@ -39,6 +45,9 @@ export default function RecordComments({ workspaceId, tenantId, recordId }: { wo
     const abort = new AbortController();
     setDenied(false);
     setError("");
+    setFollowing(null);
+    setFollowError("");
+    setFollowNotice("");
     void (async () => {
       try {
         const response = await fetch(root, { credentials: "same-origin", cache: "no-store", signal: abort.signal });
@@ -56,12 +65,54 @@ export default function RecordComments({ workspaceId, tenantId, recordId }: { wo
         const list = acceptedCommentList(payload);
         setComments(list?.comments ?? []);
         setTruncated(list?.truncated ?? false);
+        try {
+          const followResponse = await fetch(followRoot, { credentials: "same-origin", cache: "no-store", signal: abort.signal });
+          const followPayload = await followResponse.json();
+          if (abort.signal.aborted) return;
+          if (followResponse.ok) setFollowing(acceptedFollow(followPayload)?.following ?? null);
+          else setFollowError("Following is temporarily unavailable.");
+        } catch {
+          if (!abort.signal.aborted) setFollowError("Following is temporarily unavailable.");
+        }
       } catch {
         if (!abort.signal.aborted) setError("Comments are temporarily unavailable.");
       }
     })();
     return () => abort.abort();
-  }, [root]);
+  }, [followRoot, root]);
+
+  async function toggleFollow() {
+    if (following === null || followBusy || denied) return;
+    setFollowBusy(true);
+    setFollowError("");
+    setFollowNotice("");
+    try {
+      const response = await fetch(followRoot, {
+        method: following ? "DELETE" : "PUT",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const payload = await response.json();
+      if (response.status === 401 || response.status === 403 || response.status === 404) {
+        setFollowing(null);
+        setFollowError("Following is not available with your current access.");
+        return;
+      }
+      const next = acceptedFollow(payload);
+      if (!response.ok || !next) {
+        setFollowError(payload && typeof payload === "object" && typeof payload.error === "string" ? payload.error : "Could not update following.");
+        return;
+      }
+      setFollowing(next.following);
+      setFollowNotice(next.following ? "You follow this record." : "You unfollowed this record.");
+    } catch {
+      setFollowError("Could not update following.");
+    } finally {
+      setFollowBusy(false);
+    }
+  }
 
   useEffect(() => {
     setPeople([]);
@@ -140,6 +191,14 @@ export default function RecordComments({ workspaceId, tenantId, recordId }: { wo
     <section aria-label="Record comments" className="record-comments">
       <h3>Comments</h3>
       <p>Comments stay on this record. Mention someone who can already view it. A mention does not grant access.</p>
+      {(following !== null || followError) && (
+        <div className="record-follow" role="group" aria-label="Follow record">
+          <p>Follow this record to be notified about new comments. Following does not grant access.</p>
+          {following !== null && <button type="button" disabled={followBusy} onClick={() => void toggleFollow()}>{following ? "Unfollow" : "Follow"}</button>}
+          {followNotice && <p role="status">{followNotice}</p>}
+          {followError && <p role="alert">{followError}</p>}
+        </div>
+      )}
       {truncated && <p>Older comments are not shown.</p>}
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
