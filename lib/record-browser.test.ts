@@ -88,6 +88,7 @@ it("lists bounded records, opens detail and exposes only accessible linked docum
     expect(view.host.textContent).toContain("Accessible brief");
     expect(view.host.querySelector("a")?.getAttribute("href")).toBe("/pages/page-a");
     expect(view.host.querySelector('section[aria-label="Collection fields"]')).toBeNull();
+    expect(view.host.querySelector('section[aria-label="Import records"]')).toBeNull();
   } finally {
     await view.dispose();
   }
@@ -790,6 +791,26 @@ it("reviews merge choices and keeps Apply closed until a qualified consumer is c
     expect(applied.grants).toBeUndefined();
     expect(view.host.textContent).toContain("No access grants were created.");
     expect(view.host.textContent).not.toContain(secret);
+  } finally {
+    await view.dispose();
+  }
+});
+it("shows record import only when the collection grant includes view and import", async () => {
+  fetchMock.mockImplementation((url: string) => {
+    if (url.includes("/record-imports")) return response({ error: "import should wait for an explicit action" }, 500);
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 1, fields: [{ key: "core:notes", label: "Notes", kind: "long-text", sensitive: false, choices: [], canWrite: true, canHistory: false }], collectionCapabilities: ["view", "import", "create"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Schema permission is required." }, 403);
+    if (url.includes("/record-views")) return response({ views: [] });
+    return response({ schemaVersion: 1, results: [], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    const importer = view.host.querySelector('section[aria-label="Import records"]');
+    expect(importer).not.toBeNull();
+    expect(importer?.textContent).toContain("Stage import");
+    expect(importer?.textContent).toContain("immutable HS ID");
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/record-imports"))).toBe(false);
+    expect(importer?.textContent).not.toContain("New field");
   } finally {
     await view.dispose();
   }

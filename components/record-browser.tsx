@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useEffect, useState } from "react";
+import RecordImport from "./record-import";
 
 type Summary = {
   id: string;
@@ -416,6 +417,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [fields, setFields] = useState<FieldMeta[]>([]),
     [canManage, setCanManage] = useState(false),
     [canCreate, setCanCreate] = useState<boolean | null>(null),
+    [canImport, setCanImport] = useState(false),
     [drafts, setDrafts] = useState<Record<string, unknown>>({}),
     [edits, setEdits] = useState<Record<string, unknown>>({}),
     [historyEvents, setHistoryEvents] = useState<HistoryEvent[]>([]),
@@ -494,6 +496,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
         setFields(Array.isArray(permissionResult?.fields) ? permissionResult.fields : []);
         setCanManage(permissionResult?.canManage === true);
         setCanCreate(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("create") : null);
+        setCanImport(Array.isArray(permissionResult?.collectionCapabilities) && permissionResult.collectionCapabilities.includes("view") && permissionResult.collectionCapabilities.includes("import"));
         setCanManageViews(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("manage-views") : false);
         setSchemaCatalogue(schemaResult);
         setViews(viewResult);
@@ -513,6 +516,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setTrashRows([]);
     setTrashCursor(null);
     setDuplicates(null);
+    setCanImport(false);
     setMergeSurvivorId("");
     setMergeNameFrom("survivor");
     setMergeParentFrom("");
@@ -1321,6 +1325,22 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               Load 50 more
             </button>
           ))}
+          {canImport && (
+            <RecordImport
+              key={collection}
+              workspaceId={workspaceId}
+              tenantId={tenantId}
+              collection={collection}
+              canCreate={canCreate === true}
+              fields={writableFields.map((field) => ({
+                key: field.key,
+                label: field.label,
+                kind: field.kind,
+                referenceList: schemaCatalogue?.fields.some((item) => item.key === field.key && !!item.referenceListId) ?? false,
+              }))}
+              onCommitted={() => void load(true)}
+            />
+          )}
           <section aria-label="Tenant Trash">
             <h2>Tenant Trash</h2>
             <p>Recoverable records for this collection, 50 at a time. Restoring keeps the same ID and returns the previous active or archived state. This screen does not permanently remove records.</p>

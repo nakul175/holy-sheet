@@ -1,6 +1,10 @@
-# Staged CSV/XLSX record import foundation (HOLY-26)
+# Staged CSV/XLSX record import (HOLY-26)
 
-Unexposed service only. No live tenant mapping, public record/import API, native importer UI, grants or schema creation is enabled. Current collection view/import permission is required; create/edit/link and field read/write rights are separately enforced by the native record kernel. Updates use immutable HS IDs and preview-pinned record versions. Approved-unique-key updates and relationship reparenting are not implemented here; those require separate reviewed workflows. Unknown fields cannot be created through mapping.
+## Foundation already in the tree
+
+The import service, migration `025_shared_record_imports.sql`, isolated parser worker, retention helper and service tests were already present. That foundation remains the authority for the behaviour below. This connection does not add a tenant-provisioning adapter, a JWT-role fallback, grants, or schema creation.
+
+Current collection view/import permission is required; create/edit/link and field read/write rights are separately enforced by the native record kernel. Updates use immutable HS IDs and preview-pinned record versions. Approved-unique-key updates and relationship reparenting are not implemented here; those require separate reviewed workflows. Unknown fields cannot be created through mapping.
 
 A shared single-worker lease bounds parsing to 20 MiB source, 10,000 data rows, 100 columns, 20,000 characters per cell and 64 MiB expanded XLSX. The 256 MiB/15-second child has no application environment, filesystem writes, evaluated strings, native addons or child processes. This is process/resource isolation, not a claim of an OS network sandbox; code never fetches link targets. CSV is fatal UTF-8 with quoted commas/newlines/doubled quotes. XLSX reads a selected visible worksheet, inline/shared text, booleans and stored numeric values. It handles 1900/1904 date epochs, rejects the fictitious leap date, and imports date portions with warnings. Formulas are never evaluated: cached values need warning acknowledgement, missing caches become row errors. Hyperlinks remain visible cell text. Macros, encrypted/legacy formats, unsafe/duplicate archive paths, external workbooks, active embedded objects, DTD/entities, bad CRC/size and excessive structures are rejected. XML structural checks are bounded, not full OOXML XSD validation or a claim of real Excel/device compatibility qualification.
 
@@ -10,4 +14,19 @@ Review advances in versioned 100-row batches without mutating records. It valida
 
 Preview/report reads recheck current authority and fields. Cached names/proposed values disappear when an update target becomes unavailable. CSV error reports contain row/status, current permitted column positions and safe issue codes, not values, arbitrary labels, record IDs or formula payloads. Metadata-only ordinary audit/outbox stores actor/app/batch/operation/source-row context; protected values stay in the record event ledger under its current permission rules.
 
-Validation includes the actual permission-limited CSV/XLSX worker at exactly 10,000×100 cells; source corruption/format/size cases; mapping, subsets, duplicate/uniqueness conflicts, 205-row bounded commands and completed-command retry; native update versions; independent privileges; expiry/cancellation/report privacy; rollback after authority revocation following event insertion; actual PostgreSQL concurrent command retries; required full CI and exact-image worker canary. Live suite authority, full native keyboard/mobile workflow, operational cleanup cadence, remaining-row re-review, approved-unique-key mode and representative import throughput/fault qualification remain open. No full HOLY-26 completion is claimed.
+Validation of the foundation includes the actual permission-limited CSV/XLSX worker at exactly 10,000×100 cells; source corruption/format/size cases; mapping, subsets, duplicate/uniqueness conflicts, 205-row bounded commands and completed-command retry; native update versions; independent privileges; expiry/cancellation/report privacy; rollback after authority revocation following event insertion; actual PostgreSQL concurrent command retries; required full CI and exact-image worker canary.
+
+## Connected in this change
+
+Native routes call `SharedRecordImportRepository` through the same suite-tenant authority as records, permissions, schema, saved views, lifecycle and merge (`authenticateRecordAuthority` and `HS_RECORDS_ENABLED`). There is no JWT-role fallback and no tenant-provisioning adapter. The repository is constructed with the verified authority only.
+
+- `POST /api/v1/workspaces/:id/tenants/:tenantId/record-imports` stages one CSV or XLSX body of at most 20 MiB. Metadata travels in `x-hs-record-import`. The same job id retries the same source.
+- `GET /api/v1/workspaces/:id/tenants/:tenantId/record-imports/:jobId` reads one preview page and rechecks current authority.
+- `POST` on that job configures the positional mapping, reviews the next 100 rows, commits one explicit command, or cancels the job.
+- `GET .../record-imports/:jobId/report` returns the service CSV error report: source row, status, permitted column positions and safe issue codes.
+
+The records screen shows Import records when the current collection grant includes view and import. Create and update are separate. Columns map by position onto fields the operator can already write. Relationship columns appear only for the creates that the service already requires. Commit sends one command for at most 100 reviewed rows and, when the response is lost or the command stops blocked, retries that same command. A schema or policy conflict tells the operator that remaining rows need a separate review. This screen does not overwrite them.
+
+## Still open
+
+Live suite authority polish, full native keyboard and mobile qualification, operational cleanup cadence, remaining-row re-review, approved-unique-key mode, and representative import throughput and fault qualification remain open. A job id held only in another session is not listed or recovered here. The two-active-job cap still applies. Expired staging is still removed only when operator maintenance runs `expireRecordImportStaging`; no scheduler was added. This connection does not mark HOLY-26 Done.
