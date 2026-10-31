@@ -94,6 +94,8 @@ it("lists bounded records, opens detail and exposes only accessible linked docum
     expect(view.host.querySelector('a[href$="/collections/organisations/quality?record=record-a"]')).toBeTruthy();
     expect(view.host.querySelector('a[href$="/collections/organisations/periodic-review"]')).toBeTruthy();
     expect(view.host.querySelector('a[href$="/catalogue?collection=organisations"]')).toBeTruthy();
+    expect(view.host.querySelector('section[aria-label="Record comments"]')).toBeTruthy();
+    expect(view.host.textContent).toContain("A mention does not grant access.");
     expect(view.host.querySelector('section[aria-label="Collection fields"]')).toBeNull();
     expect(view.host.querySelector('section[aria-label="Import records"]')).toBeNull();
   } finally {
@@ -156,6 +158,7 @@ it("uses record version and schema version for edits without clearing a failed e
       }),
     )
     .mockResolvedValueOnce(await response({ error: "Layout is unavailable." }, 404))
+    .mockResolvedValueOnce(await response({ comments: [], truncated: false }))
     .mockResolvedValueOnce(await response({ error: "The record changed." }, 409));
   const view = await mount();
   try {
