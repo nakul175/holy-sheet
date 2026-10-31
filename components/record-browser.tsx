@@ -2,6 +2,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import RecordBoard, { acceptedBoard, type BoardCard, type BoardColumnModel, type BoardModel } from "./record-board";
 import RecordComments from "./record-comments";
+import RecordGraph from "./record-graph";
 import RecordResponsibility from "./record-responsibility";
 import RecordNotifications from "./record-notifications";
 import RecordCalendar, { acceptedCalendar, calendarMonthRange, currentCalendarMonth, type CalendarEvent, type CalendarModel } from "./record-calendar";
@@ -2211,6 +2212,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               ) : (
                 <p>No documents you can access are linked.</p>
               )}
+              <RecordGraph key={`graph-${selected.id}`} workspaceId={workspaceId} tenantId={tenantId} recordId={selected.id} version={selected.version} onOpenRecord={(id) => void refreshOpen(id)} />
               <h3>Related records</h3>
               {selected.related.length ? (
                 <ul>
