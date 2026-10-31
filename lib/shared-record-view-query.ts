@@ -2,13 +2,19 @@ import {z} from 'zod';
 import {DocumentError} from './document';
 import {typedRecordValue,type RecordField} from './shared-record-types';
 const field=z.string().min(1).max(100);
+const presentation=z.discriminatedUnion('kind',[
+ z.object({kind:z.literal('table')}).strict(),
+ z.object({kind:z.literal('board'),groupBy:field}).strict(),
+]);
 export const recordViewDefinition=z.object({
  columns:z.array(field).min(1).max(100),
  filters:z.array(z.object({field,operator:z.enum(['equal','contains','prefix','greater','less','in','includes','empty']),value:z.unknown().optional()}).strict()).max(12).default([]),
  sort:z.array(z.object({field,direction:z.enum(['asc','desc'])}).strict()).max(3).default([]),
  includeArchived:z.boolean().default(false),
+ presentation:presentation.optional(),
 }).strict();
 export type RecordViewDefinition=z.output<typeof recordViewDefinition>;
+export type BoardColumnRef={kind:'unassigned'}|{kind:'choice';value:string};
 type SortExpression={sql:string;cast:'text'|'numeric'|'boolean'|'uuid';direction:'asc'|'desc'};
 const invalid=()=>new DocumentError('A view field, filter or sort is unavailable.','record_view_validation',400);
 const pattern=(v:string)=>v.replace(/[\\%_]/g,'\\$&');
@@ -66,4 +72,32 @@ export function recordViewKeyset(sort:SortExpression[],last:unknown[],values:unk
   branches.push('('+[...prefix,after].join(' AND ')+')');prefix.push(`${s.sql} IS NOT DISTINCT FROM ${p}`);
  }
  return '('+branches.join(' OR ')+')';
+}
+/** Select fields and single-select reference catalogues can group a board.
+ * Multi-value fields, free text, and deprecated fields cannot. */
+export function assertRecordBoard(def:RecordViewDefinition,fields:RecordField[]){
+ const presentation=def.presentation;
+ if(!presentation||presentation.kind==='table')return;
+ const group=fields.find(item=>item.key===presentation.groupBy);
+ if(!group||group.deprecated||group.kind!=='single-select')throw invalid();
+}
+export function boardChoiceLabels(field:RecordField){
+ if(field.kind!=='single-select'||field.deprecated)return [];
+ if(field.referenceList)return field.referenceList.items.filter(item=>!item.deprecated).map(item=>({id:item.id,label:item.label}));
+ return field.choices.map(choice=>({id:choice,label:choice}));
+}
+export function boardColumnKey(column:BoardColumnRef){return column.kind==='unassigned'?'unassigned':`choice:${encodeURIComponent(column.value)}`;}
+export function parseBoardColumnKey(key:string):BoardColumnRef|null{
+ if(key==='unassigned')return {kind:'unassigned'};
+ if(!key.startsWith('choice:'))return null;
+ let value='';
+ try{value=decodeURIComponent(key.slice(7));}catch{return null;}
+ if(!value||value.length>200)return null;
+ return {kind:'choice',value};
+}
+/** Field keys and choice ids are parameters. Caller-supplied text is never SQL. */
+export function boardColumnPredicate(fieldKey:string,column:BoardColumnRef,choiceIds:string[],values:unknown[]){
+ values.push(fieldKey);const key='$'+values.length,text=`(r.field_values->>${key})`;
+ if(column.kind==='choice'){values.push(column.value);return `${text} COLLATE "C" = $${values.length}::text`;}
+ values.push(choiceIds);return `(${text} IS NULL OR ${text}='' OR NOT (${text}=ANY($${values.length}::text[])))`;
 }

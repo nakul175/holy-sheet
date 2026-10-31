@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useEffect, useState } from "react";
+import RecordBoard, { acceptedBoard, type BoardCard, type BoardColumnModel, type BoardModel } from "./record-board";
 import RecordExport from "./record-export";
 import RecordHistory from "./record-history";
 import RecordImport from "./record-import";
@@ -259,6 +260,7 @@ type SavedView = {
     filters: { field: string; operator: string; value?: unknown }[];
     sort: { field: string; direction: "asc" | "desc" }[];
     includeArchived: boolean;
+    presentation?: { kind: "table" } | { kind: "board"; groupBy: string };
   } | null;
 };
 type ViewColumn = { key: string; label: string; kind: string };
@@ -274,9 +276,11 @@ type ViewDraft = {
   sorts: ViewSortDraft[];
   includeArchived: boolean;
   lockedScope: boolean;
+  presentation: "table" | "board";
+  groupBy: string;
 };
 type ViewRow = { id: string; name: string; values: Record<string, unknown> };
-const emptyViewDraft = (): ViewDraft => ({ version: 0, name: "", scope: "private", columns: ["name"], filters: [], sorts: [], includeArchived: false, lockedScope: false });
+const emptyViewDraft = (): ViewDraft => ({ version: 0, name: "", scope: "private", columns: ["name"], filters: [], sorts: [], includeArchived: false, lockedScope: false, presentation: "table", groupBy: "" });
 function operatorsFor(kind: string) {
   if (["text", "email", "phone", "url"].includes(kind)) return ["equal", "contains", "prefix", "in", "empty"];
   if (kind === "long-text") return ["equal", "contains", "prefix", "empty"];
@@ -310,6 +314,8 @@ function draftFrom(view: SavedView): ViewDraft {
     sorts: (view.definition?.sort ?? []).map((item) => ({ field: item.field, direction: item.direction })),
     includeArchived: view.definition?.includeArchived === true,
     lockedScope: true,
+    presentation: view.definition?.presentation?.kind === "board" ? "board" : "table",
+    groupBy: view.definition?.presentation?.kind === "board" ? view.definition.presentation.groupBy : "",
   };
 }
 function viewDefinition(draft: ViewDraft, catalogue: ViewColumn[]) {
@@ -347,6 +353,11 @@ function viewDefinition(draft: ViewDraft, catalogue: ViewColumn[]) {
     if (!field || !sortableField(field.kind)) throw Error("A view field, filter or sort is unavailable.");
     return { field: item.field, direction: item.direction };
   });
+  if (draft.presentation === "board") {
+    const group = known.get(draft.groupBy);
+    if (!group || group.kind !== "single-select") throw Error("Choose a select or single reference field.");
+    return { columns: draft.columns, filters, sort, includeArchived: draft.includeArchived, presentation: { kind: "board" as const, groupBy: draft.groupBy } };
+  }
   return { columns: draft.columns, filters, sort, includeArchived: draft.includeArchived };
 }
 function FieldEditor({ field, value, disabled, onChange }: { field: FieldMeta; value: unknown; disabled: boolean; onChange: (value: unknown) => void }) {
@@ -604,6 +615,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [viewRows, setViewRows] = useState<ViewRow[]>([]),
     [viewColumns, setViewColumns] = useState<ViewColumn[]>([]),
     [viewCursor, setViewCursor] = useState<string | null>(null),
+    [board, setBoard] = useState<BoardModel | null>(null),
     [memberId, setMemberId] = useState(""),
     [grantCapabilities, setGrantCapabilities] = useState<string[]>([]),
     [grantFields, setGrantFields] = useState<PermissionMember["fields"]>([]),
@@ -737,6 +749,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setViewRows([]);
     setViewColumns([]);
     setViewCursor(null);
+    setBoard(null);
     void load(true, false);
   }, [collection]);
   const draftKey = JSON.stringify(drafts);
@@ -1302,7 +1315,85 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
   function toggleColumn(key: string) {
     setViewDraft((current) => ({ ...current, columns: current.columns.includes(key) ? current.columns.filter((item) => item !== key) : [...current.columns, key] }));
   }
-  async function runView(id: string, reset = true) {
+  function rememberBoard(next: BoardModel | null, append?: BoardColumnModel) {
+    if (!next) {
+      setBoard(null);
+      return;
+    }
+    if (!append) {
+      setBoard(next);
+      return;
+    }
+    setBoard((current) => {
+      if (!current) return next;
+      return { ...current, schemaVersion: next.schemaVersion, columns: current.columns.map((column) => column.key === append.key ? { ...append, cards: [...column.cards, ...append.cards] } : column) };
+    });
+  }
+  async function runBoard(id: string, known?: SavedView, column?: BoardColumnModel) {
+    setBusy(true);
+    setError("");
+    try {
+      const params = new URLSearchParams();
+      if (column?.nextCursor) {
+        params.set("column", column.key);
+        params.set("cursor", column.nextCursor);
+      }
+      const data = await json(`${viewsBase}/${encodeURIComponent(id)}/board${params.size ? `?${params}` : ""}`);
+      const next = acceptedBoard(data);
+      if (!next) throw Error("This view configuration is unavailable.");
+      const view = data.view as SavedView | undefined;
+      if (view?.id) setViews((current) => current.map((item) => (item.id === view.id ? view : item)));
+      if (view?.unavailable || view?.definition === null) {
+        rememberBoard(null);
+        setError("This view configuration is unavailable.");
+        return;
+      }
+      rememberBoard(next, column);
+      setViewRows([]);
+      setViewColumns([]);
+      setViewCursor(null);
+      if (view?.canManage) setViewDraft(draftFrom(view));
+      else if (known?.canManage && known.definition) setViewDraft(draftFrom(known));
+    } catch (e) {
+      if (!column) rememberBoard(null);
+      setError(e instanceof Error ? e.message : "Unable to load this board.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function moveBoardCard(card: BoardCard, column: BoardColumnModel) {
+    if (!activeViewId || !board || !card.canMove || !column.acceptsCards || board.columns.some((item) => item.key === column.key && item.cards.some((row) => row.id === card.id))) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await json(`${viewsBase}/${encodeURIComponent(activeViewId)}/board`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "move",
+          operationId: crypto.randomUUID(),
+          recordId: card.id,
+          expectedVersion: card.version,
+          schemaVersion: board.schemaVersion,
+          column: column.kind === "unassigned" ? { kind: "unassigned" } : { kind: "choice", value: column.value },
+        }),
+      });
+      setNotice("Record moved.");
+      await runBoard(activeViewId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to move this record.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function runView(id: string, reset = true, known?: SavedView) {
+    const selected = known ?? views.find((view) => view.id === id);
+    if (selected?.definition?.presentation?.kind === "board") {
+      await runBoard(id, selected);
+      return;
+    }
+    setBoard(null);
     setBusy(true);
     setError("");
     try {
@@ -1338,6 +1429,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setViewRows([]);
       setViewColumns([]);
       setViewCursor(null);
+      setBoard(null);
       setError("");
       return;
     }
@@ -1346,13 +1438,14 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setViewRows([]);
       setViewColumns([]);
       setViewCursor(null);
+      setBoard(null);
       setViewDraft(emptyViewDraft());
       setError("This view includes a restricted filter or sort. Review its configuration.");
       return;
     }
     if (view.canManage) setViewDraft(draftFrom(view));
     else setViewDraft(emptyViewDraft());
-    void runView(id, true);
+    void runView(id, true, view);
   }
   async function refreshViews(selectId?: string) {
     const next = acceptedViews(await json(`${viewsBase}?collection=${encodeURIComponent(collection)}`));
@@ -1361,7 +1454,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setActiveViewId(selectId);
     const view = next.find((item) => item.id === selectId);
     if (view?.canManage && view.definition) setViewDraft(draftFrom(view));
-    if (view && !view.unavailable && view.definition) await runView(selectId, true);
+    if (view && !view.unavailable && view.definition) await runView(selectId, true, view);
+    else setBoard(null);
   }
   async function saveView(event: FormEvent) {
     event.preventDefault();
@@ -1437,6 +1531,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setViewRows([]);
       setViewColumns([]);
       setViewCursor(null);
+      setBoard(null);
       setViews(acceptedViews(await json(`${viewsBase}?collection=${encodeURIComponent(collection)}`)));
       setNotice("Saved view deleted. Records were not changed.");
     } catch (e) {
@@ -1468,6 +1563,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       </header>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
+      {board && <RecordBoard board={board} busy={busy} onOpen={(id) => void open(id)} onMove={(card, column) => void moveBoardCard(card, column)} onLoadMore={(column) => { if (activeViewId) void runBoard(activeViewId, undefined, column); }} />}
       <div className="record-browser-grid">
         <section aria-label="Record list">
           <label>
@@ -1515,7 +1611,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             ))}
           </ul>
           )}
-          {activeView?.definition && !activeView.unavailable ? (
+          {activeView?.definition && !activeView.unavailable && activeView.definition.presentation?.kind !== "board" ? (
             <table aria-label={activeView.name}>
               <caption>{activeView.scope === "private" ? "Personal" : "Shared"} · {activeView.name}</caption>
               <thead>
@@ -1534,7 +1630,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               </tbody>
             </table>
           ) : null}
-          {activeViewId ? (viewCursor && <button disabled={busy} onClick={() => void runView(activeViewId, false)}>Load 50 more</button>) : (cursor && (
+          {board ? null : activeViewId ? (viewCursor && <button disabled={busy} onClick={() => void runView(activeViewId, false)}>Load 50 more</button>) : (cursor && (
             <button disabled={busy} onClick={() => void load(false)}>
               Load 50 more
             </button>
@@ -1577,7 +1673,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           </section>
           <section aria-label="Saved table views">
             <h2>Saved table views</h2>
-            <p>Personal views stay with you. A shared workspace view needs manage-views and does not grant record editing or schema changes. Sharing a personal view creates a new copy; the original stays personal. Trash is excluded. Archived records appear only when the view includes them.</p>
+            <p>Personal views stay with you. A shared workspace view needs manage-views and does not grant record editing or schema changes. Sharing a personal view creates a new copy; the original stays personal. Trash is excluded. Archived records appear only when the view includes them. A board groups the same filtered records by a select or single reference field.</p>
             <label>
               Saved view{" "}
               <select aria-label="Saved view" value={activeViewId} onChange={(event) => chooseView(event.target.value)}>
@@ -1595,6 +1691,21 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                 <label className="record-check"><input type="radio" name="view-audience" value="workspace" checked={viewDraft.scope === "workspace"} disabled={viewDraft.lockedScope || !canManageViews} onChange={() => editView({ scope: "workspace" })} /> Shared workspace</label>
                 {!canManageViews && <p>Shared workspace views need the manage-views capability.</p>}
                 {viewDraft.lockedScope && <p>Audience is fixed. Publish a new shared copy to share a personal view.</p>}
+              </fieldset>
+              <fieldset>
+                <legend>Presentation</legend>
+                <label className="record-check"><input type="radio" name="view-presentation" value="table" checked={viewDraft.presentation === "table"} onChange={() => editView({ presentation: "table" })} /> Table</label>
+                <label className="record-check"><input type="radio" name="view-presentation" value="board" checked={viewDraft.presentation === "board"} onChange={() => editView({ presentation: "board", groupBy: viewDraft.groupBy || viewFieldCatalogue.find((field) => field.kind === "single-select")?.key || "" })} /> Board</label>
+                {viewDraft.presentation === "board" && (
+                  <label>
+                    Group by{" "}
+                    <select aria-label="Board group field" value={viewFieldCatalogue.some((field) => field.key === viewDraft.groupBy && field.kind === "single-select") ? viewDraft.groupBy : ""} onChange={(event) => editView({ groupBy: event.target.value })}>
+                      <option value="">Choose a select field</option>
+                      {viewFieldCatalogue.filter((field) => field.kind === "single-select").map((field) => <option key={field.key} value={field.key}>{field.label}</option>)}
+                    </select>
+                  </label>
+                )}
+                <p>A board groups by one select field or a single reference catalogue. Cards use the same permitted columns as the table.</p>
               </fieldset>
               <fieldset>
                 <legend>Columns</legend>
@@ -1672,7 +1783,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               collection={collection}
               schemaVersion={schemaVersion}
               view={activeView?.definition && !activeView.unavailable ? { id: activeView.id, name: activeView.name, version: activeView.version, columns: activeView.definition.columns } : null}
-              records={(activeView?.definition && !activeView.unavailable ? viewRows : items).map((row) => ({ id: row.id, name: row.name }))}
+              records={(activeView?.definition && !activeView.unavailable ? (board ? board.columns.flatMap((column) => column.cards) : viewRows) : items).map((row) => ({ id: row.id, name: row.name }))}
               fields={fields.map((field) => ({ key: field.key, label: field.label, kind: field.kind }))}
             />
           )}
