@@ -1,0 +1,19 @@
+-- Completeness and quality rules. A rule never grants record or field access.
+-- Deprecated rules stay stored and are ignored when a record is evaluated.
+ALTER TABLE hs_data_schema_dependencies DROP CONSTRAINT IF EXISTS hs_data_schema_dependencies_kind_check;
+ALTER TABLE hs_data_schema_dependencies ADD CONSTRAINT hs_data_schema_dependencies_kind_check CHECK(kind IN ('view','import-mapping','integration','reference-policy','template','intake','review','quality'));
+CREATE TABLE IF NOT EXISTS hs_data_quality_catalogues(tenant_id uuid NOT NULL,collection text NOT NULL,revision integer NOT NULL DEFAULT 1,PRIMARY KEY(tenant_id,collection),FOREIGN KEY(tenant_id,collection) REFERENCES hs_data_collections(tenant_id,id));
+CREATE TABLE IF NOT EXISTS hs_data_quality_rules(id uuid PRIMARY KEY,tenant_id uuid NOT NULL,collection text NOT NULL,name text NOT NULL CHECK(char_length(btrim(name)) BETWEEN 1 AND 100),name_search text GENERATED ALWAYS AS(lower(name)) STORED,version integer NOT NULL DEFAULT 1 CHECK(version>0),deprecated boolean NOT NULL DEFAULT false,definition jsonb NOT NULL,created_by text NOT NULL REFERENCES hs_users(id),created_at timestamptz NOT NULL DEFAULT clock_timestamp(),UNIQUE(tenant_id,id),UNIQUE(tenant_id,collection,name_search),FOREIGN KEY(tenant_id,collection) REFERENCES hs_data_collections(tenant_id,id));
+ALTER TABLE hs_data_schema_dependencies ADD COLUMN IF NOT EXISTS quality_rule_id uuid;
+ALTER TABLE hs_data_schema_dependencies DROP CONSTRAINT IF EXISTS hs_data_schema_dependencies_quality_rule_id_fkey;
+ALTER TABLE hs_data_schema_dependencies ADD CONSTRAINT hs_data_schema_dependencies_quality_rule_id_fkey FOREIGN KEY(quality_rule_id) REFERENCES hs_data_quality_rules(id);
+CREATE INDEX IF NOT EXISTS hs_data_quality_rule_catalogue ON hs_data_quality_rules(tenant_id,collection,name_search,id) WHERE deprecated=false;
+CREATE TABLE IF NOT EXISTS hs_data_quality_rule_versions(tenant_id uuid NOT NULL,rule_id uuid NOT NULL,version integer NOT NULL,name text NOT NULL,deprecated boolean NOT NULL,definition jsonb NOT NULL,schema_version integer NOT NULL,actor_id text NOT NULL REFERENCES hs_users(id),created_at timestamptz NOT NULL DEFAULT clock_timestamp(),PRIMARY KEY(tenant_id,rule_id,version),FOREIGN KEY(tenant_id,rule_id) REFERENCES hs_data_quality_rules(tenant_id,id));
+CREATE TABLE IF NOT EXISTS hs_data_quality_rule_operations(tenant_id uuid NOT NULL REFERENCES hs_data_tenants(id),actor_id text NOT NULL REFERENCES hs_users(id),operation_id uuid NOT NULL,request_hash text NOT NULL,rule_id uuid NOT NULL,applied_version integer NOT NULL,PRIMARY KEY(tenant_id,actor_id,operation_id),FOREIGN KEY(tenant_id,rule_id) REFERENCES hs_data_quality_rules(tenant_id,id));
+DROP TRIGGER IF EXISTS hs_data_quality_rule_versions_immutable ON hs_data_quality_rule_versions;
+CREATE TRIGGER hs_data_quality_rule_versions_immutable BEFORE UPDATE OR DELETE ON hs_data_quality_rule_versions FOR EACH ROW EXECUTE FUNCTION hs_data_history_immutable();
+DROP TRIGGER IF EXISTS hs_data_quality_rule_operations_immutable ON hs_data_quality_rule_operations;
+CREATE TRIGGER hs_data_quality_rule_operations_immutable BEFORE UPDATE OR DELETE ON hs_data_quality_rule_operations FOR EACH ROW EXECUTE FUNCTION hs_data_history_immutable();
+CREATE OR REPLACE FUNCTION hs_data_quality_rule_identity_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.id<>OLD.id OR NEW.tenant_id<>OLD.tenant_id OR NEW.collection<>OLD.collection OR NEW.created_by<>OLD.created_by OR NEW.created_at<>OLD.created_at THEN RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='Quality rule identity and collection are immutable'; END IF; RETURN NEW; END $$;
+DROP TRIGGER IF EXISTS hs_data_quality_rule_identity_guard ON hs_data_quality_rules;
+CREATE TRIGGER hs_data_quality_rule_identity_guard BEFORE UPDATE ON hs_data_quality_rules FOR EACH ROW EXECUTE FUNCTION hs_data_quality_rule_identity_guard();

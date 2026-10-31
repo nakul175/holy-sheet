@@ -1745,6 +1745,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           </label>
           <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/intake`}>Internal intake</a>. Signed-in workspace members fill a collection form to create or update a record. The form uses the same permissions as the record and does not grant access.</p>
           <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/review`}>Record review</a>. Signed-in members submit a record or decide a review they are permitted to decide. Review uses the same permissions and does not grant access.</p>
+          <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/quality`}>Record quality</a>. Define completeness and quality checks for this collection, then see how the current record scores. Checks follow the permissions you already have and do not grant access.</p>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -2089,6 +2090,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               {archivedRecord && <p>This record is archived and stays readable. Unarchive it before saving changes or adding links.</p>}
               <p>Fields you cannot view are omitted. A name change keeps those hidden values.</p>
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(selected.collection)}/review?record=${encodeURIComponent(selected.id)}`}>Review this record</a>. Submit it for review, or approve, reject, or request changes when you are permitted to decide.</p>
+              <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(selected.collection)}/quality?record=${encodeURIComponent(selected.id)}`}>Check completeness</a>. See required fields and quality checks you are allowed to view. A failing check does not block saving.</p>
               <dl>
                 <dt>Immutable ID</dt>
                 <dd>{selected.id}</dd>
