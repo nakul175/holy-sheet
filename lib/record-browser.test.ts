@@ -95,6 +95,7 @@ it("lists bounded records, opens detail and exposes only accessible linked docum
     expect(view.host.querySelector('a[href$="/collections/organisations/periodic-review"]')).toBeTruthy();
     expect(view.host.querySelector('a[href$="/catalogue?collection=organisations"]')).toBeTruthy();
     expect(view.host.querySelector('section[aria-label="Record comments"]')).toBeTruthy();
+    expect(view.host.querySelector('section[aria-label="Relationship graph"] button')!.textContent).toBe("Open relationship graph");
     expect(view.host.textContent).toContain("A mention does not grant access.");
     expect(view.host.querySelector('section[aria-label="Collection fields"]')).toBeNull();
     expect(view.host.querySelector('section[aria-label="Import records"]')).toBeNull();
