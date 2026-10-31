@@ -24,3 +24,10 @@ export async function resolveRecordReferenceFields(tx:Sql,ctx:RecordContext,fiel
   return {...field,choices:list.items.map(i=>i.id),referenceList:{id:list.id,version:list.version,items:list.items.map(({order:_,...item})=>item)}};
  });
 }
+
+/** Labels for a catalogue already resolved in the current-authority transaction.
+ * Item IDs stay the stored values; codes and translations stay off this projection. */
+export function referenceChoices(field:Pick<RecordField,'referenceList'>):{id:string;label:string;deprecated:boolean}[]|undefined{
+ if(!field.referenceList)return undefined;
+ return field.referenceList.items.map(({id,label,deprecated})=>({id,label,deprecated}));
+}
