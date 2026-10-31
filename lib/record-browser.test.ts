@@ -88,6 +88,8 @@ it("lists bounded records, opens detail and exposes only accessible linked docum
     expect(view.host.textContent).toContain("Accessible brief");
     expect(view.host.querySelector('a[href="/pages/page-a"]')).toBeTruthy();
     expect(view.host.querySelector('a[href$="/collections/organisations/intake"]')).toBeTruthy();
+    expect(view.host.querySelector('a[href$="/collections/organisations/review"]')).toBeTruthy();
+    expect(view.host.querySelector('a[href$="/collections/organisations/review?record=record-a"]')).toBeTruthy();
     expect(view.host.querySelector('section[aria-label="Collection fields"]')).toBeNull();
     expect(view.host.querySelector('section[aria-label="Import records"]')).toBeNull();
   } finally {
