@@ -92,6 +92,7 @@ it("lists bounded records, opens detail and exposes only accessible linked docum
     expect(view.host.querySelector('a[href$="/collections/organisations/review?record=record-a"]')).toBeTruthy();
     expect(view.host.querySelector('a[href$="/collections/organisations/quality"]')).toBeTruthy();
     expect(view.host.querySelector('a[href$="/collections/organisations/quality?record=record-a"]')).toBeTruthy();
+    expect(view.host.querySelector('a[href$="/collections/organisations/periodic-review"]')).toBeTruthy();
     expect(view.host.querySelector('section[aria-label="Collection fields"]')).toBeNull();
     expect(view.host.querySelector('section[aria-label="Import records"]')).toBeNull();
   } finally {
