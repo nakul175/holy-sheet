@@ -1163,3 +1163,55 @@ it("loads a month calendar with reference labels and reschedules without editing
     expect(screen.querySelector(`section[aria-label="${nextDate}"]`)!.textContent).toContain("Acme");
   } finally { await view.dispose(); }
 });
+it("loads a dashboard with reference labels and read-only calculated metrics", async () => {
+  const active = "11111111-1111-4111-8111-111111111111";
+  let savedView: Record<string, unknown> | null = null;
+  const dashboard = () => ({
+    view: savedView,
+    schemaVersion: 4,
+    widgets: [
+      { id: "widget-group", label: "Departments", metric: "group", fieldLabel: "Department", readOnly: true, groups: [{ key: `choice:${active}`, label: "Finance desk", value: 1 }, { key: "unassigned", label: "Unassigned", value: 0 }] },
+      { id: "widget-sum", label: "Plus total", metric: "sum", fieldLabel: "Plus", value: 42, readOnly: true, calculated: true, sensitive: false, stale: false },
+    ],
+  });
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url.includes("/dashboard")) return response(dashboard());
+    if (init?.method === "POST" && url.includes("/record-views")) {
+      const body = JSON.parse(String(init.body));
+      savedView = { id: body.id, collection: body.collection, scope: body.scope, name: body.name, version: 1, canManage: true, unavailable: false, definition: body.definition };
+      return response({ id: body.id, appliedVersion: 1, currentVersion: 1, deleted: false, replayed: false });
+    }
+    if (url.includes("/record-views/") && !url.includes("/dashboard")) return response({ view: savedView, fields: [], schemaVersion: 4, results: [], nextCursor: null });
+    if (url.includes("/record-views")) return response({ views: savedView ? [savedView] : [] });
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 4, fields: [{ key: "status-field", label: "Department", kind: "single-select", sensitive: false, choices: [active], canWrite: true, canHistory: false }, { key: "formula-1", label: "Plus", kind: "number", sensitive: false, choices: [], canWrite: false, canHistory: false, calculated: true }], collectionCapabilities: ["view", "edit", "manage-views"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    return response({ schemaVersion: 4, results: [], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    const form = view.host.querySelector<HTMLFormElement>('form[aria-label="Save table view"]')!;
+    await input(form.querySelector<HTMLInputElement>('input[name="view-name"]')!, "Open dashboard");
+    await act(async () => form.querySelector<HTMLInputElement>('input[value="dashboard"]')!.click());
+    expect(form.querySelector<HTMLInputElement>('input[aria-label="Widget 1 label"]')!.value).toBe("Records");
+    await select(form.querySelector<HTMLSelectElement>('select[aria-label="Widget 1 metric"]')!, "group");
+    expect(form.querySelector('select[aria-label="Widget 1 field"]')!.textContent).toContain("Department");
+    await act(async () => form.querySelector<HTMLButtonElement>('button[name="add-widget"]')!.click());
+    await select(form.querySelector<HTMLSelectElement>('select[aria-label="Widget 2 metric"]')!, "sum");
+    expect(form.querySelector('select[aria-label="Widget 2 field"]')!.textContent).toContain("Plus (read-only)");
+    await act(async () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    const saved = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST" && String(call[0]).includes("/record-views")).map((call) => JSON.parse(String(call[1].body)));
+    expect(saved[0].definition.presentation).toMatchObject({ kind: "dashboard", widgets: [{ label: "Records", metric: "group", field: "status-field" }, { label: "Summary", metric: "sum", field: "formula-1" }] });
+    expect(saved[0]).not.toHaveProperty("values");
+    const screen = view.host.querySelector('section[aria-label="Record dashboard"]')!;
+    expect(screen.textContent).toContain("Summaries include only records you can currently view");
+    expect(screen.textContent).toContain("Grouped by Department");
+    expect(screen.textContent).toContain("Finance desk: 1");
+    expect(screen.textContent).toContain("Unassigned: 0");
+    expect(screen.textContent).toContain("Plus: 42 · read-only");
+    expect(screen.textContent).not.toContain(active);
+    expect(screen.textContent).not.toContain("formula-1");
+    expect(screen.querySelector('[aria-label="Calculated fields"] input, [aria-label="Calculated fields"] textarea, [aria-label="Calculated fields"] select')).toBeNull();
+    const load = fetchMock.mock.calls.find((call) => String(call[0]).includes("/dashboard"));
+    expect(load?.[1]?.method ?? "GET").not.toBe("POST");
+  } finally { await view.dispose(); }
+});

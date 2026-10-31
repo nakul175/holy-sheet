@@ -1,17 +1,18 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { DocumentError } from "./document";
 
-const mocks = vi.hoisted(() => ({ authenticate: vi.fn(), repository: vi.fn(), listViews: vi.fn(), queryView: vi.fn(), saveView: vi.fn(), deleteView: vi.fn(), queryBoard: vi.fn(), moveBoardCard: vi.fn(), queryCalendar: vi.fn(), rescheduleCalendarEvent: vi.fn() }));
+const mocks = vi.hoisted(() => ({ authenticate: vi.fn(), repository: vi.fn(), listViews: vi.fn(), queryView: vi.fn(), saveView: vi.fn(), deleteView: vi.fn(), queryBoard: vi.fn(), moveBoardCard: vi.fn(), queryCalendar: vi.fn(), rescheduleCalendarEvent: vi.fn(), queryDashboard: vi.fn() }));
 vi.mock("./suite-tenant-authority", () => ({ authenticateRecordAuthority: mocks.authenticate }));
 vi.mock("./repository", () => ({ repository: mocks.repository }));
 vi.mock("./shared-record-views", async () => {
   const actual = await vi.importActual<typeof import("./shared-record-views")>("./shared-record-views");
-  return { ...actual, SharedRecordViewRepository: class { listViews = mocks.listViews; queryView = mocks.queryView; saveView = mocks.saveView; deleteView = mocks.deleteView; queryBoard = mocks.queryBoard; moveBoardCard = mocks.moveBoardCard; queryCalendar = mocks.queryCalendar; rescheduleCalendarEvent = mocks.rescheduleCalendarEvent; } };
+  return { ...actual, SharedRecordViewRepository: class { listViews = mocks.listViews; queryView = mocks.queryView; saveView = mocks.saveView; deleteView = mocks.deleteView; queryBoard = mocks.queryBoard; moveBoardCard = mocks.moveBoardCard; queryCalendar = mocks.queryCalendar; rescheduleCalendarEvent = mocks.rescheduleCalendarEvent; queryDashboard = mocks.queryDashboard; } };
 });
 import { GET, POST } from "../app/api/v1/workspaces/[id]/tenants/[tenantId]/record-views/route";
 import { GET as QUERY } from "../app/api/v1/workspaces/[id]/tenants/[tenantId]/record-views/[viewId]/route";
 import { GET as BOARD, POST as MOVE } from "../app/api/v1/workspaces/[id]/tenants/[tenantId]/record-views/[viewId]/board/route";
 import { GET as CALENDAR, POST as RESCHEDULE } from "../app/api/v1/workspaces/[id]/tenants/[tenantId]/record-views/[viewId]/calendar/route";
+import { GET as DASHBOARD } from "../app/api/v1/workspaces/[id]/tenants/[tenantId]/record-views/[viewId]/dashboard/route";
 
 const tenantId = "00000000-0000-4000-8000-000000000002",
   viewId = "00000000-0000-4000-8000-000000000011",
@@ -154,4 +155,28 @@ it("fails closed for calendar reads and reschedules before storage access", asyn
   expect(ok.status).toBe(200);
   expect(ok.headers.get("cache-control")).toBe("no-store");
   expect(mocks.queryCalendar).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "workspace-a", tenantId }), viewId, { from: "2026-10-01", to: "2026-10-31", cursor: undefined });
+});
+
+it("fails closed for dashboard reads before storage access", async () => {
+  mocks.authenticate.mockRejectedValue(new DocumentError("Structured records are not enabled in this environment.", "record_feature_disabled", 503));
+  const read = await DASHBOARD(new Request(`https://hs.example/api/record-views/${viewId}/dashboard`), detail());
+  expect(read.status).toBe(503);
+  expect(await read.json()).toMatchObject({ code: "record_feature_disabled", retryable: true });
+  expect(mocks.repository).not.toHaveBeenCalled();
+  expect(mocks.queryDashboard).not.toHaveBeenCalled();
+  const saved = await POST(request({ kind: "save", id: viewId, operationId, collection: "organisations", scope: "private", name: "Open dashboard", expectedVersion: 0, definition: { columns: ["name"], presentation: { kind: "dashboard", widgets: [{ id: operationId, label: "Records", metric: "count" }] } } }), scope());
+  expect(saved.status).toBe(503);
+  expect(mocks.repository).not.toHaveBeenCalled();
+  expect(mocks.saveView).not.toHaveBeenCalled();
+  mocks.authenticate.mockClear();
+  const missing = await DASHBOARD(new Request("https://hs.example/api/record-views/not-a-view/dashboard"), { params: Promise.resolve({ id: "workspace-a", tenantId, viewId: "not-a-view" }) });
+  expect(missing.status).toBe(404);
+  expect(mocks.authenticate).not.toHaveBeenCalled();
+  expect(mocks.queryDashboard).not.toHaveBeenCalled();
+  mocks.authenticate.mockResolvedValue({ actor: { id: "verified-user" }, authority: { verify: vi.fn() } });
+  mocks.queryDashboard.mockResolvedValue({ view: { id: viewId }, schemaVersion: 4, widgets: [{ id: operationId, label: "Records", metric: "count", value: 1, readOnly: true }] });
+  const ok = await DASHBOARD(new Request(`https://hs.example/api/record-views/${viewId}/dashboard`), detail());
+  expect(ok.status).toBe(200);
+  expect(ok.headers.get("cache-control")).toBe("no-store");
+  expect(mocks.queryDashboard).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "workspace-a", tenantId }), viewId);
 });

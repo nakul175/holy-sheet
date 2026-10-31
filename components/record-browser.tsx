@@ -2,6 +2,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import RecordBoard, { acceptedBoard, type BoardCard, type BoardColumnModel, type BoardModel } from "./record-board";
 import RecordCalendar, { acceptedCalendar, calendarMonthRange, currentCalendarMonth, type CalendarEvent, type CalendarModel } from "./record-calendar";
+import RecordDashboard, { acceptedDashboard, type DashboardModel } from "./record-dashboard";
 import RecordExport from "./record-export";
 import RecordHistory from "./record-history";
 import RecordImport from "./record-import";
@@ -261,10 +262,11 @@ type SavedView = {
     filters: { field: string; operator: string; value?: unknown }[];
     sort: { field: string; direction: "asc" | "desc" }[];
     includeArchived: boolean;
-    presentation?: { kind: "table" } | { kind: "board"; groupBy: string } | { kind: "calendar"; dateField: string };
+    presentation?: { kind: "table" } | { kind: "board"; groupBy: string } | { kind: "calendar"; dateField: string } | { kind: "dashboard"; widgets: { id: string; label: string; metric: "count" | "sum" | "group"; field?: string }[] };
   } | null;
 };
-type ViewColumn = { key: string; label: string; kind: string };
+type ViewColumn = { key: string; label: string; kind: string; calculated?: boolean };
+type DashboardWidgetDraft = { id: string; label: string; metric: "count" | "sum" | "group"; field: string };
 type ViewFilterDraft = { field: string; operator: string; value: string };
 type ViewSortDraft = { field: string; direction: "asc" | "desc" };
 type ViewDraft = {
@@ -277,12 +279,13 @@ type ViewDraft = {
   sorts: ViewSortDraft[];
   includeArchived: boolean;
   lockedScope: boolean;
-  presentation: "table" | "board" | "calendar";
+  presentation: "table" | "board" | "calendar" | "dashboard";
   groupBy: string;
   dateField: string;
+  widgets: DashboardWidgetDraft[];
 };
 type ViewRow = { id: string; name: string; values: Record<string, unknown> };
-const emptyViewDraft = (): ViewDraft => ({ version: 0, name: "", scope: "private", columns: ["name"], filters: [], sorts: [], includeArchived: false, lockedScope: false, presentation: "table", groupBy: "", dateField: "" });
+const emptyViewDraft = (): ViewDraft => ({ version: 0, name: "", scope: "private", columns: ["name"], filters: [], sorts: [], includeArchived: false, lockedScope: false, presentation: "table", groupBy: "", dateField: "", widgets: [] });
 function operatorsFor(kind: string) {
   if (["text", "email", "phone", "url"].includes(kind)) return ["equal", "contains", "prefix", "in", "empty"];
   if (kind === "long-text") return ["equal", "contains", "prefix", "empty"];
@@ -316,12 +319,13 @@ function draftFrom(view: SavedView): ViewDraft {
     sorts: (view.definition?.sort ?? []).map((item) => ({ field: item.field, direction: item.direction })),
     includeArchived: view.definition?.includeArchived === true,
     lockedScope: true,
-    presentation: view.definition?.presentation?.kind === "board" ? "board" : view.definition?.presentation?.kind === "calendar" ? "calendar" : "table",
+    presentation: view.definition?.presentation?.kind === "board" ? "board" : view.definition?.presentation?.kind === "calendar" ? "calendar" : view.definition?.presentation?.kind === "dashboard" ? "dashboard" : "table",
     groupBy: view.definition?.presentation?.kind === "board" ? view.definition.presentation.groupBy : "",
     dateField: view.definition?.presentation?.kind === "calendar" ? view.definition.presentation.dateField : "",
+    widgets: view.definition?.presentation?.kind === "dashboard" ? view.definition.presentation.widgets.map((widget) => ({ id: widget.id, label: widget.label, metric: widget.metric, field: widget.field ?? "" })) : [],
   };
 }
-function viewDefinition(draft: ViewDraft, catalogue: ViewColumn[]) {
+function viewDefinition(draft: ViewDraft, catalogue: ViewColumn[], metrics: ViewColumn[] = []) {
   const name = draft.name.trim();
   if (!name || name.length > 100) throw Error("Use a view name of 1–100 characters.");
   if (!draft.columns.length || draft.columns.length > 100) throw Error("Choose 1–100 columns.");
@@ -365,6 +369,24 @@ function viewDefinition(draft: ViewDraft, catalogue: ViewColumn[]) {
     const dateField = known.get(draft.dateField);
     if (!dateField || dateField.kind !== "date") throw Error("Choose a date field.");
     return { columns: draft.columns, filters, sort, includeArchived: draft.includeArchived, presentation: { kind: "calendar" as const, dateField: draft.dateField } };
+  }
+  if (draft.presentation === "dashboard") {
+    if (!draft.widgets.length || draft.widgets.length > 6) throw Error("A dashboard supports 1–6 widgets.");
+    if (new Set(draft.widgets.map((widget) => widget.id)).size !== draft.widgets.length) throw Error("A view field, filter or sort is unavailable.");
+    const knownMetrics = new Map([...catalogue, ...metrics].map((field) => [field.key, field]));
+    const widgets = draft.widgets.map((widget) => {
+      const label = widget.label.trim();
+      if (!label || label.length > 80) throw Error("Use a widget label of 1–80 characters.");
+      if (widget.metric === "count") return { id: widget.id, label, metric: "count" as const };
+      const field = knownMetrics.get(widget.field);
+      if (widget.metric === "sum") {
+        if (!field || field.kind !== "number") throw Error("A view field, filter or sort is unavailable.");
+        return { id: widget.id, label, metric: "sum" as const, field: widget.field };
+      }
+      if (!field || field.kind !== "single-select" || field.calculated) throw Error("Choose a select or single reference field.");
+      return { id: widget.id, label, metric: "group" as const, field: widget.field };
+    });
+    return { columns: draft.columns, filters, sort, includeArchived: draft.includeArchived, presentation: { kind: "dashboard" as const, widgets } };
   }
   return { columns: draft.columns, filters, sort, includeArchived: draft.includeArchived };
 }
@@ -625,6 +647,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [viewCursor, setViewCursor] = useState<string | null>(null),
     [board, setBoard] = useState<BoardModel | null>(null),
     [calendar, setCalendar] = useState<CalendarModel | null>(null),
+    [dashboard, setDashboard] = useState<DashboardModel | null>(null),
     [calendarMonth, setCalendarMonth] = useState(currentCalendarMonth),
     [memberId, setMemberId] = useState(""),
     [grantCapabilities, setGrantCapabilities] = useState<string[]>([]),
@@ -761,6 +784,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setViewCursor(null);
     setBoard(null);
     setCalendar(null);
+    setDashboard(null);
     setCalendarMonth(currentCalendarMonth());
     void load(true, false);
   }, [collection]);
@@ -1320,6 +1344,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     }
   }
   const viewFieldCatalogue: ViewColumn[] = [{ key: "name", label: "Name", kind: "text" }, ...fields.filter((field) => !field.calculated).map((field) => ({ key: field.key, label: field.label, kind: field.kind }))];
+  const metricCatalogue: ViewColumn[] = fields.filter((field) => field.calculated).map((field) => ({ key: field.key, label: field.label, kind: field.kind, calculated: true }));
   const activeView = views.find((view) => view.id === activeViewId) ?? null;
   function editView(patch: Partial<ViewDraft>) {
     setViewDraft((current) => ({ ...current, ...patch }));
@@ -1357,6 +1382,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     });
   }
   async function runCalendar(id: string, known?: SavedView, month = calendarMonth, cursor?: string) {
+    setDashboard(null);
     const range = calendarMonthRange(month);
     setBusy(true);
     setError("");
@@ -1417,6 +1443,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
   }
   async function runBoard(id: string, known?: SavedView, column?: BoardColumnModel) {
     setCalendar(null);
+    setDashboard(null);
     setBusy(true);
     setError("");
     try {
@@ -1474,8 +1501,41 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setBusy(false);
     }
   }
+  async function runDashboard(id: string, known?: SavedView) {
+    setBoard(null);
+    setCalendar(null);
+    setBusy(true);
+    setError("");
+    try {
+      const data = await json(`${viewsBase}/${encodeURIComponent(id)}/dashboard`);
+      const next = acceptedDashboard(data);
+      if (!next) throw Error("This view configuration is unavailable.");
+      const view = data.view as SavedView | undefined;
+      if (view?.id) setViews((current) => current.map((item) => (item.id === view.id ? view : item)));
+      if (view?.unavailable || view?.definition === null) {
+        setDashboard(null);
+        setError("This view configuration is unavailable.");
+        return;
+      }
+      setDashboard(next);
+      setViewRows([]);
+      setViewColumns([]);
+      setViewCursor(null);
+      if (view?.canManage) setViewDraft(draftFrom(view));
+      else if (known?.canManage && known.definition) setViewDraft(draftFrom(known));
+    } catch (e) {
+      setDashboard(null);
+      setError(e instanceof Error ? e.message : "Unable to load this dashboard.");
+    } finally {
+      setBusy(false);
+    }
+  }
   async function runView(id: string, reset = true, known?: SavedView) {
     const selected = known ?? views.find((view) => view.id === id);
+    if (selected?.definition?.presentation?.kind === "dashboard") {
+      await runDashboard(id, selected);
+      return;
+    }
     if (selected?.definition?.presentation?.kind === "board") {
       setCalendar(null);
       await runBoard(id, selected);
@@ -1488,6 +1548,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     }
     setBoard(null);
     setCalendar(null);
+    setDashboard(null);
     setBusy(true);
     setError("");
     try {
@@ -1525,6 +1586,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setViewCursor(null);
       setBoard(null);
       setCalendar(null);
+      setDashboard(null);
       setError("");
       return;
     }
@@ -1535,6 +1597,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setViewCursor(null);
       setBoard(null);
       setCalendar(null);
+      setDashboard(null);
       setViewDraft(emptyViewDraft());
       setError("This view includes a restricted filter or sort. Review its configuration.");
       return;
@@ -1554,6 +1617,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     else {
       setBoard(null);
       setCalendar(null);
+      setDashboard(null);
     }
   }
   async function saveView(event: FormEvent) {
@@ -1562,7 +1626,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setError("");
     setNotice("");
     try {
-      const definition = viewDefinition(viewDraft, viewFieldCatalogue);
+      const definition = viewDefinition(viewDraft, viewFieldCatalogue, metricCatalogue);
       const id = viewDraft.id ?? crypto.randomUUID();
       const saved = await json(viewsBase, {
         method: "POST",
@@ -1632,6 +1696,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setViewCursor(null);
       setBoard(null);
       setCalendar(null);
+      setDashboard(null);
       setViews(acceptedViews(await json(`${viewsBase}?collection=${encodeURIComponent(collection)}`)));
       setNotice("Saved view deleted. Records were not changed.");
     } catch (e) {
@@ -1665,6 +1730,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       {notice && <p role="status">{notice}</p>}
       {board && <RecordBoard board={board} busy={busy} onOpen={(id) => void open(id)} onMove={(card, column) => void moveBoardCard(card, column)} onLoadMore={(column) => { if (activeViewId) void runBoard(activeViewId, undefined, column); }} />}
       {calendar && <RecordCalendar calendar={calendar} month={calendarMonth} busy={busy} onOpen={(id) => void open(id)} onReschedule={(card, date) => void rescheduleCalendarEvent(card, date)} onLoadMore={() => { if (activeViewId && calendar.nextCursor) void runCalendar(activeViewId, undefined, calendarMonth, calendar.nextCursor); }} onMonth={(month) => { if (activeViewId) void runCalendar(activeViewId, undefined, month); }} />}
+      {dashboard && <RecordDashboard dashboard={dashboard} />}
       <div className="record-browser-grid">
         <section aria-label="Record list">
           <label>
@@ -1712,7 +1778,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             ))}
           </ul>
           )}
-          {activeView?.definition && !activeView.unavailable && activeView.definition.presentation?.kind !== "board" && activeView.definition.presentation?.kind !== "calendar" ? (
+          {activeView?.definition && !activeView.unavailable && activeView.definition.presentation?.kind !== "board" && activeView.definition.presentation?.kind !== "calendar" && activeView.definition.presentation?.kind !== "dashboard" ? (
             <table aria-label={activeView.name}>
               <caption>{activeView.scope === "private" ? "Personal" : "Shared"} · {activeView.name}</caption>
               <thead>
@@ -1774,7 +1840,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           </section>
           <section aria-label="Saved table views">
             <h2>Saved table views</h2>
-            <p>Personal views stay with you. A shared workspace view needs manage-views and does not grant record editing or schema changes. Sharing a personal view creates a new copy; the original stays personal. Trash is excluded. Archived records appear only when the view includes them. A board groups the same filtered records by a select or single reference field. A calendar places those records on a date field.</p>
+            <p>Personal views stay with you. A shared workspace view needs manage-views and does not grant record editing or schema changes. Sharing a personal view creates a new copy; the original stays personal. Trash is excluded. Archived records appear only when the view includes them. A board groups the same filtered records by a select or single reference field. A calendar places those records on a date field. A dashboard summarises those records with counts, sums and groups.</p>
             <label>
               Saved view{" "}
               <select aria-label="Saved view" value={activeViewId} onChange={(event) => chooseView(event.target.value)}>
@@ -1798,6 +1864,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                 <label className="record-check"><input type="radio" name="view-presentation" value="table" checked={viewDraft.presentation === "table"} onChange={() => editView({ presentation: "table" })} /> Table</label>
                 <label className="record-check"><input type="radio" name="view-presentation" value="board" checked={viewDraft.presentation === "board"} onChange={() => editView({ presentation: "board", groupBy: viewDraft.groupBy || viewFieldCatalogue.find((field) => field.kind === "single-select")?.key || "" })} /> Board</label>
                 <label className="record-check"><input type="radio" name="view-presentation" value="calendar" checked={viewDraft.presentation === "calendar"} onChange={() => editView({ presentation: "calendar", dateField: viewDraft.dateField || viewFieldCatalogue.find((field) => field.kind === "date")?.key || "" })} /> Calendar</label>
+                <label className="record-check"><input type="radio" name="view-presentation" value="dashboard" checked={viewDraft.presentation === "dashboard"} onChange={() => editView({ presentation: "dashboard", widgets: viewDraft.widgets.length ? viewDraft.widgets : [{ id: crypto.randomUUID(), label: "Records", metric: "count", field: "" }] })} /> Dashboard</label>
                 {viewDraft.presentation === "board" && (
                   <label>
                     Group by{" "}
@@ -1816,7 +1883,54 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                     </select>
                   </label>
                 )}
-                <p>A board groups by one select field or a single reference catalogue. A calendar places records on one date field. Cards and events use the same permitted columns as the table.</p>
+                {viewDraft.presentation === "dashboard" && (
+                  <>
+                    {viewDraft.widgets.map((widget, index) => (
+                      <fieldset key={widget.id} aria-label={`Widget ${index + 1}`}>
+                        <legend>Widget {index + 1}</legend>
+                        <label>Label <input aria-label={`Widget ${index + 1} label`} value={widget.label} maxLength={80} onChange={(event) => setViewDraft((current) => ({ ...current, widgets: current.widgets.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) }))} /></label>
+                        <label>
+                          Metric{" "}
+                          <select aria-label={`Widget ${index + 1} metric`} value={widget.metric} onChange={(event) => {
+                            const metric = event.target.value as DashboardWidgetDraft["metric"];
+                            const field = metric === "sum"
+                              ? (widget.field && [...viewFieldCatalogue, ...metricCatalogue].some((item) => item.key === widget.field && item.kind === "number") ? widget.field : [...viewFieldCatalogue, ...metricCatalogue].find((item) => item.kind === "number")?.key ?? "")
+                              : metric === "group"
+                                ? (viewFieldCatalogue.some((item) => item.key === widget.field && item.kind === "single-select") ? widget.field : viewFieldCatalogue.find((item) => item.kind === "single-select")?.key ?? "")
+                                : "";
+                            setViewDraft((current) => ({ ...current, widgets: current.widgets.map((item, itemIndex) => itemIndex === index ? { ...item, metric, field } : item) }));
+                          }}>
+                            <option value="count">Count</option>
+                            <option value="sum">Sum</option>
+                            <option value="group">Group</option>
+                          </select>
+                        </label>
+                        {widget.metric === "sum" && (
+                          <label>
+                            Number field{" "}
+                            <select aria-label={`Widget ${index + 1} field`} value={[...viewFieldCatalogue, ...metricCatalogue].some((field) => field.key === widget.field && field.kind === "number") ? widget.field : ""} onChange={(event) => setViewDraft((current) => ({ ...current, widgets: current.widgets.map((item, itemIndex) => itemIndex === index ? { ...item, field: event.target.value } : item) }))}>
+                              <option value="">Choose a number field</option>
+                              {viewFieldCatalogue.filter((field) => field.kind === "number").map((field) => <option key={field.key} value={field.key}>{field.label}</option>)}
+                              {metricCatalogue.filter((field) => field.kind === "number").map((field) => <option key={field.key} value={field.key}>{field.label} (read-only)</option>)}
+                            </select>
+                          </label>
+                        )}
+                        {widget.metric === "group" && (
+                          <label>
+                            Group by{" "}
+                            <select aria-label={`Widget ${index + 1} field`} value={viewFieldCatalogue.some((field) => field.key === widget.field && field.kind === "single-select") ? widget.field : ""} onChange={(event) => setViewDraft((current) => ({ ...current, widgets: current.widgets.map((item, itemIndex) => itemIndex === index ? { ...item, field: event.target.value } : item) }))}>
+                              <option value="">Choose a select field</option>
+                              {viewFieldCatalogue.filter((field) => field.kind === "single-select").map((field) => <option key={field.key} value={field.key}>{field.label}</option>)}
+                            </select>
+                          </label>
+                        )}
+                        <button type="button" disabled={busy || viewDraft.widgets.length === 1} onClick={() => setViewDraft((current) => ({ ...current, widgets: current.widgets.filter((_, itemIndex) => itemIndex !== index) }))}>Remove widget</button>
+                      </fieldset>
+                    ))}
+                    <button type="button" name="add-widget" disabled={busy || viewDraft.widgets.length >= 6} onClick={() => editView({ widgets: [...viewDraft.widgets, { id: crypto.randomUUID(), label: "Summary", metric: "count", field: "" }] })}>Add widget</button>
+                  </>
+                )}
+                <p>A board groups by one select field or a single reference catalogue. A calendar places records on one date field. A dashboard counts, sums and groups only records you can view. Calculated metrics stay read-only.</p>
               </fieldset>
               <fieldset>
                 <legend>Columns</legend>

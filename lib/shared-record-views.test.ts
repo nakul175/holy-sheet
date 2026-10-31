@@ -132,6 +132,106 @@ it('shows reference labels on calendar events and reschedules only the date',asy
  const viewerCalendar=await data.queryCalendar(vctx(),calendar.id,{from:'2026-10-01',to:'2026-10-31'});expect(viewerCalendar.events.map(item=>item.id)).toEqual([dated.id]);expect(viewerCalendar.events[0].references).toEqual([{fieldKey:linked,items:[{id:seen.id,label:'Visible partner'}]}]);expect(JSON.stringify(viewerCalendar)).not.toContain('Hidden partner');expect(JSON.stringify(viewerCalendar)).not.toMatch(/"count"|"total"|"hiddenCount"/);
  const moved=await data.rescheduleCalendarEvent(ctx,calendar.id,{operationId:crypto.randomUUID(),recordId:dated.id,expectedVersion:dated.version,schemaVersion:await version(),date:'2026-10-21'});expect(moved.replayed).toBe(false);expect(moved.event.date).toBe('2026-10-21');const stored=(await db.query<{field_values:Record<string,unknown>}>('SELECT field_values FROM hs_data_records WHERE id=$1',[dated.id])).rows[0].field_values;expect(stored[when]).toBe('2026-10-21');expect(stored[bound.fieldKey]).toBe(retired);expect(stored[linked]).toEqual([seen.id,secretPartner.id]);
 });
+const dash=(widgets:Record<string,unknown>[],extra:Record<string,unknown>={})=>({columns:['name'],filters:[],sort:[],presentation:{kind:'dashboard',widgets},...extra});
+const countWidget=(label='Records')=>({id:crypto.randomUUID(),label,metric:'count' as const});
+const sumWidget=(field:string,label='Amount')=>({id:crypto.randomUUID(),label,metric:'sum' as const,field});
+const groupWidget=(field:string,label='Group')=>({id:crypto.randomUUID(),label,metric:'group' as const,field});
+it('rejects unsupported, deprecated and restricted metric fields before storing a dashboard',async()=>{
+ const text=await field('text'),multi=await field('multi-select',{choices:['red','blue']}),currency=await field('currency'),retired=await field('number'),secret=await field('number',{sensitive:true});
+ await db.query('UPDATE hs_data_fields SET deprecated=true WHERE tenant_id=$1 AND field_key=$2',[ctx.tenantId,retired]);
+ for(const widgets of [[sumWidget(text)],[sumWidget(currency)],[sumWidget(retired)],[sumWidget(secret)],[sumWidget('name')],[groupWidget(text)],[groupWidget(multi)],[groupWidget('name')]]){
+  const marker=widgets.map(widget=>'field' in widget?String(widget.field):'').find(Boolean)??'';
+  let error:unknown;try{await data.saveView(ctx,request({definition:dash(widgets)}));}catch(caught){error=caught;}
+  expect(error).toMatchObject({code:'record_view_validation',message:'A view field, filter or sort is unavailable.'});
+  if(marker)expect(JSON.stringify(error)).not.toContain(marker);
+ }
+ const duplicate=crypto.randomUUID();
+ let reused:unknown;try{await data.saveView(ctx,request({definition:dash([{id:duplicate,label:'One',metric:'count'},{id:duplicate,label:'Two',metric:'count'}])}));}catch(caught){reused=caught;}
+ expect(reused).toMatchObject({code:'record_view_validation',message:'A view field, filter or sort is unavailable.'});
+ await expect(data.saveView(ctx,request({definition:dash(Array.from({length:7},()=>countWidget()))}))).rejects.toMatchObject({code:'record_view_validation',message:'Review the view definition.'});
+ expect((await db.query('SELECT id FROM hs_data_views WHERE tenant_id=$1',[ctx.tenantId])).rows).toEqual([]);
+ const table=await saved();await expect(data.queryDashboard(ctx,table.id)).rejects.toMatchObject({code:'record_dashboard_unavailable',message:'This view configuration is unavailable.'});
+ const injected=await saved({definition:dash([countWidget()],{filters:[{field:'name',operator:'equal',value:"' OR 1=1 --"}]})});
+ expect((await data.queryDashboard(ctx,injected.id)).widgets).toEqual([expect.objectContaining({metric:'count',value:0,readOnly:true})]);
+ expect((await db.query('SELECT id FROM hs_pages LIMIT 1')).rows).toHaveLength(1);
+});
+it('hides a restricted or deprecated metric field without disclosing it',async()=>{
+ const key=await field('number',{sensitive:true}),choice=await field('single-select',{choices:['one','two'],sensitive:true});
+ for(const fieldKey of [key,choice])await db.query('INSERT INTO hs_data_field_permissions(tenant_id,collection,field_key,user_id,can_view,can_write,can_history) VALUES($1,$2,$3,$4,true,true,true)',[ctx.tenantId,'organisations',fieldKey,owner.id]);
+ await record('Secret total',{[key]:424242,[choice]:'one'});
+ const hidden=await saved({scope:'workspace',name:'Metric dashboard',definition:dash([countWidget(),sumWidget(key),groupWidget(choice)])}),listed=await data.getView(vctx(),hidden.id);
+ expect(listed.unavailable).toBe(true);expect(listed.definition).toBeNull();expect(JSON.stringify(listed)).not.toContain(key);expect(JSON.stringify(listed)).not.toContain(choice);expect(JSON.stringify(listed)).not.toContain('424242');
+ await expect(data.queryDashboard(vctx(),hidden.id)).rejects.toMatchObject({code:'record_view_restricted',message:'This view configuration is unavailable.'});
+ await db.query('UPDATE hs_data_fields SET deprecated=true WHERE tenant_id=$1 AND field_key=$2',[ctx.tenantId,key]);
+ const ownerView=await data.getView(ctx,hidden.id);expect(ownerView.definition).toBeNull();expect(JSON.stringify(ownerView)).not.toContain(key);expect(JSON.stringify(ownerView)).not.toContain('424242');
+ await expect(data.queryDashboard(ctx,hidden.id)).rejects.toMatchObject({code:'record_view_restricted',message:'This view configuration is unavailable.'});
+});
+it('aggregates only records and fields the caller can currently view',async()=>{
+ const amount=await field('number'),status=await field('single-select',{choices:['one','two']});
+ const visible=await record('Open desk',{[amount]:10,[status]:'one'}),hidden=await record('Hidden desk',{[amount]:1000,[status]:'one'}),closed=await record('Closed desk',{[amount]:50,[status]:'two'}),archived=await record('Old desk',{[amount]:7,[status]:'one'}),trashed=await record('Gone desk',{[amount]:9,[status]:'one'});
+ await db.query("UPDATE hs_data_records SET state='archived' WHERE id=$1",[archived.id]);
+ await db.query("UPDATE hs_data_records SET state='trashed',deleted_at=statement_timestamp(),trash_deadline=statement_timestamp()+interval '30 days',deleted_by=created_by,before_trash_state='active' WHERE id=$1",[trashed.id]);
+ const p=await saved({scope:'workspace',definition:dash([countWidget('Open records'),sumWidget(amount),groupWidget(status,'Status')],{filters:[{field:status,operator:'equal',value:'one'}],sort:[{field:'name',direction:'asc'}]})});
+ await db.query("UPDATE hs_data_collection_grants SET capabilities=ARRAY[]::text[] WHERE tenant_id=$1 AND user_id=$2",[ctx.tenantId,viewer.id]);
+ await db.query("INSERT INTO hs_data_record_grants(tenant_id,record_id,user_id,capabilities) VALUES($1,$2,$3,ARRAY['view'])",[ctx.tenantId,visible.id,viewer.id]);
+ const viewerDash=await data.queryDashboard(vctx(),p.id),ownerDash=await data.queryDashboard(ctx,p.id);
+ const value=(body:{widgets:{label:string;metric:string;value?:number|null;groups?:{label:string;value:number}[]}[]},label:string)=>body.widgets.find(widget=>widget.label===label);
+ expect(value(viewerDash,'Open records')).toMatchObject({metric:'count',value:1,readOnly:true});
+ expect(value(viewerDash,'Amount')).toMatchObject({metric:'sum',value:10,readOnly:true,calculated:false});
+ expect(value(viewerDash,'Status')?.groups).toEqual([{key:'choice:one',label:'one',value:1},{key:'choice:two',label:'two',value:0},{key:'unassigned',label:'Unassigned',value:0}]);
+ expect(value(ownerDash,'Open records')).toMatchObject({value:2});
+ expect(value(ownerDash,'Amount')).toMatchObject({value:1010});
+ expect(value(ownerDash,'Status')?.groups?.find(group=>group.label==='one')).toMatchObject({value:2});
+ expect(viewerDash).not.toHaveProperty('total');expect(viewerDash).not.toHaveProperty('hiddenCount');expect(viewerDash).not.toHaveProperty('results');
+ const encoded=JSON.stringify(viewerDash);expect(encoded).not.toContain(hidden.id);expect(encoded).not.toContain(closed.id);expect(encoded).not.toContain(archived.id);expect(encoded).not.toContain(trashed.id);expect(encoded).not.toContain('Hidden desk');expect(encoded).not.toContain('Closed desk');expect(encoded).not.toContain('Old desk');expect(encoded).not.toContain('Gone desk');expect(encoded).not.toContain('1000');expect(encoded).not.toContain('424242');expect(encoded).not.toMatch(/"total"|"hiddenCount"/);
+ const history=await saved({definition:dash([countWidget(),sumWidget(amount)],{includeArchived:true,filters:[{field:status,operator:'equal',value:'one'}]})});
+ expect((await data.queryDashboard(ctx,history.id)).widgets.map(widget=>widget.metric==='count'||widget.metric==='sum'?widget.value:null)).toEqual([3,1017]);
+ expect((await db.query<{field_key:string}>('SELECT field_key FROM hs_data_schema_dependencies WHERE tenant_id=$1 AND view_id=$2',[ctx.tenantId,p.id])).rows.map(row=>row.field_key).sort()).toEqual([amount,status].sort());
+});
+it('sums calculated metrics as read-only values over visible records only',async()=>{
+ const amount=await field('number'),secret=await field('number',{sensitive:true});
+ await db.query('INSERT INTO hs_data_field_permissions(tenant_id,collection,field_key,user_id,can_view,can_write,can_history) VALUES($1,$2,$3,$4,true,true,true)',[ctx.tenantId,'organisations',secret,owner.id]);
+ const formulaId=crypto.randomUUID(),schemaVersion=await version(),definition={id:formulaId,label:'Plus',returnKind:'number' as const,expression:{kind:'add' as const,left:{kind:'field' as const,field:amount},right:{kind:'literal' as const,value:1}}},selection={collection:'organisations',expectedVersion:0,expectedSchemaVersion:schemaVersion,definition},preview=await new SharedRecordFormulaRepository(pages,authority).previewFormula(ctx,selection);
+ await new SharedRecordFormulaRepository(pages,authority).applyFormula(ctx,{previewId:preview.previewId,reviewHash:preview.reviewHash,operationId:crypto.randomUUID(),selection});
+ const textFormula=crypto.randomUUID(),textSelection={collection:'organisations',expectedVersion:0,expectedSchemaVersion:await version(),definition:{id:textFormula,label:'Joined',returnKind:'text' as const,expression:{kind:'literal' as const,value:'hidden-formula'}}},textPreview=await new SharedRecordFormulaRepository(pages,authority).previewFormula(ctx,textSelection);
+ await new SharedRecordFormulaRepository(pages,authority).applyFormula(ctx,{previewId:textPreview.previewId,reviewHash:textPreview.reviewHash,operationId:crypto.randomUUID(),selection:textSelection});
+ let rejected:unknown;try{await data.saveView(ctx,request({definition:dash([sumWidget(textFormula,'Joined')])}));}catch(caught){rejected=caught;}
+ expect(rejected).toMatchObject({code:'record_view_validation',message:'A view field, filter or sort is unavailable.'});expect(JSON.stringify(rejected)).not.toContain(textFormula);expect(JSON.stringify(rejected)).not.toContain('hidden-formula');
+ const visible=await record('Visible metric',{[amount]:41,[secret]:99}),hidden=await record('Hidden metric',{[amount]:41,[secret]:99});
+ const p=await saved({scope:'workspace',definition:dash([sumWidget(formulaId,'Plus total'),sumWidget(secret,'Secret sum')])});
+ await db.query("UPDATE hs_data_collection_grants SET capabilities=ARRAY[]::text[] WHERE tenant_id=$1 AND user_id=$2",[ctx.tenantId,viewer.id]);
+ await db.query("INSERT INTO hs_data_record_grants(tenant_id,record_id,user_id,capabilities) VALUES($1,$2,$3,ARRAY['view'])",[ctx.tenantId,visible.id,viewer.id]);
+ const listed=await data.getView(vctx(),p.id);expect(listed.unavailable).toBe(true);expect(listed.definition).toBeNull();expect(JSON.stringify(listed)).not.toContain(secret);expect(JSON.stringify(listed)).not.toContain(formulaId);expect(JSON.stringify(listed)).not.toContain('99');
+ await expect(data.queryDashboard(vctx(),p.id)).rejects.toMatchObject({code:'record_view_restricted',message:'This view configuration is unavailable.'});
+ const readable=await saved({scope:'workspace',definition:dash([sumWidget(formulaId,'Plus total')])});
+ const viewerDash=await data.queryDashboard(vctx(),readable.id),ownerDash=await data.queryDashboard(ctx,readable.id);
+ expect(viewerDash.widgets).toEqual([expect.objectContaining({label:'Plus total',metric:'sum',fieldLabel:'Plus',value:42,readOnly:true,calculated:true,stale:false})]);
+ expect(ownerDash.widgets[0]).toMatchObject({value:84,readOnly:true,calculated:true});
+ expect(viewerDash.widgets[0]).not.toHaveProperty('field');
+ const encoded=JSON.stringify(viewerDash);expect(encoded).not.toContain(hidden.id);expect(encoded).not.toContain('Hidden metric');expect(encoded).not.toContain(secret);expect(encoded).not.toMatch(/"total"|"hiddenCount"/);
+ const stored=(await db.query<{field_values:Record<string,unknown>}>('SELECT field_values FROM hs_data_records WHERE id=$1',[visible.id])).rows[0].field_values;expect(stored[amount]).toBe(41);expect(stored).not.toHaveProperty(formulaId);
+ expect((await db.query<{field_key:string}>('SELECT field_key FROM hs_data_schema_dependencies WHERE tenant_id=$1 AND view_id=$2',[ctx.tenantId,readable.id])).rows.map(row=>row.field_key)).toContain(amount);
+});
+it('shows reference labels on dashboard groups without hidden counts',async()=>{
+ await db.query('INSERT INTO hs_data_reference_list_permissions(tenant_id,user_id,can_read,can_manage) VALUES($1,$2,true,true)',[ctx.tenantId,owner.id]);
+ const active=crypto.randomUUID(),retired=crypto.randomUUID(),lists=new SharedRecordReferenceListRepository(pages,authority),listId=crypto.randomUUID(),selection={expectedVersion:0,definition:{tenantId:ctx.tenantId,id:listId,version:1,name:'Departments',items:[{id:active,code:'FIN-SECRET',label:'Finance desk',order:0,deprecated:false,translations:{hi:'गुप्त'}},{id:retired,code:'OLD-SECRET',label:'Retired secret',order:1,deprecated:false,translations:{}}]}},preview=await lists.previewReferenceList(ctx,selection);
+ await lists.applyReferenceList(ctx,{previewId:preview.previewId,reviewHash:preview.reviewHash,operationId:crypto.randomUUID(),selection});
+ const current=await version(),bound=await schemas.previewSchema(ctx,{prepareId:crypto.randomUUID(),collection:'organisations',expectedSchemaVersion:current,definition:{label:'Department',kind:'single-select',referenceListId:listId}});
+ await schemas.applySchema(ctx,{previewId:bound.previewId,reviewHash:bound.reviewHash,operationId:crypto.randomUUID()});
+ const seen=await record('Visible partner',{[bound.fieldKey]:active}),secret=await record('Hidden partner',{[bound.fieldKey]:retired});
+ const next=await lists.previewReferenceList(ctx,{expectedVersion:1,definition:{...selection.definition,version:2,items:selection.definition.items.map(item=>item.id===retired?{...item,deprecated:true}:item)}});
+ await lists.applyReferenceList(ctx,{previewId:next.previewId,reviewHash:next.reviewHash,operationId:crypto.randomUUID(),selection:{expectedVersion:1,definition:{...selection.definition,version:2,items:selection.definition.items.map(item=>item.id===retired?{...item,deprecated:true}:item)}}});
+ const dashboard=await saved({scope:'workspace',definition:dash([countWidget(),groupWidget(bound.fieldKey,'Departments')])}),loaded=await data.queryDashboard(ctx,dashboard.id);
+ expect(loaded.widgets.find(widget=>widget.metric==='group')).toMatchObject({fieldLabel:'Department',readOnly:true,groups:[{key:`choice:${encodeURIComponent(active)}`,label:'Finance desk',value:1},{key:'unassigned',label:'Unassigned',value:1}]});
+ expect(JSON.stringify(loaded)).not.toContain('FIN-SECRET');expect(JSON.stringify(loaded)).not.toContain('OLD-SECRET');expect(JSON.stringify(loaded)).not.toContain('Retired secret');expect(JSON.stringify(loaded)).not.toContain('गुप्त');expect(JSON.stringify(loaded)).not.toContain(retired);
+ await db.query("UPDATE hs_data_collection_grants SET capabilities=ARRAY[]::text[] WHERE tenant_id=$1 AND user_id=$2",[ctx.tenantId,viewer.id]);
+ await db.query('INSERT INTO hs_data_reference_list_permissions(tenant_id,user_id,can_read,can_manage) VALUES($1,$2,true,false)',[ctx.tenantId,viewer.id]);
+ await db.query("INSERT INTO hs_data_record_grants(tenant_id,record_id,user_id,capabilities) VALUES($1,$2,$3,ARRAY['view'])",[ctx.tenantId,seen.id,viewer.id]);
+ const viewerDash=await data.queryDashboard(vctx(),dashboard.id);
+ expect(viewerDash.widgets.find(widget=>widget.metric==='count')).toMatchObject({value:1});
+ expect(viewerDash.widgets.find(widget=>widget.metric==='group')?.groups).toEqual([{key:`choice:${encodeURIComponent(active)}`,label:'Finance desk',value:1},{key:'unassigned',label:'Unassigned',value:0}]);
+ expect(JSON.stringify(viewerDash)).not.toContain(secret.id);expect(JSON.stringify(viewerDash)).not.toContain('Hidden partner');expect(JSON.stringify(viewerDash)).not.toContain(retired);expect(JSON.stringify(viewerDash)).not.toMatch(/"total"|"hiddenCount"/);
+});
 it('rechecks current view management rights and guards stable view identity in PostgreSQL',async()=>{
  const p=await saved({scope:'workspace'});await db.query("UPDATE hs_data_collection_grants SET capabilities=ARRAY['view'] WHERE tenant_id=$1 AND user_id=$2",[ctx.tenantId,owner.id]);await expect(data.deleteView(ctx,{id:p.id,operationId:crypto.randomUUID(),expectedVersion:1})).rejects.toMatchObject({status:403});expect((await data.getView(ctx,p.id)).canManage).toBe(false);await expect(db.query("UPDATE hs_data_views SET scope='private' WHERE id=$1",[p.id])).rejects.toThrow('immutable');
 });
