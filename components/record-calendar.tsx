@@ -165,6 +165,8 @@ export default function RecordCalendar({
   onReschedule,
   onLoadMore,
   onMonth,
+  selectedIds,
+  onToggleSelect,
 }: {
   calendar: CalendarModel;
   month: string;
@@ -173,6 +175,8 @@ export default function RecordCalendar({
   onReschedule: (event: CalendarEvent, date: string) => void;
   onLoadMore: () => void;
   onMonth: (month: string) => void;
+  selectedIds?: string[];
+  onToggleSelect?: (id: string) => void;
 }) {
   const grid = calendarMonthRange(month);
   if (!grid) return null;
@@ -224,6 +228,11 @@ export default function RecordCalendar({
                     }}
                   >
                     <h4>{card.name}{card.state === "archived" ? " · archived" : ""}</h4>
+                    {onToggleSelect && (
+                      <label className="record-check">
+                        <input type="checkbox" checked={selectedIds?.includes(card.id) ?? false} aria-label={`Select ${card.name} for comparison`} onChange={() => onToggleSelect(card.id)} />
+                      </label>
+                    )}
                     <dl>
                       {calendar.fields.filter((field) => field.key !== "name").map((field) => (
                         <div key={field.key}>

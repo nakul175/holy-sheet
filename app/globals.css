@@ -441,3 +441,15 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .record-graph [role=listbox]{display:grid;gap:8px}
 .record-graph [role=option]{text-align:left}
 .record-graph [role=option]:focus-visible,.record-graph a:focus-visible,.record-graph button:focus-visible{outline:2px solid #5141b3;outline-offset:2px}
+.record-compare{display:grid;gap:8px;margin:16px 0;padding:12px;border:1px solid var(--line);border-radius:10px}
+.record-compare button,.record-compare input{min-height:44px}
+.record-compare-toolbar{display:flex;flex-wrap:wrap;gap:8px}
+.record-compare-scroll{overflow-x:auto}
+.record-compare table{border-collapse:collapse;min-width:100%}
+.record-compare th,.record-compare td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+.record-compare-meta{display:block;color:var(--muted);font-size:12px;font-weight:500}
+.record-compare-changed{background:#fff6d8;box-shadow:inset 4px 0 #92400e}
+.record-compare-only-left{background:#e8f1ff;box-shadow:inset 4px 0 #1d4ed8}
+.record-compare-only-right{background:#f3e8ff;box-shadow:inset 4px 0 #6d28d9}
+.record-compare tr:focus-visible,.record-compare button:focus-visible,.record-compare input:focus-visible{outline:2px solid #5141b3;outline-offset:2px}
+.record-compare-pick{display:flex;gap:8px;align-items:center}
