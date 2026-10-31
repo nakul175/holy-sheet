@@ -21,6 +21,28 @@ export function includesParsed(text: string, parsed: ParsedQuery) {
   });
 }
 
+export function searchPreview(text: string, parsed: ParsedQuery) {
+  const source = text.replace(/[\p{Cc}]/gu, "");
+  const needles = [...parsed.phrases, ...parsed.terms].filter(Boolean);
+  const lower = source.toLocaleLowerCase();
+  let at = -1;
+  for (const needle of needles) {
+    const found = lower.indexOf(needle);
+    if (found >= 0 && (at < 0 || found < at)) at = found;
+  }
+  const start = Math.max(0, at < 0 ? 0 : at - 42);
+  return source.slice(start, start + 150).trim();
+}
+
+export function searchHitRank(hit: SearchResult) {
+  if (hit.kind === "block") return 3;
+  if (hit.kind === "attachment" || hit.match === "attachment") return 4;
+  if (hit.kind === "field" || hit.match === "field") return 2;
+  if (hit.match === "title-exact") return 0;
+  if (hit.match === "title") return 1;
+  return 2;
+}
+
 export function searchPages(pages: Page[], input: string, spaceId?: string | null): SearchResult[] {
   const parsed = parseQuery(input);
   if (input.trim().length < 2) return [];
@@ -45,7 +67,6 @@ export function searchPages(pages: Page[], input: string, spaceId?: string | nul
       match: exact ? "title-exact" : titleMatch ? "title" : "content",
     } satisfies SearchResult];
   }).sort((a, b) => {
-    const weights = { "title-exact": 0, title: 1, content: 2 };
-    return weights[a.match] - weights[b.match] || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id);
+    return searchHitRank(a) - searchHitRank(b) || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id);
   });
 }

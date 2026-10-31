@@ -3,15 +3,16 @@ import type {Actor} from './auth';
 import type {Repository} from './repository';
 import type {Sql} from './database';
 import {DocumentError} from './document';
-import {parseQuery,searchPages} from './search';
+import {parseQuery,searchHitRank,searchPages} from './search';
 import {publicationSearchCandidates} from './publication-search';
 import type {ProjectionBudget} from './publication-projection';
-import type {SearchResult} from './types';
+import type {SearchKind,SearchResult} from './types';
+import {unifiedSearchHits} from './unified-search';
 
 export {createSearchWork,type SearchWork} from './search-work';
 import {createSearchWork} from './search-work';
 
-export type WorkspaceSearchInput={query:string;workspaceId:string;spaceId?:string;cursor?:string};
+export type WorkspaceSearchInput={query:string;workspaceId:string;spaceId?:string;cursor?:string;kinds?:SearchKind[];collection?:string;ownerId?:string;updatedFrom?:string;updatedTo?:string};
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const missing=()=>new DocumentError('Search scope is unavailable.','not_found',404);
 const invalid=()=>new DocumentError('Search changed or expired. Retry from the first page.','search_cursor_invalid',409);
@@ -48,7 +49,7 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
   work.check();
   if(!member)throw missing();
   if(input.spaceId&&!(await tx.query('SELECT id FROM hs_spaces WHERE id=$1 AND workspace_id=$2',[input.spaceId,input.workspaceId])).rows.length)throw missing();
-  const parsed=parseQuery(input.query);let queryHash=hash(JSON.stringify([input.query.trim(),input.workspaceId,input.spaceId??null]));
+  const parsed=parseQuery(input.query);const kinds=input.kinds??['page'];const includePages=kinds.includes('page')&&!input.collection;const publicationOptions=!input.collection&&(input.ownerId||input.updatedFrom||input.updatedTo||kinds.includes('block')||kinds.includes('attachment'))?{ownerId:input.ownerId,updatedFrom:input.updatedFrom,updatedTo:input.updatedTo,blocks:kinds.includes('block'),attachments:kinds.includes('attachment')}:undefined;let queryHash=hash(JSON.stringify([input.query.trim(),input.workspaceId,input.spaceId??null,input.kinds??null,input.collection??null,input.ownerId??null,input.updatedFrom??null,input.updatedTo??null]));
   if(input.query.trim().length<2||!parsed.terms.length&&!parsed.phrases.length)return {results:[],nextCursor:null,workspace:{id:input.workspaceId,name:member.name}};
   const budget=()=>work.check();
   const values:unknown[]=[input.workspaceId,actor.id,input.spaceId??null];
@@ -59,6 +60,11 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
    return clauses.length?clauses.join(' AND '):'false';
   };
   const titleMatch=matches('p.title'),allMatch=matches("p.title||E'\\n'||COALESCE(x.body,'')"),exact=bind(input.query.trim().toLocaleLowerCase());
+  const narrowParts:string[]=[];
+  if(input.ownerId)narrowParts.push(`p.owner_id=${bind(input.ownerId)}`);
+  if(input.updatedFrom)narrowParts.push(`(p.updated_at AT TIME ZONE 'UTC')::date>=${bind(input.updatedFrom)}::date`);
+  if(input.updatedTo)narrowParts.push(`(p.updated_at AT TIME ZONE 'UTC')::date<=${bind(input.updatedTo)}::date`);
+  const narrow=narrowParts.length?` AND ${narrowParts.join(' AND ')}`:'';
   // The index only narrows candidates; exact matching and current ACLs remain authoritative.
   const lexemes=[...parsed.phrases.flatMap(p=>p.match(/[\p{L}\p{N}]+/gu)??[]),...parsed.terms];
   const indexMatch=[...new Set(lexemes.map(word=>Array.from(word).slice(0,128).join('')))].map(word=>
@@ -73,12 +79,17 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
   // ASCII text has the same word/case semantics in JS and SQL. Unicode text
   // must be matched in JS before rank/pagination: POSIX classes and lowercase
   // are not Unicode-equivalent (numbers, dotted-I, final sigma, new case pairs).
-  const ordinary=(await tx.query<{id:string;rank:number;updated_at:string}>(`${permitted} SELECT p.id,CASE WHEN lower(p.title)=${exact} THEN 0 WHEN ${titleMatch} THEN 1 ELSE 2 END AS rank,p.updated_at FROM hs_pages p JOIN permitted a ON a.id=p.id JOIN hs_workspace_search x ON x.page_id=p.id WHERE NOT EXISTS(SELECT 1 FROM hs_document_workflows w WHERE w.page_id=p.id) AND x.ascii_only AND ($3::text IS NULL OR p.space_id=$3) AND (${indexMatch}) AND (${allMatch}) ORDER BY rank,p.updated_at DESC,p.id COLLATE "C" LIMIT 20001`,values)).rows;
+  const ordinary=includePages?(await tx.query<{id:string;rank:number;updated_at:string}>(`${permitted} SELECT p.id,CASE WHEN lower(p.title)=${exact} THEN 0 WHEN ${titleMatch} THEN 1 ELSE 2 END AS rank,p.updated_at FROM hs_pages p JOIN permitted a ON a.id=p.id JOIN hs_workspace_search x ON x.page_id=p.id WHERE NOT EXISTS(SELECT 1 FROM hs_document_workflows w WHERE w.page_id=p.id) AND x.ascii_only AND ($3::text IS NULL OR p.space_id=$3)${narrow} AND (${indexMatch}) AND (${allMatch}) ORDER BY rank,p.updated_at DESC,p.id COLLATE "C" LIMIT 20001`,values)).rows:[];
   budget();
   const unicode:SearchResult[]=[];let after='';
-  for(;;){
+  while(includePages){
    budget();
-   const batch=(await tx.query<{id:string}>(`${permitted} SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.id JOIN hs_workspace_search x ON x.page_id=p.id WHERE NOT EXISTS(SELECT 1 FROM hs_document_workflows w WHERE w.page_id=p.id) AND NOT x.ascii_only AND ($3::text IS NULL OR p.space_id=$3) AND p.id COLLATE "C">$4 COLLATE "C" ORDER BY p.id COLLATE "C" LIMIT 128`,[input.workspaceId,actor.id,input.spaceId??null,after])).rows;
+   const unicodeValues:unknown[]=[input.workspaceId,actor.id,input.spaceId??null,after];const unicodeNarrow:string[]=[];
+   if(input.ownerId){unicodeValues.push(input.ownerId);unicodeNarrow.push(`p.owner_id=$${unicodeValues.length}`);}
+   if(input.updatedFrom){unicodeValues.push(input.updatedFrom);unicodeNarrow.push(`(p.updated_at AT TIME ZONE 'UTC')::date>=$${unicodeValues.length}::date`);}
+   if(input.updatedTo){unicodeValues.push(input.updatedTo);unicodeNarrow.push(`(p.updated_at AT TIME ZONE 'UTC')::date<=$${unicodeValues.length}::date`);}
+   const unicodeSql=unicodeNarrow.length?` AND ${unicodeNarrow.join(' AND ')}`:'';
+   const batch=(await tx.query<{id:string}>(`${permitted} SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.id JOIN hs_workspace_search x ON x.page_id=p.id WHERE NOT EXISTS(SELECT 1 FROM hs_document_workflows w WHERE w.page_id=p.id) AND NOT x.ascii_only AND ($3::text IS NULL OR p.space_id=$3)${unicodeSql} AND p.id COLLATE "C">$4 COLLATE "C" ORDER BY p.id COLLATE "C" LIMIT 128`,unicodeValues)).rows;
    for(const row of batch){
     budget();const page=await r.get(row.id,actor,tx,projectionWork);budget();
     if(page.workspaceId!==input.workspaceId)continue;
@@ -88,9 +99,12 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
    if(batch.length<128)break;after=batch.at(-1)!.id;
   }
   budget();
-  const projected=await publicationSearchCandidates(r,tx,actor,input,permitted,projectionWork);
-  const weights={'title-exact':0,title:1,content:2};
-  const ranked=[...ordinary.map(row=>({id:row.id,rank:row.rank,updatedAt:new Date(row.updated_at).toISOString()})),...[...unicode,...projected.results].map(row=>({id:row.id,rank:weights[row.match],updatedAt:row.updatedAt}))].sort((a,b)=>a.rank-b.rank||b.updatedAt.localeCompare(a.updatedAt)||(a.id<b.id?-1:a.id>b.id?1:0)).map(row=>row.id);
+  const projected=includePages||publicationOptions?await publicationSearchCandidates(r,tx,actor,input,permitted,projectionWork,publicationOptions):{results:[],extras:[] as SearchResult[],revisionHash:hash('[]')};
+  if(!includePages)projected.results=[];
+  const unified=kinds.some(kind=>kind!=='page')?await unifiedSearchHits(tx,actor,{...input,kinds},permitted,budget):[];
+  const extras=[...unified,...(projected.extras??[])];
+  const weights={'title-exact':0,title:1,content:2,field:2,attachment:4} as const;
+  const ranked=[...ordinary.map(row=>({id:row.id,rank:row.rank,updatedAt:new Date(row.updated_at).toISOString()})),...[...unicode,...projected.results].map(row=>({id:row.id,rank:weights[row.match],updatedAt:row.updatedAt})),...extras.map(hit=>({id:hit.id,rank:searchHitRank(hit),updatedAt:hit.updatedAt}))].sort((a,b)=>a.rank-b.rank||b.updatedAt.localeCompare(a.updatedAt)||(a.id<b.id?-1:a.id>b.id?1:0)).filter((row,index,all)=>all.findIndex(item=>item.id===row.id)===index).map(row=>row.id);
   budget();
   queryHash=hash(JSON.stringify([queryHash,projected.revisionHash]));
   if(ranked.length>20000)throw new DocumentError('Too many pages match. Refine your query or choose a space.','search_too_broad',422);
@@ -105,16 +119,17 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
    if(active>=32)throw new DocumentError('Too many active searches. Retry when an earlier search expires.','search_snapshot_limit',429);
    await tx.query('INSERT INTO hs_search_snapshots(id,user_id,workspace_id,query_hash,space_id,page_ids) VALUES($1,$2,$3,$4,$5,$6)',[snapshotId,actor.id,input.workspaceId,queryHash,input.spaceId??null,JSON.stringify(ids)]);
   }
-  const current=new Set(ranked),selected:string[]=[];
+  const current=new Set(ranked),selected:string[]=[],extraById=new Map(extras.map(hit=>[hit.id,hit]));
   while(position<ids.length&&selected.length<20){const id=ids[position++];if(current.has(id))selected.push(id);}
   const results:SearchResult[]=[];
   for(const id of selected){
+   const extra=extraById.get(id);if(extra){results.push(extra);continue;}
    budget();
    // Recheck native authority, and construct paths only from authorised ancestors.
    const page=await r.get(id,actor,tx,projectionWork);budget();if(page.workspaceId!==input.workspaceId)continue;
    const ancestry:string[]=[];let parent=page.parentPageId;const seen=new Set([id]);
    while(parent&&!seen.has(parent)){budget();seen.add(parent);try{const ancestor=await r.get(parent,actor,tx,projectionWork);budget();if(ancestor.workspaceId!==input.workspaceId)break;ancestry.unshift(ancestor.title);parent=ancestor.parentPageId;}catch(error){if(error instanceof DocumentError&&error.status===404)break;throw error;}}
-   const result=searchPages([page],input.query,input.spaceId)[0];budget();if(result){result.path=[page.spaceName,...ancestry];results.push(result);}
+   const result=searchPages([page],input.query,input.spaceId)[0];budget();if(result){result.kind='page';result.href=`/pages/${encodeURIComponent(result.id)}`;result.path=[page.spaceName,...ancestry];results.push(result);}
   }
   let nextCursor:string|null=null;
   if(ids.slice(position).some(id=>current.has(id))){nextCursor=randomBytes(32).toString('base64url');await tx.query('INSERT INTO hs_search_cursors(token_hash,snapshot_id,next_position) VALUES($1,$2,$3)',[hash(nextCursor),snapshotId,position]);}

@@ -1,2 +1,2 @@
 import RecordBrowser from '../../../../../../components/record-browser';
-export default async function Page({params}:{params:Promise<{id:string;tenantId:string}>}){const {id,tenantId}=await params;return <RecordBrowser workspaceId={id} tenantId={tenantId}/>;}
+export default async function Page({params,searchParams}:{params:Promise<{id:string;tenantId:string}>;searchParams:Promise<{collection?:string;record?:string}>}){const {id,tenantId}=await params;const query=await searchParams;return <RecordBrowser workspaceId={id} tenantId={tenantId} initialCollection={typeof query.collection==='string'?query.collection:undefined} initialRecordId={typeof query.record==='string'?query.record:undefined}/>;}
