@@ -329,7 +329,24 @@ it("renders permitted sensitive fields, omits hidden values, and submits only th
     { key: "core:email", label: "Email", kind: "email", sensitive: true, choices: [], canWrite: true, canHistory: true },
   ];
   fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-    if (url.includes("/history")) return response({ events: [{ id: "event-1", version: 2, kind: "update", before: null, after: { name: "Alex", values: { "core:job-title": "Analyst", "core:email": "allowed@example.org" } } }] });
+    if (url.includes("/history")) return response({
+      anchorVersion: 3,
+      nextCursor: null,
+      events: [{
+        id: "00000000-0000-4000-8000-0000000000e1",
+        version: 2,
+        actorId: "actor-1",
+        sourceApp: "holy-sheet",
+        serviceSubject: null,
+        operationId: "00000000-0000-4000-8000-0000000000e2",
+        kind: "update",
+        batchId: null,
+        sourceRow: null,
+        at: "2026-10-31T00:00:00.000Z",
+        before: null,
+        after: { name: "Alex", values: { "core:job-title": "Analyst", "core:email": "allowed@example.org" } },
+      }],
+    });
     if (url.includes("/record-permissions")) return response({ schemaVersion: 2, fields, collectionCapabilities: ["view", "edit", "create", "history"], canManage: false });
     if (init?.method === "PATCH") return response({ record: { ...record, version: 4 } });
     if (url.includes("/records/")) return response(record);
@@ -340,6 +357,9 @@ it("renders permitted sensitive fields, omits hidden values, and submits only th
   try {
     await select(view.host.querySelector("select")!, "contacts");
     await act(async () => view.host.querySelector<HTMLButtonElement>("li button")!.click());
+    expect(view.host.textContent).toContain("Record history");
+    expect(view.host.textContent).toContain("2026-10-31T00:00:00.000Z UTC");
+    expect(view.host.textContent).not.toContain("Restore selected values");
     expect(view.host.textContent).toContain("allowed@example.org");
     expect(view.host.textContent).not.toContain("hidden-secret@example.org");
     const email = view.host.querySelector<HTMLInputElement>('input[type="email"]')!;

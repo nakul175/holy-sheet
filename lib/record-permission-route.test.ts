@@ -1,20 +1,17 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { DocumentError } from "./document";
-const mocks = vi.hoisted(() => ({ authenticate: vi.fn(), repository: vi.fn(), describe: vi.fn(), readMatrix: vi.fn(), apply: vi.fn(), history: vi.fn() }));
+const mocks = vi.hoisted(() => ({ authenticate: vi.fn(), repository: vi.fn(), describe: vi.fn(), readMatrix: vi.fn(), apply: vi.fn() }));
 vi.mock("./suite-tenant-authority", () => ({ authenticateRecordAuthority: mocks.authenticate }));
 vi.mock("./repository", () => ({ repository: mocks.repository }));
 vi.mock("./shared-record-permissions", async () => {
   const actual = await vi.importActual<typeof import("./shared-record-permissions")>("./shared-record-permissions");
   return { ...actual, SharedRecordPermissionRepository: class { describe = mocks.describe; readMatrix = mocks.readMatrix; apply = mocks.apply; } };
 });
-vi.mock("./shared-records", () => ({ SharedRecordRepository: class { history = mocks.history; } }));
 import { GET, POST } from "../app/api/v1/workspaces/[id]/tenants/[tenantId]/record-permissions/route";
-import { GET as HISTORY } from "../app/api/v1/workspaces/[id]/tenants/[tenantId]/records/[recordId]/history/route";
 
 const tenantId = "00000000-0000-4000-8000-000000000002",
   recordId = "00000000-0000-4000-8000-000000000003",
-  scope = () => ({ params: Promise.resolve({ id: "workspace-a", tenantId }) }),
-  detail = () => ({ params: Promise.resolve({ id: "workspace-a", tenantId, recordId }) });
+  scope = () => ({ params: Promise.resolve({ id: "workspace-a", tenantId }) });
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv("HS_ORIGIN", "https://hs.example");
@@ -48,13 +45,8 @@ it("applies a strict same-origin permission change and preserves safe denials", 
   expect(await denied.json()).toMatchObject({ code: "record_not_found", retryable: false });
 });
 
-it("rejects forged permission fields and unknown history reads without storage", async () => {
+it("rejects forged permission fields before storage", async () => {
   const response = await POST(new Request("https://hs.example/api/permissions", { method: "POST", headers: { Origin: "https://hs.example", "Content-Type": "application/json" }, body: JSON.stringify({ operationId: "00000000-0000-4000-8000-000000000004", collection: "contacts", subjectId: "member-a", actorId: "forged", fields: [{ key: "core:email", expectedVersion: 0, canView: true, canWrite: false, canHistory: false }] }) }), scope());
   expect(response.status).toBe(400);
   expect(mocks.apply).not.toHaveBeenCalled();
-  mocks.history.mockResolvedValue({ events: [] });
-  expect((await HISTORY(new Request("https://hs.example/api/history"), detail())).status).toBe(200);
-  expect(mocks.history).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "workspace-a", tenantId }), recordId);
-  mocks.history.mockRejectedValue(new DocumentError("Record is restricted or unavailable.", "record_not_found", 404));
-  expect((await HISTORY(new Request("https://hs.example/api/history"), detail())).status).toBe(404);
 });

@@ -1,6 +1,7 @@
 "use client";
 import { FormEvent, useEffect, useState } from "react";
 import RecordExport from "./record-export";
+import RecordHistory from "./record-history";
 import RecordImport from "./record-import";
 
 type Summary = {
@@ -34,13 +35,6 @@ type FieldMeta = {
   choices: string[];
   canWrite: boolean;
   canHistory: boolean;
-};
-type HistoryEvent = {
-  id: string;
-  version: number;
-  kind: string;
-  before: { name: string; values: Record<string, unknown> } | null;
-  after: { name: string; values: Record<string, unknown> };
 };
 type PermissionMember = {
   id: string;
@@ -422,7 +416,6 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [canExport, setCanExport] = useState(false),
     [drafts, setDrafts] = useState<Record<string, unknown>>({}),
     [edits, setEdits] = useState<Record<string, unknown>>({}),
-    [historyEvents, setHistoryEvents] = useState<HistoryEvent[]>([]),
     [matrix, setMatrix] = useState<PermissionMatrix | null>(null),
     [schemaCatalogue, setSchemaCatalogue] = useState<SchemaCatalogue | null>(null),
     [schemaDraft, setSchemaDraft] = useState<SchemaDraft>(emptySchemaDraft),
@@ -530,7 +523,6 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setMergeReviewStale(false);
     setDrafts({});
     setEdits({});
-    setHistoryEvents([]);
     setMatrix(null);
     setSchemaCatalogue(null);
     setSchemaDraft(emptySchemaDraft());
@@ -563,8 +555,6 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setMergePreview(null);
       setMergeReviewStale(false);
       setMatrix(null);
-      if (record.capabilities?.includes("history")) setHistoryEvents((await json(`${base}/${encodeURIComponent(id)}/history`)).events ?? []);
-      else setHistoryEvents([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to open this record.");
     } finally {
@@ -635,7 +625,6 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setSelected(data.record);
       setEditName(data.record.name);
       setEdits({});
-      if (data.record.capabilities?.includes("history")) setHistoryEvents((await json(`${base}/${encodeURIComponent(data.record.id)}/history`)).events ?? []);
       setNotice("Record changes saved.");
       await load(true);
     } catch (e) {
@@ -848,8 +837,6 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setMergePreview(null);
     setMergeReviewStale(false);
     setMatrix(null);
-    if (record.capabilities?.includes("history")) setHistoryEvents((await json(`${base}/${encodeURIComponent(id)}/history`)).events ?? []);
-    else setHistoryEvents([]);
     return record;
   }
   async function setArchived(archived: boolean) {
@@ -910,7 +897,6 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setEditName("");
       setEdits({});
       setPreview(null);
-      setHistoryEvents([]);
       setMatrix(null);
       setNotice(`Moved to Trash until ${removed.recoveryDeadline}. The record ID is unchanged. No permanent removal was performed.`);
       await load(true);
@@ -1698,17 +1684,19 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                 </form>
               )}
               {selected.capabilities.includes("history") && (
-                <section aria-label="Visible changes">
-                  <h3>Visible changes</h3>
-                  {historyEvents.length ? historyEvents.map((event) => (
-                    <article key={event.id}>
-                      <p>{event.kind} · version {event.version}</p>
-                      <dl>
-                        {Object.entries(event.after.values).map(([key, value]) => <div key={key}><dt>{fields.find((field) => field.key === key)?.label ?? "Field"}</dt><dd>{displayValue(value)}</dd></div>)}
-                      </dl>
-                    </article>
-                  )) : <p>No visible changes.</p>}
-                </section>
+                <RecordHistory
+                  key={`${selected.id}:${selected.version}`}
+                  workspaceId={workspaceId}
+                  tenantId={tenantId}
+                  recordId={selected.id}
+                  recordVersion={selected.version}
+                  canRestore={selected.capabilities.includes("edit") && selected.capabilities.includes("restore-values")}
+                  fields={fields}
+                  onRestored={async (result) => {
+                    await refreshOpen(selected.id);
+                    setNotice(result.replayed ? "This restore was already saved. The record was opened again under your current access." : "Selected values restored as a new version. Unselected fields, identity, relationships, documents, lifecycle and grants were kept.");
+                  }}
+                />
               )}
               {canManage && (
                 <section aria-label="Record permissions">
