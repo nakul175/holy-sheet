@@ -86,7 +86,8 @@ it("lists bounded records, opens detail and exposes only accessible linked docum
     await act(async () => view.host.querySelector<HTMLButtonElement>("li button")!.click());
     expect(view.host.textContent).toContain("Immutable ID");
     expect(view.host.textContent).toContain("Accessible brief");
-    expect(view.host.querySelector("a")?.getAttribute("href")).toBe("/pages/page-a");
+    expect(view.host.querySelector('a[href="/pages/page-a"]')).toBeTruthy();
+    expect(view.host.querySelector('a[href$="/collections/organisations/intake"]')).toBeTruthy();
     expect(view.host.querySelector('section[aria-label="Collection fields"]')).toBeNull();
     expect(view.host.querySelector('section[aria-label="Import records"]')).toBeNull();
   } finally {

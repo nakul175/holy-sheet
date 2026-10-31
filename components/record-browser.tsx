@@ -1743,6 +1743,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               ))}
             </select>
           </label>
+          <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/intake`}>Internal intake</a>. Signed-in workspace members fill a collection form to create or update a record. The form uses the same permissions as the record and does not grant access.</p>
           <form
             onSubmit={(event) => {
               event.preventDefault();
