@@ -2,10 +2,17 @@ import {z} from 'zod';
 import {DocumentError} from './document';
 import {typedRecordValue,type RecordField} from './shared-record-types';
 const field=z.string().min(1).max(100);
+const widgetLabel=z.string().trim().min(1).max(80).refine(value=>!/[\p{Cc}]/u.test(value));
+const dashboardWidget=z.discriminatedUnion('metric',[
+ z.object({id:z.string().uuid(),label:widgetLabel,metric:z.literal('count')}).strict(),
+ z.object({id:z.string().uuid(),label:widgetLabel,metric:z.literal('sum'),field}).strict(),
+ z.object({id:z.string().uuid(),label:widgetLabel,metric:z.literal('group'),field}).strict(),
+]);
 const presentation=z.discriminatedUnion('kind',[
  z.object({kind:z.literal('table')}).strict(),
  z.object({kind:z.literal('board'),groupBy:field}).strict(),
  z.object({kind:z.literal('calendar'),dateField:field}).strict(),
+ z.object({kind:z.literal('dashboard'),widgets:z.array(dashboardWidget).min(1).max(6)}).strict(),
 ]);
 export const recordViewDefinition=z.object({
  columns:z.array(field).min(1).max(100),
@@ -15,6 +22,8 @@ export const recordViewDefinition=z.object({
  presentation:presentation.optional(),
 }).strict();
 export type RecordViewDefinition=z.output<typeof recordViewDefinition>;
+export type DashboardWidget=Extract<RecordViewDefinition['presentation'],{kind:'dashboard'}>['widgets'][number];
+export type DashboardMetricSource={key:string;kind:string};
 export type BoardColumnRef={kind:'unassigned'}|{kind:'choice';value:string};
 type SortExpression={sql:string;cast:'text'|'numeric'|'boolean'|'uuid';direction:'asc'|'desc'};
 const invalid=()=>new DocumentError('A view field, filter or sort is unavailable.','record_view_validation',400);
@@ -81,6 +90,60 @@ export function assertRecordBoard(def:RecordViewDefinition,fields:RecordField[])
  if(!presentation||presentation.kind!=='board')return;
  const group=fields.find(item=>item.key===presentation.groupBy);
  if(!group||group.deprecated||group.kind!=='single-select')throw invalid();
+}
+/** Dashboard metrics use only current permitted fields. Counts have no field.
+ * Sums are numbers or number formulas. Groups are single selects. Deprecated,
+ * restricted, currency and multi-value fields are a generic unavailable configuration. */
+export function assertRecordDashboard(def:RecordViewDefinition,fields:RecordField[],calculated:DashboardMetricSource[]=[]){
+ const presentation=def.presentation;
+ if(!presentation||presentation.kind!=='dashboard')return;
+ const ids=new Set<string>();
+ for(const widget of presentation.widgets){
+  if(ids.has(widget.id))throw invalid();
+  ids.add(widget.id);
+  if(widget.metric==='count')continue;
+  if(widget.metric==='sum'){
+   const stored=fields.find(item=>item.key===widget.field);
+   if(stored){if(stored.deprecated||stored.kind!=='number')throw invalid();continue;}
+   const derived=calculated.find(item=>item.key===widget.field);
+   if(!derived||derived.kind!=='number')throw invalid();
+   continue;
+  }
+  const group=fields.find(item=>item.key===widget.field);
+  if(!group||group.deprecated||group.kind!=='single-select')throw invalid();
+ }
+}
+/** True when a stored dashboard mentions a metric the caller cannot currently use.
+ * The caller receives no field identity from this check. */
+export function dashboardConfigurationBlocked(def:RecordViewDefinition,visibleKeys:Set<string>,fields:RecordField[],calculated:DashboardMetricSource[]){
+ const presentation=def.presentation;
+ if(!presentation||presentation.kind!=='dashboard')return false;
+ const ids=new Set<string>();
+ if(presentation.widgets.length>6)return true;
+ for(const widget of presentation.widgets){
+  if(!widget||typeof widget.id!=='string'||typeof widget.label!=='string'||typeof widget.metric!=='string'||ids.has(widget.id))return true;
+  ids.add(widget.id);
+  if(widget.metric==='count')continue;
+  if(widget.metric==='group'){
+   const group=fields.find(item=>item.key===widget.field);
+   if(!visibleKeys.has(widget.field)||!group||group.deprecated||group.kind!=='single-select')return true;
+   continue;
+  }
+  if(widget.metric!=='sum'||typeof widget.field!=='string')return true;
+  const stored=fields.find(item=>item.key===widget.field);
+  if(stored){if(!visibleKeys.has(widget.field)||stored.deprecated||stored.kind!=='number')return true;continue;}
+  const derived=calculated.find(item=>item.key===widget.field);
+  if(!derived||derived.kind!=='number')return true;
+ }
+ return false;
+}
+/** Field keys are parameters. Caller-supplied text is never SQL. */
+export function dashboardSumExpression(fieldKey:string,values:unknown[]){
+ values.push(fieldKey);const param='$'+values.length,text=`(r.field_values->>${param})`;
+ return `COALESCE(SUM(CASE WHEN ${text} ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN ${text}::numeric END),0)::text`;
+}
+export function dashboardGroupExpression(fieldKey:string,values:unknown[]){
+ values.push(fieldKey);return `(r.field_values->>$${values.length})`;
 }
 /** A calendar is keyed by one current date field. Text, numbers, selects and deprecated fields cannot. */
 export function assertRecordCalendar(def:RecordViewDefinition,fields:RecordField[]){
