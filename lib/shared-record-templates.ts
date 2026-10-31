@@ -1,4 +1,5 @@
-import {randomUUID,randomBytes,createHash} from 'node:crypto';import {z} from 'zod';import type {Sql} from './database';import {Repository} from './repository';import {DocumentError} from './document';import {SharedRecordRepository,type RecordContext,type CreateRecordInput} from './shared-records';import {recordName,recordHash,typedRecordValue} from './shared-record-types';
+import {randomUUID,randomBytes,createHash} from 'node:crypto';import {z} from 'zod';import type {Sql} from './database';import {Repository} from './repository';import {DocumentError} from './document';import {SharedRecordRepository,type RecordContext,type CreateRecordInput} from './shared-records';import {referenceChoices} from './record-reference-fields';
+import {recordName,recordHash,typedRecordValue} from './shared-record-types';
 const id=z.string().uuid(),defaults=z.object({name:z.string().optional(),values:z.record(z.string(),z.unknown()).default({}),parentOrganisationId:id.optional(),legalOrganisationIds:z.array(id).min(1).max(100).optional(),accountIds:z.array(id).max(100).optional()}).strict(),save=z.object({id,operationId:id,collection:z.string().min(1).max(100),name:z.string().min(1).max(200),expectedVersion:z.number().int().nonnegative(),deprecated:z.boolean().default(false),defaults}).strict(),instantiate=z.object({templateId:id,templateVersion:z.number().int().positive(),expectedSchemaVersion:z.number().int().positive(),overrides:defaults}).strict();
 type Definition=z.infer<typeof defaults>;type Template={id:string;tenant_id:string;collection:string;name:string;name_search:string;version:number;deprecated:boolean;defaults:Definition};const fail=(code='record_template_conflict',status=409)=>new DocumentError('The template is unavailable or changed. Review the current catalogue.',code,status),sha=(s:string)=>createHash('sha256').update(s).digest('hex');
 export class SharedRecordTemplateRepository extends SharedRecordRepository {
@@ -16,7 +17,8 @@ export class SharedRecordTemplateRepository extends SharedRecordRepository {
    for(const field of await this.fields(tx,ctx,collection)){
     if(field.deprecated||!await this.fieldAllowed(tx,ctx,collection,field,'view'))continue;
     const canWrite=await this.fieldAllowed(tx,ctx,collection,field,'write');
-    fields.push({key:field.key,label:field.label,kind:field.kind,required:field.required,canWrite,choices:field.choices.map(value=>({id:value,label:value}))});
+    const catalogue=referenceChoices(field);
+    fields.push({key:field.key,label:field.label,kind:field.kind,required:field.required,canWrite,choices:catalogue??field.choices.map(value=>({id:value,label:value}))});
    }
    return {schemaVersion:t.schema_version,canCreate:capabilities.includes('create'),canManage:capabilities.includes('manage-templates'),fields};
   });

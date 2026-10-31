@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import type {Sql} from './database';
 import {DocumentError} from './document';
+import {referenceChoices} from './record-reference-fields';
 import {recordHash,recordCapabilities,recordGrantCapabilities,type RecordCapability,type RecordGrantCapability} from './shared-record-types';
 import {SharedRecordRepository,type RecordContext,type SuiteTenantProof} from './shared-records';
 
@@ -68,7 +69,8 @@ export class SharedRecordPermissionRepository extends SharedRecordRepository {
    const fields=[];
    for(const field of await this.fields(tx,ctx,collectionKey)){
     if(field.deprecated||!await this.fieldAllowed(tx,ctx,collectionKey,field,'view'))continue;
-    fields.push({key:field.key,label:field.label,kind:field.kind,sensitive:field.sensitive,choices:field.choices,canWrite:await this.fieldAllowed(tx,ctx,collectionKey,field,'write'),canHistory:await this.fieldAllowed(tx,ctx,collectionKey,field,'history')});
+    const referenceItems=referenceChoices(field);
+    fields.push({key:field.key,label:field.label,kind:field.kind,sensitive:field.sensitive,choices:field.choices,...(referenceItems?{referenceItems}:{}),canWrite:await this.fieldAllowed(tx,ctx,collectionKey,field,'write'),canHistory:await this.fieldAllowed(tx,ctx,collectionKey,field,'history')});
    }
    return {schemaVersion:t.schema_version,collectionCapabilities:access.caps,capabilities:effective,canManage:proof.tenantAdministrator&&access.caps.includes('manage-permissions'),fields};
   });

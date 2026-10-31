@@ -28,12 +28,14 @@ type Detail = Summary & {
   documents: { id: string; pageId: string; title: string }[];
   related: Link[];
 };
+type ReferenceChoice = { id: string; label: string; deprecated: boolean };
 type FieldMeta = {
   key: string;
   label: string;
   kind: string;
   sensitive: boolean;
   choices: string[];
+  referenceItems?: ReferenceChoice[];
   canWrite: boolean;
   canHistory: boolean;
   required?: boolean;
@@ -151,6 +153,72 @@ function displayValue(value: unknown) {
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
+function referenceItemsOf(value: unknown): ReferenceChoice[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return undefined;
+  const items: ReferenceChoice[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") return undefined;
+    const row = item as Record<string, unknown>;
+    if (typeof row.id !== "string" || typeof row.label !== "string" || typeof row.deprecated !== "boolean") return undefined;
+    if (Object.keys(row).some((key) => key !== "id" && key !== "label" && key !== "deprecated")) return undefined;
+    items.push({ id: row.id, label: row.label, deprecated: row.deprecated });
+  }
+  return items;
+}
+function withReferenceItems(field: FieldMeta): FieldMeta {
+  if (!Object.hasOwn(field, "referenceItems")) return field;
+  const referenceItems = referenceItemsOf(field.referenceItems);
+  if (!referenceItems) {
+    const rest = { ...field };
+    delete rest.referenceItems;
+    return rest;
+  }
+  return { ...field, referenceItems };
+}
+function heldIds(value: unknown) {
+  if (typeof value === "string" && value) return new Set([value]);
+  if (Array.isArray(value)) return new Set(value.filter((item): item is string => typeof item === "string"));
+  return new Set<string>();
+}
+function selectOptions(field: FieldMeta, value: unknown) {
+  if (!field.referenceItems) return field.choices.map((choice) => ({ id: choice, label: choice, deprecated: false }));
+  const held = heldIds(value);
+  return field.referenceItems.filter((item) => !item.deprecated || held.has(item.id));
+}
+function optionText(option: { label: string; deprecated: boolean }) {
+  return option.deprecated ? `${option.label} (deprecated)` : option.label;
+}
+function displayFieldValue(field: FieldMeta | undefined, value: unknown) {
+  if (!field?.referenceItems) return displayValue(value);
+  const label = (id: string) => {
+    const item = field.referenceItems?.find((choice) => choice.id === id);
+    return item ? optionText(item) : "Unavailable choice";
+  };
+  if (Array.isArray(value)) {
+    const labels = value.filter((item): item is string => typeof item === "string").map(label);
+    return labels.length ? labels.join(", ") : "—";
+  }
+  if (typeof value === "string" && value) return label(value);
+  return displayValue(value);
+}
+function ChoiceControl({ field, value, disabled, id, onChange }: { field: FieldMeta; value: unknown; disabled: boolean; id?: string; onChange: (value: unknown) => void }) {
+  if (field.kind !== "single-select" && !(field.kind === "multi-select" && field.referenceItems)) return null;
+  const options = selectOptions(field, value);
+  if (field.kind === "multi-select") {
+    const selected = heldIds(value);
+    return <div id={id} role="group">{options.map((option) => <label key={option.id}><input type="checkbox" checked={selected.has(option.id)} disabled={disabled} onChange={(event) => {
+      if (disabled) return;
+      const next = new Set(selected);
+      if (event.target.checked) {
+        if (option.deprecated) return;
+        next.add(option.id);
+      } else next.delete(option.id);
+      onChange([...next]);
+    }} /> {optionText(option)}</label>)}</div>;
+  }
+  return <select id={id} value={typeof value === "string" ? value : ""} disabled={disabled} onChange={(event) => { if (!disabled) onChange(event.target.value); }}><option value="">Choose</option>{options.map((option) => <option key={option.id} value={option.id}>{optionText(option)}</option>)}</select>;
+}
 type SavedView = {
   id: string;
   collection: string;
@@ -255,9 +323,12 @@ function viewDefinition(draft: ViewDraft, catalogue: ViewColumn[]) {
   return { columns: draft.columns, filters, sort, includeArchived: draft.includeArchived };
 }
 function FieldEditor({ field, value, disabled, onChange }: { field: FieldMeta; value: unknown; disabled: boolean; onChange: (value: unknown) => void }) {
-  if (!field.canWrite || disabled) return <p><span>{field.label}</span> {displayValue(value)}{field.sensitive ? " · sensitive" : ""}</p>;
+  if (!field.canWrite || disabled) return <p><span>{field.label}</span> {displayFieldValue(field, value)}{field.sensitive ? " · sensitive" : ""}</p>;
   if (field.kind === "boolean") return <label className="record-check"><input type="checkbox" checked={value === true} onChange={(event) => onChange(event.target.checked)} /> {field.label}</label>;
-  if (field.kind === "single-select") return <label>{field.label}<select value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value)}><option value="">Choose</option>{field.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select></label>;
+  if (field.kind === "single-select" || (field.kind === "multi-select" && field.referenceItems)) {
+    const choices = <ChoiceControl field={field} value={value} disabled={false} onChange={onChange} />;
+    return field.kind === "multi-select" ? <fieldset><legend>{field.label}</legend>{choices}</fieldset> : <label>{field.label}{choices}</label>;
+  }
   if (field.kind === "long-text") return <label>{field.label}<textarea value={value === undefined || value === null ? "" : String(value)} onChange={(event) => onChange(event.target.value)} /></label>;
   if (field.kind === "currency") {
     const current = value && typeof value === "object" ? value as { currency?: string; minorUnits?: string; scale?: number } : {};
@@ -271,7 +342,7 @@ function LayoutFieldControl({ field, value, disabled, readOnly, id, onChange }: 
   const locked = disabled || readOnly || !field.canWrite;
   const change = (next: unknown) => { if (!locked) onChange(next); };
   if (field.kind === "boolean") return <input id={id} type="checkbox" checked={value === true} disabled={locked} onChange={(event) => change(event.target.checked)} />;
-  if (field.kind === "single-select") return <select id={id} value={typeof value === "string" ? value : ""} disabled={locked} onChange={(event) => change(event.target.value)}><option value="">Choose</option>{field.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select>;
+  if (field.kind === "single-select" || (field.kind === "multi-select" && field.referenceItems)) return <ChoiceControl field={field} value={value} disabled={locked} id={id} onChange={change} />;
   if (field.kind === "long-text") return <textarea id={id} readOnly={locked} required={field.required && !locked} value={value === undefined || value === null ? "" : String(value)} onChange={(event) => change(event.target.value)} />;
   if (field.kind === "currency") {
     const current = value && typeof value === "object" ? value as { currency?: string; minorUnits?: string; scale?: number } : {};
@@ -588,7 +659,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           ),
           readPublishedLayout(collection),
         ]);
-        setFields(Array.isArray(permissionResult?.fields) ? permissionResult.fields : []);
+        setFields(Array.isArray(permissionResult?.fields) ? permissionResult.fields.map((field: FieldMeta) => withReferenceItems(field)) : []);
         setCollectionLayout(layoutResult);
         setCanManage(permissionResult?.canManage === true);
         setCanCreate(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("create") : null);
@@ -1429,7 +1500,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               <tbody>
                 {viewRows.map((row) => (
                   <tr key={row.id}>
-                    {viewColumns.map((column) => <td key={column.key}>{column.key === "name" ? row.name : displayValue(row.values?.[column.key])}</td>)}
+                    {viewColumns.map((column) => <td key={column.key}>{column.key === "name" ? row.name : displayFieldValue(fields.find((field) => field.key === column.key), row.values?.[column.key])}</td>)}
                     <td><button type="button" disabled={busy} onClick={() => void open(row.id)}>Open</button></td>
                   </tr>
                 ))}
@@ -1584,6 +1655,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               <p>Schema permission does not grant field-value read, write, or history. Defaults apply only to future records. Built-in identity, tenant, and parent rules stay fixed. Sensitivity can be raised here and cannot be lowered. Fields are not deleted.</p>
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/layout`}>Arrange record layout</a>. Publishing a layout does not change record values or grant access.</p>
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/conditions`}>Conditional fields</a>. Typed conditions show or require fields. Hiding a field keeps its value until an explicit edit clears it.</p>
+              <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/reference-lists`}>Reference lists</a>. A select field can use a tenant catalogue. Saved values stay stable item IDs. Renaming a label does not rewrite records, and list configuration does not grant record access.</p>
               <p>{schemaCatalogue.customFieldCount} of {schemaCatalogue.limits.maxFields} custom fields. Select fields allow {schemaCatalogue.limits.maxChoices} choices.</p>
               <ul>
                 {schemaCatalogue.fields.filter((field) => field.core).map((field) => <li key={field.key}>{field.label} · built-in · not editable</li>)}
@@ -1607,7 +1679,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                     {customFieldKinds.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
                   </select>
                 </label>
-                {schemaDraft.referenceListId && <p>Choices come from a reference list. This screen keeps that binding.</p>}
+                {schemaDraft.referenceListId && <p>Choices come from a reference list. This screen keeps that binding and stores item IDs. A future default must be an active item ID; a deprecated item cannot become a new default.</p>}
                 {(schemaDraft.kind === "single-select" || schemaDraft.kind === "multi-select") && !schemaDraft.referenceListId && (
                   <label>Choices, one per line <textarea value={schemaDraft.choices} onChange={(event) => editSchema({ choices: event.target.value })} /></label>
                 )}

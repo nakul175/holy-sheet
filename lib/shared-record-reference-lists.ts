@@ -12,7 +12,8 @@ const fail=(code='record_reference_list_conflict',status=409)=>new DocumentError
 const sha=(s:string)=>createHash('sha256').update(s).digest('hex');
 type Stored={id:string;version:number;definition:RecordReferenceList};
 type Revisions={schema_version:number;policy_version:number;data_revision:string};
-/** Internal service; no route or live permission adapter is registered. */
+/** Configuration service. Callers pass the current suite-tenant authority.
+ * Explicit read/manage rows never grant business-record access. */
 export class SharedRecordReferenceListRepository extends SharedRecordRepository {
  private async permission(tx:Sql,ctx:RecordContext,manage=false,admin=false){
   const p=(await tx.query<{can_read:boolean;can_manage:boolean;version:number}>('SELECT * FROM hs_data_reference_list_permissions WHERE tenant_id=$1 AND user_id=$2',[ctx.tenantId,ctx.actor.id])).rows[0];

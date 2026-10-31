@@ -461,6 +461,7 @@ it("reviews and applies a custom field without reading record values or editing 
     expect(view.host.textContent).toContain("does not grant field-value read");
     const fields = view.host.querySelector('section[aria-label="Collection fields"]')!;
     expect([...fields.querySelectorAll("a")].some((link) => link.getAttribute("href")?.endsWith("/collections/organisations/conditions"))).toBe(true);
+    expect([...fields.querySelectorAll("a")].some((link) => link.getAttribute("href")?.endsWith("/reference-lists"))).toBe(true);
     await act(async () => fields.querySelectorAll("button")[0].click());
     const form = view.host.querySelector<HTMLFormElement>('form[aria-label="Custom field"]')!;
     const boxes = form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
@@ -993,5 +994,52 @@ it("hides a conditional field without clearing its controlled draft or showing t
     expect(projected.some((body) => body.kind === "state" && body.values["core:flag"] === true)).toBe(true);
     expect(JSON.stringify(projected)).not.toContain("showWhen");
     expect(editor.textContent).not.toContain(secret);
+  } finally { await view.dispose(); }
+});
+it("shows reference labels, keeps a held deprecated choice, and saves stable item ids", async () => {
+  const active = "00000000-0000-4000-8000-0000000000a1";
+  const held = "00000000-0000-4000-8000-0000000000a2";
+  const retired = "00000000-0000-4000-8000-0000000000a3";
+  const items = [
+    { id: active, label: "Finance", deprecated: false },
+    { id: held, label: "Legacy sales", deprecated: true },
+    { id: retired, label: "Retired desk", deprecated: true },
+  ];
+  const catalogue = (kind: "single-select" | "multi-select", key: string, label: string) => ({ key, label, kind, sensitive: false, choices: items.map((item) => item.id), referenceItems: items, canWrite: true, canHistory: false });
+  const record = { id: "record-a", name: "Acme", collection: "organisations", state: "active", version: 1, schemaVersion: 4, capabilities: ["view", "edit"], values: { dept: held, tags: [held] }, documents: [], related: [] };
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (init?.method === "PATCH") return response({ ...record, version: 2, values: JSON.parse(String(init.body)).values ?? record.values });
+    if (String(url).includes("/records/record-a")) return response(record);
+    if (String(url).includes("/record-permissions")) return response({ schemaVersion: 4, fields: [catalogue("single-select", "dept", "Department"), catalogue("multi-select", "tags", "Tags")], collectionCapabilities: ["view", "create", "edit"], canManage: false });
+    if (String(url).includes("/record-views")) return response({ views: [] });
+    if (String(url).includes("/record-")) return response({ error: "unavailable" }, 404);
+    return response({ schemaVersion: 4, results: [{ id: "record-a", name: "Acme", collection: "organisations", state: "active", version: 1, values: {} }], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    const create = [...view.host.querySelectorAll("form")].find((form) => form.querySelector('section[aria-label="Duplicate suggestions"]'))!;
+    const fresh = create.querySelector("select")!;
+    expect([...fresh.options].map((option) => option.textContent)).toEqual(["Choose", "Finance"]);
+    expect([...fresh.options].map((option) => option.value)).toEqual(["", active]);
+    expect(create.textContent).not.toContain("Legacy sales");
+    expect(create.textContent).not.toContain("Retired desk");
+    expect(create.textContent).not.toContain(retired);
+    await act(async () => view.host.querySelector<HTMLButtonElement>("li button")!.click());
+    const editor = view.host.querySelector('section[aria-label="Record editor"]')!;
+    const current = editor.querySelector("select")!;
+    expect(current.value).toBe(held);
+    expect([...current.options].map((option) => option.textContent)).toEqual(["Choose", "Finance", "Legacy sales (deprecated)"]);
+    expect([...current.options].map((option) => option.value)).toEqual(["", active, held]);
+    const heldBoxes = [...editor.querySelectorAll<HTMLInputElement>('[role="group"] input')];
+    expect(heldBoxes.map((box) => box.parentElement?.textContent?.trim())).toEqual(["Finance", "Legacy sales (deprecated)"]);
+    expect(heldBoxes.map((box) => box.checked)).toEqual([false, true]);
+    await select(current, active);
+    await act(async () => editor.querySelector<HTMLInputElement>('[role="group"] input:checked')!.click());
+    await act(async () => editor.querySelector<HTMLInputElement>('[role="group"] input')!.click());
+    await act(async () => editor.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    const saved = JSON.parse(String(fetchMock.mock.calls.find((call) => call[1]?.method === "PATCH")![1].body));
+    expect(saved.values).toEqual({ dept: active, tags: [active] });
+    expect(JSON.stringify(saved.values)).not.toContain("Finance");
+    expect(editor.textContent).not.toContain(retired);
   } finally { await view.dispose(); }
 });
