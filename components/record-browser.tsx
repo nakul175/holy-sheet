@@ -2,6 +2,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import RecordBoard, { acceptedBoard, type BoardCard, type BoardColumnModel, type BoardModel } from "./record-board";
 import RecordComments from "./record-comments";
+import RecordNotifications from "./record-notifications";
 import RecordCalendar, { acceptedCalendar, calendarMonthRange, currentCalendarMonth, type CalendarEvent, type CalendarModel } from "./record-calendar";
 import RecordDashboard, { acceptedDashboard, type DashboardModel } from "./record-dashboard";
 import RecordExport from "./record-export";
@@ -1726,6 +1727,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
         <p>Holy Sheet · shared data</p>
         <h1>Records</h1>
         <p>Tenant-owned structured data. Opening or relating a record never grants access.</p>
+        <RecordNotifications workspaceId={workspaceId} tenantId={tenantId} onOpen={(id) => void open(id)} />
       </header>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
