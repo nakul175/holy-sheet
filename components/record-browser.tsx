@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useState } from "react";
 import RecordExport from "./record-export";
 import RecordHistory from "./record-history";
 import RecordImport from "./record-import";
+import RecordLayout, { type LayoutField, type LayoutSnapshot } from "./record-layout";
 
 type Summary = {
   id: string;
@@ -35,6 +36,7 @@ type FieldMeta = {
   choices: string[];
   canWrite: boolean;
   canHistory: boolean;
+  required?: boolean;
 };
 type PermissionMember = {
   id: string;
@@ -265,6 +267,62 @@ function FieldEditor({ field, value, disabled, onChange }: { field: FieldMeta; v
   const type = field.kind === "date" ? "date" : field.kind === "number" ? "number" : field.kind === "email" ? "email" : "text";
   return <label>{field.label}{field.sensitive ? " (sensitive)" : ""} <input type={type} value={value === undefined || value === null ? "" : String(value)} onChange={(event) => onChange(field.kind === "number" ? Number(event.target.value) : event.target.value)} /></label>;
 }
+function LayoutFieldControl({ field, value, disabled, readOnly, id, onChange }: { field: FieldMeta; value: unknown; disabled: boolean; readOnly: boolean; id?: string; onChange: (value: unknown) => void }) {
+  const locked = disabled || readOnly || !field.canWrite;
+  const change = (next: unknown) => { if (!locked) onChange(next); };
+  if (field.kind === "boolean") return <input id={id} type="checkbox" checked={value === true} disabled={locked} onChange={(event) => change(event.target.checked)} />;
+  if (field.kind === "single-select") return <select id={id} value={typeof value === "string" ? value : ""} disabled={locked} onChange={(event) => change(event.target.value)}><option value="">Choose</option>{field.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select>;
+  if (field.kind === "long-text") return <textarea id={id} readOnly={locked} value={value === undefined || value === null ? "" : String(value)} onChange={(event) => change(event.target.value)} />;
+  if (field.kind === "currency") {
+    const current = value && typeof value === "object" ? value as { currency?: string; minorUnits?: string; scale?: number } : {};
+    const next = (patch: { currency?: string; minorUnits?: string; scale?: number }) => change({ currency: current.currency ?? "", minorUnits: current.minorUnits ?? "", scale: current.scale ?? 2, ...patch });
+    return <fieldset><legend>{field.label}</legend><label>Currency code <input id={id} readOnly={locked} value={current.currency ?? ""} maxLength={3} onChange={(event) => next({ currency: event.target.value.toUpperCase() })} /></label><label>Minor units <input readOnly={locked} value={current.minorUnits ?? ""} onChange={(event) => next({ minorUnits: event.target.value })} /></label><label>Scale <input readOnly={locked} type="number" min={0} max={4} value={current.scale ?? 2} onChange={(event) => next({ scale: Number(event.target.value) })} /></label></fieldset>;
+  }
+  const type = field.kind === "date" ? "date" : field.kind === "number" ? "number" : field.kind === "email" ? "email" : "text";
+  return <input id={id} type={type} readOnly={locked} required={field.required && !locked} value={value === undefined || value === null ? "" : String(value)} onChange={(event) => change(field.kind === "number" ? Number(event.target.value) : event.target.value)} />;
+}
+type PublishedLayout = {
+  publicationRevision: number;
+  schemaVersion: number;
+  definition: LayoutSnapshot["definition"];
+  fields: { key: string; label: string; kind: string; required: boolean; canWrite: boolean }[];
+  needsLayoutReview: boolean;
+  canCreate: boolean;
+};
+function acceptedPublishedLayout(body: unknown): PublishedLayout | null {
+  if (!body || typeof body !== "object" || !("published" in body)) return null;
+  const published = (body as { published?: unknown }).published;
+  if (!published || typeof published !== "object") return null;
+  const layout = published as Partial<PublishedLayout>;
+  if (typeof layout.publicationRevision !== "number" || typeof layout.schemaVersion !== "number" || typeof layout.canCreate !== "boolean" || typeof layout.needsLayoutReview !== "boolean") return null;
+  if (!layout.definition || !Array.isArray(layout.definition.tabs) || !Array.isArray(layout.fields)) return null;
+  return layout as PublishedLayout;
+}
+function layoutHostFields(layout: PublishedLayout, catalogue: FieldMeta[], nameWritable: boolean): LayoutField[] {
+  const keys = layout.definition.tabs.flatMap((tab) => tab.sections.flatMap((section) => section.fields.map((slot) => slot.field)));
+  const fields: LayoutField[] = [];
+  for (const key of keys) {
+    if (fields.some((field) => field.key === key)) continue;
+    if (key === "name") {
+      const described = layout.fields.find((field) => field.key === "name");
+      fields.push({ key, label: described?.label ?? "Name", required: true, canWrite: nameWritable && described?.canWrite !== false });
+      continue;
+    }
+    const meta = catalogue.find((field) => field.key === key);
+    if (!meta) continue;
+    const described = layout.fields.find((field) => field.key === key);
+    fields.push({ key, label: meta.sensitive ? `${meta.label} (sensitive)` : meta.label, required: described?.required ?? false, canWrite: meta.canWrite && described?.canWrite !== false });
+  }
+  return fields;
+}
+function RecordFormLayout({ layout, fields, name, values, nameDisabled, fieldsDisabled, nameWritable, hasUnsavedChanges, scopeKey, onName, onValue }: { layout: PublishedLayout; fields: FieldMeta[]; name: string; values: Record<string, unknown>; nameDisabled: boolean; fieldsDisabled: boolean; nameWritable: boolean; hasUnsavedChanges: boolean; scopeKey: string; onName: (value: string) => void; onValue: (key: string, value: unknown) => void }) {
+  return <RecordLayout scopeKey={scopeKey} snapshot={{ publicationRevision: layout.publicationRevision, schemaVersion: layout.schemaVersion, definition: layout.definition }} fields={layoutHostFields(layout, fields, nameWritable)} hasUnsavedChanges={hasUnsavedChanges} renderField={(field, control) => {
+    if (field.key === "name") return <input id={control.id} required={!control.readOnly && !nameDisabled} minLength={1} maxLength={200} value={name} disabled={nameDisabled} readOnly={control.readOnly} onChange={(event) => { if (!control.readOnly && !nameDisabled) onName(event.target.value); }} />;
+    const meta = fields.find((item) => item.key === field.key);
+    if (!meta) return null;
+    return <LayoutFieldControl id={control.id} field={{ ...meta, required: field.required }} value={values[field.key]} disabled={fieldsDisabled} readOnly={control.readOnly} onChange={(value) => onValue(field.key, value)} />;
+  }} />;
+}
 type ReparentPreview = {
   previewToken: string;
   expectedVersion: number;
@@ -412,6 +470,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [fields, setFields] = useState<FieldMeta[]>([]),
     [canManage, setCanManage] = useState(false),
     [canCreate, setCanCreate] = useState<boolean | null>(null),
+    [collectionLayout, setCollectionLayout] = useState<PublishedLayout | null>(null),
+    [recordLayout, setRecordLayout] = useState<PublishedLayout | null>(null),
     [canImport, setCanImport] = useState(false),
     [canExport, setCanExport] = useState(false),
     [drafts, setDrafts] = useState<Record<string, unknown>>({}),
@@ -452,6 +512,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
   const trashBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-trash`;
   const duplicatesBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-duplicates`;
   const mergesBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-merges`;
+  const layoutsBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-layouts`;
   async function json(url: string, init?: RequestInit) {
     const response = await fetch(url, {
         credentials: "same-origin",
@@ -461,6 +522,16 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       body = await response.json();
     if (!response.ok) throw Error(body.error ?? "Record request failed.");
     return body;
+  }
+  async function readPublishedLayout(collectionId: string, recordId?: string) {
+    const params = new URLSearchParams({ collection: collectionId });
+    if (recordId) params.set("recordId", recordId);
+    try { return acceptedPublishedLayout(await json(`${layoutsBase}?${params}`)); }
+    catch { return null; }
+  }
+  function submittedFieldValues(source: Record<string, unknown>, layout: PublishedLayout | null) {
+    const editable = layout ? new Set(layout.definition.tabs.flatMap((tab) => tab.sections.flatMap((section) => section.fields.filter((slot) => slot.mode === "edit").map((slot) => slot.field)))) : null;
+    return Object.fromEntries(Object.entries(source).filter(([key]) => fields.some((field) => field.key === key && field.canWrite) && (!editable || editable.has(key))));
   }
   async function load(reset = true, archived = includeArchived) {
     setBusy(true);
@@ -474,7 +545,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setItems((old) => (reset ? data.results : [...old, ...data.results]));
       setCursor(data.nextCursor);
       if (reset) {
-        const [permissionResult, schemaResult, viewResult] = await Promise.all([
+        const [permissionResult, schemaResult, viewResult, layoutResult] = await Promise.all([
           json(`${permissionsBase}?collection=${encodeURIComponent(collection)}`).then(
             (catalogue) => catalogue,
             () => null,
@@ -487,8 +558,10 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             (catalogue) => acceptedViews(catalogue),
             () => [],
           ),
+          readPublishedLayout(collection),
         ]);
         setFields(Array.isArray(permissionResult?.fields) ? permissionResult.fields : []);
+        setCollectionLayout(layoutResult);
         setCanManage(permissionResult?.canManage === true);
         setCanCreate(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("create") : null);
         setCanImport(Array.isArray(permissionResult?.collectionCapabilities) && permissionResult.collectionCapabilities.includes("view") && permissionResult.collectionCapabilities.includes("import"));
@@ -527,6 +600,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setSchemaCatalogue(null);
     setSchemaDraft(emptySchemaDraft());
     setSchemaPreview(null);
+    setCollectionLayout(null);
+    setRecordLayout(null);
     setViews([]);
     setCanManageViews(false);
     setActiveViewId("");
@@ -541,9 +616,11 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setError("");
     try {
       const record = await json(`${base}/${encodeURIComponent(id)}`);
+      const layout = await readPublishedLayout(record.collection, record.id);
       setSelected(record);
       setEditName(record.name);
       setEdits({});
+      setRecordLayout(layout);
       setPreview(null);
       setDeletePreview(null);
       setDuplicates(null);
@@ -585,7 +662,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           collection,
           name: createName,
           schemaVersion,
-          values: Object.fromEntries(Object.entries(drafts).filter(([key]) => fields.some((field) => field.key === key && field.canWrite))),
+          values: submittedFieldValues(drafts, collectionLayout),
           ...relationships,
         }),
       });
@@ -619,12 +696,13 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           expectedVersion: selected.version,
           schemaVersion: selected.schemaVersion,
           name: editName,
-          ...(Object.keys(edits).length ? { values: Object.fromEntries(Object.entries(edits).filter(([key]) => fields.some((field) => field.key === key && field.canWrite))) } : {}),
+          ...(Object.keys(edits).length ? { values: submittedFieldValues(edits, recordLayout) } : {}),
         }),
       });
       setSelected(data.record);
       setEditName(data.record.name);
       setEdits({});
+      setRecordLayout(await readPublishedLayout(data.record.collection, data.record.id));
       setNotice("Record changes saved.");
       await load(true);
     } catch (e) {
@@ -832,6 +910,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setSelected(record);
     setEditName(record.name);
     setEdits({});
+    setRecordLayout(await readPublishedLayout(record.collection, record.id));
     setPreview(null);
     setDeletePreview(null);
     setMergePreview(null);
@@ -1456,6 +1535,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             <section aria-label="Collection fields">
               <h2>Collection fields</h2>
               <p>Schema permission does not grant field-value read, write, or history. Defaults apply only to future records. Built-in identity, tenant, and parent rules stay fixed. Sensitivity can be raised here and cannot be lowered. Fields are not deleted.</p>
+              <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/layout`}>Arrange record layout</a>. Publishing a layout does not change record values or grant access.</p>
               <p>{schemaCatalogue.customFieldCount} of {schemaCatalogue.limits.maxFields} custom fields. Select fields allow {schemaCatalogue.limits.maxChoices} choices.</p>
               <ul>
                 {schemaCatalogue.fields.filter((field) => field.core).map((field) => <li key={field.key}>{field.label} · built-in · not editable</li>)}
@@ -1514,11 +1594,9 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           {selected ? (
             <>
               <form onSubmit={save}>
-                <label>
-                  Name <input required minLength={1} maxLength={200} value={editName} disabled={archivedRecord} onChange={(event) => setEditName(event.target.value)} />
-                </label>
+                {recordLayout ? <RecordFormLayout layout={recordLayout} fields={fields} name={editName} values={Object.fromEntries(fields.map((field) => [field.key, Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]]))} nameDisabled={archivedRecord} fieldsDisabled={busy || archivedRecord || !selected.capabilities.includes("edit")} nameWritable={!archivedRecord && selected.capabilities.includes("edit")} hasUnsavedChanges={editName !== selected.name || Object.keys(edits).length > 0} scopeKey={`${collection}:${selected.id}`} onName={setEditName} onValue={(key, value) => setEdits((current) => ({ ...current, [key]: value }))} /> : <label>Name <input required minLength={1} maxLength={200} value={editName} disabled={archivedRecord} onChange={(event) => setEditName(event.target.value)} /></label>}
                 <button disabled={busy || archivedRecord || !selected.capabilities.includes("edit")}>Save changes</button>
-                {fields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy || archivedRecord || !selected.capabilities.includes("edit")} value={Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]} onChange={(value) => setEdits((current) => ({ ...current, [field.key]: value }))} />)}
+                {!recordLayout && fields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy || archivedRecord || !selected.capabilities.includes("edit")} value={Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]} onChange={(value) => setEdits((current) => ({ ...current, [field.key]: value }))} />)}
               </form>
               {archivedRecord && <p>This record is archived and stays readable. Unarchive it before saving changes or adding links.</p>}
               <p>Fields you cannot view are omitted. A name change keeps those hidden values.</p>
@@ -1741,9 +1819,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             </>
           ) : (
             <form onSubmit={create}>
-              <label>
-                Name <input required minLength={1} maxLength={200} value={createName} onChange={(event) => { setCreateName(event.target.value); setDuplicates(null); }} />
-              </label>
+              {collectionLayout ? <RecordFormLayout layout={collectionLayout} fields={fields} name={createName} values={drafts} nameDisabled={false} fieldsDisabled={busy} nameWritable={canCreate !== false} hasUnsavedChanges={createName.trim().length > 0 || Object.keys(drafts).length > 0} scopeKey={`${collection}:create`} onName={(value) => { setCreateName(value); setDuplicates(null); }} onValue={(key, value) => { setDrafts((current) => ({ ...current, [key]: value })); setDuplicates(null); }} /> : <label>Name <input required minLength={1} maxLength={200} value={createName} onChange={(event) => { setCreateName(event.target.value); setDuplicates(null); }} /></label>}
               {collection === "accounts" && (
                 <label>
                   Parent organisation ID <input required value={createParent} onChange={(event) => setCreateParent(event.target.value)} />
@@ -1759,7 +1835,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                   </label>
                 </>
               )}
-              {writableFields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy} value={drafts[field.key]} onChange={(value) => { setDrafts((current) => ({ ...current, [field.key]: value })); setDuplicates(null); }} />)}
+              {!collectionLayout && writableFields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy} value={drafts[field.key]} onChange={(value) => { setDrafts((current) => ({ ...current, [field.key]: value })); setDuplicates(null); }} />)}
+              {collectionLayout && canCreate === true && collectionLayout.canCreate === false && <p role="status">Creation is paused until the published layout places every required field in an editable slot.</p>}
               {(collection === "accounts" || collection === "contracts") && <p>Linked organisations and accounts must be active. Unarchive a record before using it in a new link.</p>}
               <section aria-label="Duplicate suggestions">
                 <h3>Duplicate suggestions</h3>
@@ -1778,7 +1855,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                 ) : <p>No permitted matches.</p>)}
                 {duplicates?.hasMore && <p>More than ten permitted matches exist. This list stops at ten.</p>}
               </section>
-              <button disabled={busy || !createName.trim() || canCreate === false}>Create record</button>
+              <button disabled={busy || !createName.trim() || canCreate === false || collectionLayout?.canCreate === false}>Create record</button>
             </form>
           )}
         </section>

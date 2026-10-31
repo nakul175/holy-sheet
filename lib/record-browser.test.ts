@@ -99,6 +99,7 @@ it("preserves a creation draft when server validation fails", async () => {
     .mockResolvedValueOnce(await response({ schemaVersion: 1, fields: [], collectionCapabilities: ["view", "create"], canManage: false }))
     .mockResolvedValueOnce(await response({ error: "Tenant administrator and schema permission are required." }, 403))
     .mockResolvedValueOnce(await response({ views: [] }))
+    .mockResolvedValueOnce(await response({ error: "Layout is unavailable." }, 404))
     .mockResolvedValueOnce(await response({ error: "Name is invalid." }, 422));
   const view = await mount();
   try {
@@ -132,6 +133,7 @@ it("uses record version and schema version for edits without clearing a failed e
     .mockResolvedValueOnce(await response({ schemaVersion: 4, fields: [], collectionCapabilities: ["view", "edit"], canManage: false }))
     .mockResolvedValueOnce(await response({ error: "Tenant administrator and schema permission are required." }, 403))
     .mockResolvedValueOnce(await response({ views: [] }))
+    .mockResolvedValueOnce(await response({ error: "Layout is unavailable." }, 404))
     .mockResolvedValueOnce(
       await response({
         id: "record-a",
@@ -146,6 +148,7 @@ it("uses record version and schema version for edits without clearing a failed e
         related: [],
       }),
     )
+    .mockResolvedValueOnce(await response({ error: "Layout is unavailable." }, 404))
     .mockResolvedValueOnce(await response({ error: "The record changed." }, 409));
   const view = await mount();
   try {
@@ -856,4 +859,80 @@ it("shows record export only when the collection grant includes view and export"
   } finally {
     await view.dispose();
   }
+});
+it("binds create and edit forms to the published layout and leaves drafts unpublished", async () => {
+  const record = { id: "record-a", name: "Acme", collection: "organisations", state: "active", version: 2, schemaVersion: 1, capabilities: ["view", "edit"], values: { "core:notes": "Kept", "core:secret": "Synthetic", "core:hidden": "Do not show" }, documents: [], related: [] };
+  const fields = [
+    { key: "core:notes", label: "Notes", kind: "long-text", sensitive: false, choices: [], canWrite: true, canHistory: false },
+    { key: "core:secret", label: "Secret", kind: "text", sensitive: true, choices: [], canWrite: true, canHistory: false },
+    { key: "core:hidden", label: "Hidden extra", kind: "text", sensitive: false, choices: [], canWrite: true, canHistory: false },
+  ];
+  const arranged = { tabs: [
+    { id: "00000000-0000-4000-8000-0000000000a1", label: "Overview", sections: [{ id: "00000000-0000-4000-8000-0000000000a2", label: "Identity", description: "", columns: 1, fields: [{ field: "name", mode: "edit" }, { field: "core:secret", mode: "read" }, { field: "core:salary", mode: "edit" }] }] },
+    { id: "00000000-0000-4000-8000-0000000000a3", label: "Notes tab", sections: [{ id: "00000000-0000-4000-8000-0000000000a4", label: "Narrative", description: "Context", columns: 1, fields: [{ field: "core:notes", mode: "edit" }] }] },
+  ] };
+  const published = (canWriteNotes: boolean, publicationRevision: number, canCreate = true) => ({ publicationRevision, schemaVersion: 1, canCreate, needsLayoutReview: !canCreate, definition: arranged, fields: [
+    { key: "name", label: "Name", kind: "text", required: true, canWrite: true },
+    { key: "core:secret", label: "Secret", kind: "text", required: false, canWrite: true },
+    { key: "core:notes", label: "Notes", kind: "long-text", required: false, canWrite: canWriteNotes },
+    { key: "core:salary", label: "Salary", kind: "text", required: false, canWrite: false },
+  ] });
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (init?.method === "POST") return response({ record: { ...record, id: "record-b", name: "Draft name" } });
+    if (url.includes("/record-layouts") && url.includes("recordId=")) return response({ draft: { draft: { definition: { tabs: [{ label: "Unpublished salary" }] } } }, published: published(false, 4) });
+    if (url.includes("/record-layouts")) return response({ draft: { draft: { definition: { tabs: [{ label: "Unpublished salary" }] } } }, published: published(true, 2) });
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 1, fields, collectionCapabilities: ["view", "create", "edit"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    if (url.includes("/record-views")) return response({ views: [] });
+    if (url.includes("/records/")) return response(record);
+    return response({ schemaVersion: 1, results: [record], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    const editor = view.host.querySelector('section[aria-label="Record editor"]')!;
+    expect(editor.textContent).toContain("Overview");
+    expect(editor.textContent).toContain("Notes tab");
+    expect(editor.textContent).not.toContain("Hidden extra");
+    expect(editor.textContent).not.toContain("Salary");
+    expect(editor.textContent).not.toContain("Unpublished salary");
+    const labelled = (name: string) => editor.querySelector<HTMLInputElement | HTMLTextAreaElement>(`#${CSS.escape(editor.querySelector(`label`) && [...editor.querySelectorAll("label")].find((label) => label.textContent?.includes(name))?.getAttribute("for") || "missing")}`)!;
+    expect(labelled("Secret").readOnly).toBe(true);
+    await input(labelled("Name") as HTMLInputElement, "Draft name");
+    await act(async () => [...editor.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) => tab.textContent === "Notes tab")!.click());
+    const notes = labelled("Notes") as HTMLTextAreaElement;
+    expect(notes.readOnly).toBe(false);
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(notes, "Visible note"); notes.dispatchEvent(new Event("input", { bubbles: true })); });
+    await act(async () => editor.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    const created = JSON.parse(String(fetchMock.mock.calls.find((call) => call[1]?.method === "POST")![1].body));
+    expect(created).toMatchObject({ kind: "create", name: "Draft name", values: { "core:notes": "Visible note" } });
+    expect(created.values["core:secret"]).toBeUndefined();
+    expect(created.values["core:hidden"]).toBeUndefined();
+    expect(created.values["core:salary"]).toBeUndefined();
+    expect(fetchMock.mock.calls.some((call) => call[1]?.method === "POST" && String(call[0]).includes("/record-layouts"))).toBe(false);
+    await act(async () => view.host.querySelector<HTMLButtonElement>("li button")!.click());
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("recordId=record-a") && !String(call[0]).includes("includeDraft"))).toBe(true);
+    const openEditor = view.host.querySelector('section[aria-label="Record editor"]')!;
+    const openNotes = openEditor.querySelector<HTMLTextAreaElement>(`#${CSS.escape([...openEditor.querySelectorAll("label")].find((label) => label.textContent?.includes("Notes"))?.getAttribute("for") || "missing")}`)!;
+    expect(openNotes.readOnly).toBe(true);
+    expect(openEditor.textContent).not.toContain("Unpublished salary");
+    expect(openEditor.textContent).toContain("Kept");
+  } finally { await view.dispose(); }
+});
+it("pauses creation when the published layout cannot reach a required field", async () => {
+  const published = { publicationRevision: 1, schemaVersion: 1, canCreate: false, needsLayoutReview: true, definition: { tabs: [{ id: "00000000-0000-4000-8000-0000000000a1", label: "Overview", sections: [{ id: "00000000-0000-4000-8000-0000000000a2", label: "Identity", description: "", columns: 1, fields: [{ field: "name", mode: "edit" }] }] }] }, fields: [{ key: "name", label: "Name", kind: "text", required: true, canWrite: true }] };
+  fetchMock.mockImplementation((url: string) => {
+    if (url.includes("/record-layouts")) return response({ published });
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 1, fields: [], collectionCapabilities: ["view", "create"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    if (url.includes("/record-views")) return response({ views: [] });
+    return response({ schemaVersion: 1, results: [], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    const editor = view.host.querySelector('section[aria-label="Record editor"]')!;
+    await input(editor.querySelector("input")!, "Draft name");
+    expect(editor.textContent).toContain("Creation is paused until the published layout places every required field in an editable slot.");
+    expect([...editor.querySelectorAll("button")].find((button) => button.textContent === "Create record")!.disabled).toBe(true);
+    expect(fetchMock.mock.calls.some((call) => call[1]?.method === "POST")).toBe(false);
+  } finally { await view.dispose(); }
 });
