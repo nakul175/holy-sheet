@@ -73,7 +73,8 @@ test('two live editor clients converge and report durable save and presence',asy
     const caret=async(editor:typeof editorA,atEnd:boolean)=>editor.evaluate((element,end)=>{element.focus();const range=document.createRange(),selection=getSelection()!;range.selectNodeContents(element);range.collapse(end);selection.removeAllRanges();selection.addRange(range);},atEnd);
     await caret(editorA,false);await caret(editorB,true);
     const texts=()=>Promise.all([editorA.textContent().then(value=>value?.trim()),editorB.textContent().then(value=>value?.trim())]);
-    await Promise.all([editorA.type('LEFTα '),editorB.type(' RIGHTβ')]);
+    // One insertion per client. Per-character typing races a remote DOM update and can drop a side before it becomes a step. These two insertions still overlap, and both edits must survive.
+    await Promise.all([a.keyboard.insertText('LEFTα '),b.keyboard.insertText(' RIGHTβ')]);
     await expect.poll(async()=>{const values=await texts();return {same:values[0]===values[1],base:values[0]?.includes('Shared base'),left:values[0]?.includes('LEFTα'),right:values[0]?.includes('RIGHTβ')};}).toEqual({same:true,base:true,left:true,right:true});
     await expect(a.getByRole('button',{name:'✓ Saved',exact:true})).toBeVisible();
     await expect(b.getByRole('button',{name:'✓ Saved',exact:true})).toBeVisible();
