@@ -72,6 +72,8 @@ export class SharedRecordPermissionRepository extends SharedRecordRepository {
     const referenceItems=referenceChoices(field);
     fields.push({key:field.key,label:field.label,kind:field.kind,sensitive:field.sensitive,choices:field.choices,...(referenceItems?{referenceItems}:{}),canWrite:await this.fieldAllowed(tx,ctx,collectionKey,field,'write'),canHistory:await this.fieldAllowed(tx,ctx,collectionKey,field,'history')});
    }
+   const catalogue=await this.fields(tx,ctx,collectionKey);
+   for(const calculated of await this.visibleCalculatedFields(tx,ctx,collectionKey,catalogue))fields.push({key:calculated.key,label:calculated.label,kind:calculated.kind,sensitive:calculated.sensitive,choices:[],referenceItems:undefined,calculated:true,canWrite:false,canHistory:false});
    return {schemaVersion:t.schema_version,collectionCapabilities:access.caps,capabilities:effective,canManage:proof.tenantAdministrator&&access.caps.includes('manage-permissions'),fields};
   });
  }

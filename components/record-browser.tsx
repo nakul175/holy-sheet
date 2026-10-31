@@ -27,6 +27,7 @@ type Detail = Summary & {
   parentOrganisation: { id: string; name?: string } | { unavailable: true } | null;
   documents: { id: string; pageId: string; title: string }[];
   related: Link[];
+  calculated?: { fieldKey: string; label: string; value: unknown; sensitive: boolean; stale: boolean; readOnly: true; error?: string }[];
 };
 type ReferenceChoice = { id: string; label: string; deprecated: boolean };
 type FieldMeta = {
@@ -39,6 +40,7 @@ type FieldMeta = {
   canWrite: boolean;
   canHistory: boolean;
   required?: boolean;
+  calculated?: boolean;
 };
 type PermissionMember = {
   id: string;
@@ -188,6 +190,31 @@ function selectOptions(field: FieldMeta, value: unknown) {
 }
 function optionText(option: { label: string; deprecated: boolean }) {
   return option.deprecated ? `${option.label} (deprecated)` : option.label;
+}
+function calculatedText(field: FieldMeta, value: unknown, row?: { value: unknown; stale: boolean; error?: string }) {
+  if (row?.stale) return row.error === "formula_divide_by_zero" ? "Division by zero has no value." : "Unavailable";
+  return displayFieldValue(field, row ? row.value : value);
+}
+function CalculatedFields({ fields, values, calculated }: { fields: FieldMeta[]; values: Record<string, unknown>; calculated?: Detail["calculated"] }) {
+  const derived = fields.filter((field) => field.calculated);
+  if (!derived.length) return null;
+  return (
+    <section aria-label="Calculated fields">
+      <h3>Calculated fields</h3>
+      <p>Derived values are read-only. They recompute from confirmed source values and cannot be edited.</p>
+      <dl>
+        {derived.map((field) => {
+          const row = calculated?.find((item) => item.fieldKey === field.key);
+          return (
+            <div key={field.key}>
+              <dt>{field.label}{field.sensitive ? " (sensitive)" : ""}</dt>
+              <dd>{calculatedText(field, values[field.key], row)} · read-only</dd>
+            </div>
+          );
+        })}
+      </dl>
+    </section>
+  );
 }
 function displayFieldValue(field: FieldMeta | undefined, value: unknown) {
   if (!field?.referenceItems) return displayValue(value);
@@ -630,7 +657,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
   }
   function submittedFieldValues(source: Record<string, unknown>, layout: PublishedLayout | null) {
     const editable = layout ? new Set(layout.definition.tabs.flatMap((tab) => tab.sections.flatMap((section) => section.fields.filter((slot) => slot.mode === "edit").map((slot) => slot.field)))) : null;
-    return Object.fromEntries(Object.entries(source).filter(([key]) => fields.some((field) => field.key === key && field.canWrite) && (!editable || editable.has(key))));
+    return Object.fromEntries(Object.entries(source).filter(([key]) => fields.some((field) => field.key === key && field.canWrite && !field.calculated) && (!editable || editable.has(key))));
   }
   async function load(reset = true, archived = includeArchived) {
     setBusy(true);
@@ -1267,7 +1294,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setBusy(false);
     }
   }
-  const viewFieldCatalogue: ViewColumn[] = [{ key: "name", label: "Name", kind: "text" }, ...fields.map((field) => ({ key: field.key, label: field.label, kind: field.kind }))];
+  const viewFieldCatalogue: ViewColumn[] = [{ key: "name", label: "Name", kind: "text" }, ...fields.filter((field) => !field.calculated).map((field) => ({ key: field.key, label: field.label, kind: field.kind }))];
   const activeView = views.find((view) => view.id === activeViewId) ?? null;
   function editView(patch: Partial<ViewDraft>) {
     setViewDraft((current) => ({ ...current, ...patch }));
@@ -1656,6 +1683,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/layout`}>Arrange record layout</a>. Publishing a layout does not change record values or grant access.</p>
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/conditions`}>Conditional fields</a>. Typed conditions show or require fields. Hiding a field keeps its value until an explicit edit clears it.</p>
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/reference-lists`}>Reference lists</a>. A select field can use a tenant catalogue. Saved values stay stable item IDs. Renaming a label does not rewrite records, and list configuration does not grant record access.</p>
+              <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/formulas`}>Calculated fields</a>. A reviewed formula adds a read-only value. It recomputes from confirmed source values and does not grant record access.</p>
               <p>{schemaCatalogue.customFieldCount} of {schemaCatalogue.limits.maxFields} custom fields. Select fields allow {schemaCatalogue.limits.maxChoices} choices.</p>
               <ul>
                 {schemaCatalogue.fields.filter((field) => field.core).map((field) => <li key={field.key}>{field.label} · built-in · not editable</li>)}
@@ -1717,7 +1745,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                 {recordLayout ? <RecordFormLayout layout={recordLayout} fields={fields} name={editName} values={Object.fromEntries(fields.map((field) => [field.key, Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]]))} nameDisabled={archivedRecord} fieldsDisabled={busy || archivedRecord || !selected.capabilities.includes("edit")} nameWritable={!archivedRecord && selected.capabilities.includes("edit")} hasUnsavedChanges={editName !== selected.name || Object.keys(edits).length > 0} scopeKey={`${collection}:${selected.id}`} conditions={recordConditions ?? undefined} onName={setEditName} onValue={(key, value) => setEdits((current) => ({ ...current, [key]: value }))} /> : <label>Name <input required minLength={1} maxLength={200} value={editName} disabled={archivedRecord} onChange={(event) => setEditName(event.target.value)} /></label>}
                 <button disabled={busy || archivedRecord || !selected.capabilities.includes("edit")}>Save changes</button>
                 {!recordLayout && recordConditions?.some((state) => !state.visible) && <p role="note">Hidden fields retain their values. Clear them only with an explicit permitted edit.</p>}
-                {!recordLayout && fields.filter((field) => conditionVisible(recordConditions, field.key)).map((field) => <FieldEditor key={field.key} field={field} disabled={busy || archivedRecord || !selected.capabilities.includes("edit")} value={Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]} onChange={(value) => setEdits((current) => ({ ...current, [field.key]: value }))} />)}
+                {!recordLayout && fields.filter((field) => !field.calculated && conditionVisible(recordConditions, field.key)).map((field) => <FieldEditor key={field.key} field={field} disabled={busy || archivedRecord || !selected.capabilities.includes("edit")} value={Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]} onChange={(value) => setEdits((current) => ({ ...current, [field.key]: value }))} />)}
+                <CalculatedFields fields={fields} values={Object.fromEntries(fields.map((field) => [field.key, Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]]))} calculated={selected.calculated} />
               </form>
               {archivedRecord && <p>This record is archived and stays readable. Unarchive it before saving changes or adding links.</p>}
               <p>Fields you cannot view are omitted. A name change keeps those hidden values.</p>
@@ -1957,7 +1986,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                 </>
               )}
               {!collectionLayout && createConditions?.some((state) => !state.visible) && <p role="note">Hidden fields retain their values. Clear them only with an explicit permitted edit.</p>}
-              {!collectionLayout && writableFields.filter((field) => conditionVisible(createConditions, field.key)).map((field) => <FieldEditor key={field.key} field={field} disabled={busy} value={drafts[field.key]} onChange={(value) => { setDrafts((current) => ({ ...current, [field.key]: value })); setDuplicates(null); }} />)}
+              {!collectionLayout && writableFields.filter((field) => !field.calculated && conditionVisible(createConditions, field.key)).map((field) => <FieldEditor key={field.key} field={field} disabled={busy} value={drafts[field.key]} onChange={(value) => { setDrafts((current) => ({ ...current, [field.key]: value })); setDuplicates(null); }} />)}
+              <CalculatedFields fields={fields} values={drafts} />
               {collectionLayout && canCreate === true && collectionLayout.canCreate === false && <p role="status">Creation is paused until the published layout places every required field in an editable slot.</p>}
               {(collection === "accounts" || collection === "contracts") && <p>Linked organisations and accounts must be active. Unarchive a record before using it in a new link.</p>}
               <section aria-label="Duplicate suggestions">
