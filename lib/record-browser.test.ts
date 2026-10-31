@@ -460,6 +460,7 @@ it("reviews and applies a custom field without reading record values or editing 
     expect(view.host.textContent).toContain("Domain · built-in · not editable");
     expect(view.host.textContent).toContain("does not grant field-value read");
     const fields = view.host.querySelector('section[aria-label="Collection fields"]')!;
+    expect([...fields.querySelectorAll("a")].some((link) => link.getAttribute("href")?.endsWith("/collections/organisations/conditions"))).toBe(true);
     await act(async () => fields.querySelectorAll("button")[0].click());
     const form = view.host.querySelector<HTMLFormElement>('form[aria-label="Custom field"]')!;
     const boxes = form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
@@ -903,7 +904,7 @@ it("binds create and edit forms to the published layout and leaves drafts unpubl
     expect(notes.readOnly).toBe(false);
     await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(notes, "Visible note"); notes.dispatchEvent(new Event("input", { bubbles: true })); });
     await act(async () => editor.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
-    const created = JSON.parse(String(fetchMock.mock.calls.find((call) => call[1]?.method === "POST")![1].body));
+    const created = JSON.parse(String(fetchMock.mock.calls.find((call) => call[1]?.method === "POST" && String(call[0]).includes("/records") && !String(call[0]).includes("/record-conditions"))![1].body));
     expect(created).toMatchObject({ kind: "create", name: "Draft name", values: { "core:notes": "Visible note" } });
     expect(created.values["core:secret"]).toBeUndefined();
     expect(created.values["core:hidden"]).toBeUndefined();
@@ -934,5 +935,63 @@ it("pauses creation when the published layout cannot reach a required field", as
     expect(editor.textContent).toContain("Creation is paused until the published layout places every required field in an editable slot.");
     expect([...editor.querySelectorAll("button")].find((button) => button.textContent === "Create record")!.disabled).toBe(true);
     expect(fetchMock.mock.calls.some((call) => call[1]?.method === "POST")).toBe(false);
+  } finally { await view.dispose(); }
+});
+it("hides a conditional field without clearing its controlled draft or showing the predicate", async () => {
+  const secret = "predicate-secret";
+  const record = { id: "record-a", name: "Acme", collection: "organisations", state: "active", version: 2, schemaVersion: 1, capabilities: ["view", "edit"], values: {}, documents: [], related: [] };
+  const catalogue = [
+    { key: "core:flag", label: "Flag", kind: "boolean", sensitive: false, choices: [], canWrite: true, canHistory: false },
+    { key: "core:notes", label: "Notes", kind: "long-text", sensitive: false, choices: [], canWrite: true, canHistory: false },
+  ];
+  const definition = { tabs: [{ id: "00000000-0000-4000-8000-0000000000a1", label: "Overview", sections: [{ id: "00000000-0000-4000-8000-0000000000a2", label: "Identity", description: "", columns: 1, fields: [{ field: "name", mode: "edit" }, { field: "core:flag", mode: "edit" }, { field: "core:notes", mode: "edit" }] }] }] };
+  const published = { publicationRevision: 1, schemaVersion: 1, canCreate: true, needsLayoutReview: false, definition, fields: [
+    { key: "name", label: "Name", kind: "text", required: true, canWrite: true },
+    { key: "core:flag", label: "Flag", kind: "boolean", required: false, canWrite: true },
+    { key: "core:notes", label: "Notes", kind: "long-text", required: false, canWrite: true },
+  ] };
+  const projection = (values?: Record<string, unknown>) => ({ version: 1, schemaVersion: 1, predicate: secret, fields: [{ field: "core:notes", visible: values?.["core:flag"] === true, required: values?.["core:flag"] === true, hiddenValues: "retained" }] });
+  const opened = { id: "record-b", name: "Draft name", collection: "organisations", state: "active", version: 1, schemaVersion: 1, capabilities: ["view"], values: { "core:flag": false, "core:notes": "Retained hidden value" }, documents: [], related: [] };
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url.includes("/records/record-b")) return response(opened);
+    if (url.includes("/record-conditions")) {
+      const values = init?.body ? JSON.parse(String(init.body)).values as Record<string, unknown> | undefined : undefined;
+      return response(projection(values));
+    }
+    if (init?.method === "POST" && url.includes("/records")) return response({ record: { ...record, id: "record-b", name: "Draft name" } });
+    if (url.includes("/record-layouts")) return response({ published });
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 1, fields: catalogue, collectionCapabilities: ["view", "create", "edit"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    if (url.includes("/record-views")) return response({ views: [] });
+    return response({ schemaVersion: 1, results: [], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    const editor = view.host.querySelector('section[aria-label="Record editor"]')!;
+    const labelled = (name: string) => editor.querySelector<HTMLInputElement | HTMLTextAreaElement>(`#${CSS.escape([...editor.querySelectorAll("label")].find((label) => label.textContent?.includes(name))?.getAttribute("for") || "missing")}`);
+    expect(editor.textContent).toContain("Hidden fields retain their values");
+    expect(labelled("Notes")).toBeNull();
+    expect(editor.textContent).not.toContain(secret);
+    await act(async () => labelled("Flag")!.click());
+    const notes = labelled("Notes") as HTMLTextAreaElement;
+    expect(notes).not.toBeNull();
+    expect(notes.required).toBe(true);
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(notes, "Retained hidden value"); notes.dispatchEvent(new Event("input", { bubbles: true })); });
+    await act(async () => labelled("Flag")!.click());
+    expect(labelled("Notes")).toBeNull();
+    expect(editor.textContent).toContain("Hidden fields retain their values");
+    expect(editor.textContent).not.toContain(secret);
+    await act(async () => labelled("Flag")!.click());
+    expect(labelled("Notes")?.value).toBe("Retained hidden value");
+    await act(async () => labelled("Flag")!.click());
+    await input(labelled("Name") as HTMLInputElement, "Draft name");
+    await act(async () => editor.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    const created = JSON.parse(String(fetchMock.mock.calls.find((call) => call[1]?.method === "POST" && String(call[0]).includes("/records") && !String(call[0]).includes("/record-conditions"))![1].body));
+    expect(created).toMatchObject({ kind: "create", name: "Draft name", values: { "core:flag": false, "core:notes": "Retained hidden value" } });
+    expect(created.values["core:notes"]).not.toBeNull();
+    const projected = fetchMock.mock.calls.filter((call) => String(call[0]).includes("/record-conditions") && call[1]?.method === "POST").map((call) => JSON.parse(String(call[1].body)));
+    expect(projected.some((body) => body.kind === "state" && body.values["core:flag"] === true)).toBe(true);
+    expect(JSON.stringify(projected)).not.toContain("showWhen");
+    expect(editor.textContent).not.toContain(secret);
   } finally { await view.dispose(); }
 });
