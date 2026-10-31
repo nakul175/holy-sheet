@@ -1,15 +1,16 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { DocumentError } from "./document";
 
-const mocks = vi.hoisted(() => ({ authenticate: vi.fn(), repository: vi.fn(), listViews: vi.fn(), queryView: vi.fn(), saveView: vi.fn(), deleteView: vi.fn() }));
+const mocks = vi.hoisted(() => ({ authenticate: vi.fn(), repository: vi.fn(), listViews: vi.fn(), queryView: vi.fn(), saveView: vi.fn(), deleteView: vi.fn(), queryBoard: vi.fn(), moveBoardCard: vi.fn() }));
 vi.mock("./suite-tenant-authority", () => ({ authenticateRecordAuthority: mocks.authenticate }));
 vi.mock("./repository", () => ({ repository: mocks.repository }));
 vi.mock("./shared-record-views", async () => {
   const actual = await vi.importActual<typeof import("./shared-record-views")>("./shared-record-views");
-  return { ...actual, SharedRecordViewRepository: class { listViews = mocks.listViews; queryView = mocks.queryView; saveView = mocks.saveView; deleteView = mocks.deleteView; } };
+  return { ...actual, SharedRecordViewRepository: class { listViews = mocks.listViews; queryView = mocks.queryView; saveView = mocks.saveView; deleteView = mocks.deleteView; queryBoard = mocks.queryBoard; moveBoardCard = mocks.moveBoardCard; } };
 });
 import { GET, POST } from "../app/api/v1/workspaces/[id]/tenants/[tenantId]/record-views/route";
 import { GET as QUERY } from "../app/api/v1/workspaces/[id]/tenants/[tenantId]/record-views/[viewId]/route";
+import { GET as BOARD, POST as MOVE } from "../app/api/v1/workspaces/[id]/tenants/[tenantId]/record-views/[viewId]/board/route";
 
 const tenantId = "00000000-0000-4000-8000-000000000002",
   viewId = "00000000-0000-4000-8000-000000000011",
@@ -88,4 +89,26 @@ it("rejects cross-origin writes, forged fields, unsupported predicates and bad c
   const missing = await QUERY(new Request("https://hs.example/api/record-views/not-a-view"), { params: Promise.resolve({ id: "workspace-a", tenantId, viewId: "not-a-view" }) });
   expect(missing.status).toBe(404);
   expect(mocks.queryView).not.toHaveBeenCalled();
+});
+
+it("fails closed for board reads and moves before storage access", async () => {
+  mocks.authenticate.mockRejectedValue(new DocumentError("Structured records are not enabled in this environment.", "record_feature_disabled", 503));
+  const read = await BOARD(new Request(`https://hs.example/api/record-views/${viewId}/board`), detail());
+  expect(read.status).toBe(503);
+  expect(await read.json()).toMatchObject({ code: "record_feature_disabled", retryable: true });
+  expect(mocks.repository).not.toHaveBeenCalled();
+  expect(mocks.queryBoard).not.toHaveBeenCalled();
+  mocks.authenticate.mockRejectedValue(new DocumentError("Structured records are not enabled in this environment.", "record_feature_disabled", 503));
+  const write = await MOVE(request({ kind: "move", operationId, recordId: viewId, expectedVersion: 1, schemaVersion: 1, column: { kind: "choice", value: "one" } }), detail());
+  expect(write.status).toBe(503);
+  expect(await write.json()).toMatchObject({ code: "record_feature_disabled", retryable: true });
+  expect(mocks.repository).not.toHaveBeenCalled();
+  expect(mocks.moveBoardCard).not.toHaveBeenCalled();
+  mocks.authenticate.mockClear();
+  const cross = await MOVE(request({ kind: "move", operationId, recordId: viewId, expectedVersion: 1, schemaVersion: 1, column: { kind: "unassigned" } }, "https://attacker.example"), detail());
+  expect(cross.status).toBe(403);
+  expect(mocks.authenticate).not.toHaveBeenCalled();
+  const forged = await MOVE(request({ kind: "move", operationId, recordId: viewId, expectedVersion: 1, schemaVersion: 1, column: { kind: "choice", value: "one" }, values: { secret: "hidden" } }), detail());
+  expect(forged.status).toBe(400);
+  expect(mocks.moveBoardCard).not.toHaveBeenCalled();
 });

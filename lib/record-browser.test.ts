@@ -1043,3 +1043,55 @@ it("shows reference labels, keeps a held deprecated choice, and saves stable ite
     expect(editor.textContent).not.toContain(retired);
   } finally { await view.dispose(); }
 });
+it("loads a board with choice labels and moves a card without editing calculated fields", async () => {
+  const active = "11111111-1111-4111-8111-111111111111";
+  const second = "22222222-2222-4222-8222-222222222222";
+  let savedView: Record<string, unknown> | null = null;
+  const board = (version = 1) => ({
+    view: savedView,
+    groupLabel: "Department",
+    schemaVersion: 4,
+    fields: [{ key: "status-field", label: "Department", kind: "single-select", choices: [{ id: active, label: "Finance desk" }, { id: second, label: "Second desk" }] }],
+    columns: [
+      { key: `choice:${active}`, kind: "choice", value: active, label: "Finance desk", acceptsCards: true, nextCursor: null, cards: version === 1 ? [{ id: "record-a", name: "Acme", state: "active", version: 1, canMove: true, values: { "status-field": active }, calculated: [{ fieldKey: "formula-1", label: "Plus", value: 42, sensitive: false, stale: false, readOnly: true }] }] : [] },
+      { key: `choice:${second}`, kind: "choice", value: second, label: "Second desk", acceptsCards: true, nextCursor: null, cards: version === 1 ? [] : [{ id: "record-a", name: "Acme", state: "active", version: 2, canMove: true, values: { "status-field": second }, calculated: [{ fieldKey: "formula-1", label: "Plus", value: 42, sensitive: false, stale: false, readOnly: true }] }] },
+      { key: "unassigned", kind: "unassigned", value: null, label: "Unassigned", acceptsCards: true, nextCursor: null, cards: [] },
+    ],
+  });
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (init?.method === "POST" && url.includes("/board")) return response({ appliedVersion: 2, replayed: false, schemaVersion: 4, card: { id: "record-a", name: "Acme", state: "active", version: 2, canMove: true, values: { "status-field": second }, calculated: [{ fieldKey: "formula-1", label: "Plus", value: 42, sensitive: false, stale: false, readOnly: true }] } });
+    if (url.includes("/board")) return response(board(url.includes("cursor") ? 2 : (fetchMock.mock.calls.filter((call) => String(call[0]).includes("/board") && call[1]?.method === "POST").length ? 2 : 1)));
+    if (init?.method === "POST" && url.includes("/record-views")) {
+      const body = JSON.parse(String(init.body));
+      savedView = { id: body.id, collection: body.collection, scope: body.scope, name: body.name, version: 1, canManage: true, unavailable: false, definition: body.definition };
+      return response({ id: body.id, appliedVersion: 1, currentVersion: 1, deleted: false, replayed: false });
+    }
+    if (url.includes("/record-views/") && !url.includes("/board")) return response({ view: savedView, fields: [], schemaVersion: 4, results: [], nextCursor: null });
+    if (url.includes("/record-views")) return response({ views: savedView ? [savedView] : [] });
+    if (url.includes("/record-permissions")) return response({ schemaVersion: 4, fields: [{ key: "status-field", label: "Department", kind: "single-select", sensitive: false, choices: [active, second], canWrite: true, canHistory: false }, { key: "formula-1", label: "Plus", kind: "number", sensitive: false, choices: [], canWrite: false, canHistory: false, calculated: true }], collectionCapabilities: ["view", "edit", "manage-views"], canManage: false });
+    if (url.includes("/record-schema")) return response({ error: "Tenant administrator and schema permission are required." }, 403);
+    return response({ schemaVersion: 4, results: [], nextCursor: null });
+  });
+  const view = await mount();
+  try {
+    const form = view.host.querySelector<HTMLFormElement>('form[aria-label="Save table view"]')!;
+    await input(form.querySelector<HTMLInputElement>('input[name="view-name"]')!, "Department board");
+    await act(async () => form.querySelector<HTMLInputElement>('input[value="board"]')!.click());
+    expect(form.querySelector('select[aria-label="Board group field"]')!.textContent).toContain("Department");
+    await act(async () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    const screen = view.host.querySelector('section[aria-label="Record board"]')!;
+    expect(screen.textContent).toContain("Grouped by Department");
+    expect(screen.textContent).toContain("Finance desk");
+    expect(screen.textContent).toContain("Plus: 42 · read-only");
+    expect(screen.textContent).not.toContain(active);
+    expect(screen.textContent).not.toContain(second);
+    expect(screen.textContent).not.toContain("formula-1");
+    expect(screen.querySelector('[aria-label="Calculated fields"] input, [aria-label="Calculated fields"] textarea')).toBeNull();
+    expect(JSON.stringify(screen.textContent)).not.toMatch(/"count"|"total"/);
+    await select(screen.querySelector<HTMLSelectElement>('select[aria-label="Move Acme"]')!, `choice:${second}`);
+    const move = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST" && String(call[0]).includes("/board")).map((call) => JSON.parse(String(call[1].body)));
+    expect(move[0]).toMatchObject({ kind: "move", recordId: "record-a", expectedVersion: 1, schemaVersion: 4, column: { kind: "choice", value: second } });
+    expect(JSON.stringify(move[0])).not.toContain("formula-1");
+    expect(JSON.stringify(move[0])).not.toContain("Plus");
+  } finally { await view.dispose(); }
+});
