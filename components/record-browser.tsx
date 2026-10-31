@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useEffect, useState } from "react";
+import RecordExport from "./record-export";
 import RecordImport from "./record-import";
 
 type Summary = {
@@ -418,6 +419,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [canManage, setCanManage] = useState(false),
     [canCreate, setCanCreate] = useState<boolean | null>(null),
     [canImport, setCanImport] = useState(false),
+    [canExport, setCanExport] = useState(false),
     [drafts, setDrafts] = useState<Record<string, unknown>>({}),
     [edits, setEdits] = useState<Record<string, unknown>>({}),
     [historyEvents, setHistoryEvents] = useState<HistoryEvent[]>([]),
@@ -497,6 +499,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
         setCanManage(permissionResult?.canManage === true);
         setCanCreate(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("create") : null);
         setCanImport(Array.isArray(permissionResult?.collectionCapabilities) && permissionResult.collectionCapabilities.includes("view") && permissionResult.collectionCapabilities.includes("import"));
+        setCanExport(Array.isArray(permissionResult?.collectionCapabilities) && permissionResult.collectionCapabilities.includes("view") && permissionResult.collectionCapabilities.includes("export"));
         setCanManageViews(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("manage-views") : false);
         setSchemaCatalogue(schemaResult);
         setViews(viewResult);
@@ -517,6 +520,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setTrashCursor(null);
     setDuplicates(null);
     setCanImport(false);
+    setCanExport(false);
     setMergeSurvivorId("");
     setMergeNameFrom("survivor");
     setMergeParentFrom("");
@@ -1450,6 +1454,18 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               {viewDraft.id && activeView?.canManage && <button type="button" disabled={busy} onClick={() => void removeView()}>Delete view</button>}
             </div>
           </section>
+          {canExport && (
+            <RecordExport
+              key={collection}
+              workspaceId={workspaceId}
+              tenantId={tenantId}
+              collection={collection}
+              schemaVersion={schemaVersion}
+              view={activeView?.definition && !activeView.unavailable ? { id: activeView.id, name: activeView.name, version: activeView.version, columns: activeView.definition.columns } : null}
+              records={(activeView?.definition && !activeView.unavailable ? viewRows : items).map((row) => ({ id: row.id, name: row.name }))}
+              fields={fields.map((field) => ({ key: field.key, label: field.label, kind: field.kind }))}
+            />
+          )}
           {schemaCatalogue && (
             <section aria-label="Collection fields">
               <h2>Collection fields</h2>

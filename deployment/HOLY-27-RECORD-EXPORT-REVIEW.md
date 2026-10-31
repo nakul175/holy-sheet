@@ -1,6 +1,10 @@
-# Permission-checked record export foundation (HOLY-27)
+# Permission-checked record export (HOLY-27)
 
-This is an unexposed native service, not full story completion. No public export route/UI, tenant mapping or record grants are activated. Current verified suite tenant authority, native membership, record view/export rights, selected-field reads and referenced-record reads are required. A qualified typed-reference read authority is mandatory for nonempty attachment/record fields; no production adapter is supplied.
+## Foundation already in the tree
+
+The export service, snapshot storage, isolated renderer (`scripts/export-record-worker`, `build:record-export`), `expireRecordExportSnapshots`, and the service tests were already present. That foundation remains the authority for the behaviour below. This connection does not add a tenant-provisioning adapter, a JWT-role fallback, or a production typed-reference adapter.
+
+Current verified suite tenant authority, native membership, record view/export rights, selected-field reads and referenced-record reads are required. A qualified typed-reference read authority is mandatory for nonempty attachment/record fields; no production adapter is supplied.
 
 A saved view uses its current version, filtered rows and permitted default columns; an explicit record scope rejects duplicates and mixed collections. IDs and core relationship IDs are opt-in. At most 10,000 records, 100 columns and a 20 MiB private snapshot can be prepared. The requester/workspace-bound snapshot pins reviewed values for fifteen minutes, with eight concurrent jobs per actor. Later ordinary edits do not silently change it. Current schema/policy, record and field rights are checked at prepare, preview, before rendering and again before issuance. Alias identity changes require a fresh export. Rendering runs outside database locks. Cancellation or revocation during rendering returns no file and no successful issuance audit. A final database-clock expiry check runs after suite proof verification. Successful issuance is metadata-audited once; retry returns the same pinned content under current permissions.
 
@@ -8,4 +12,19 @@ CSV uses UTF-8 BOM and quoted cells. Formula-risk text and headers receive an ap
 
 The shared worker lease bounds rendering to 256 MiB, fifteen seconds and 64 MiB output. Child processes have no application environment, filesystem writes, evaluated strings, native addons or child process permission. This is process/resource isolation, not an OS network sandbox claim. Existing explicit maintenance erases expired snapshots while retaining job identity/audit; no schedule is added. Operational cleanup cadence must be qualified before activation.
 
-Tests cover real CSV/XLSX child output, deterministic XLSX parsing, permission separation, actor-private jobs, pinned content, filtered views, escaping acknowledgement, field revocation, cancellation/revocation during rendering, identity immutability, expiry/tombstones, current authority and real PostgreSQL concurrent prepare retry. Exact-image worker canaries run without networking. Native UI/keyboard/mobile workflow, approved tenant/reference adapters and representative large-export throughput qualification remain open.
+Tests cover real CSV/XLSX child output, deterministic XLSX parsing, permission separation, actor-private jobs, pinned content, filtered views, escaping acknowledgement, field revocation, cancellation/revocation during rendering, identity immutability, expiry/tombstones, current authority and real PostgreSQL concurrent prepare retry. Exact-image worker canaries run without networking.
+
+## Connected in this change
+
+Native routes call `SharedRecordExportRepository` through the same suite-tenant authority as records, permissions, schema, saved views, lifecycle, merge and import (`authenticateRecordAuthority` and `HS_RECORDS_ENABLED`). There is no JWT-role fallback and no tenant-provisioning adapter. Each route constructs the repository with the verified authority only. No `RecordExportReferenceAuthority` is supplied, so nonempty attachment and record values still fail closed with `record_export_reference_unavailable`.
+
+- `POST /api/v1/workspaces/:id/tenants/:tenantId/record-exports` prepares one CSV or XLSX snapshot from a saved view or an explicit record scope. `includeIds` and `includeRelationships` are required booleans. The same job id retries the same scope. Duplicate record ids, duplicate columns, a mixed-collection payload and reserved ID or relationship column keys are rejected before preparation. An explicit scope names one collection; the repository still rejects records that are not in that collection.
+- `GET .../record-exports/:jobId` returns the pinned preview (columns, row count, warnings, review hash and expiry) and rechecks current authority. Cell values are not part of this response.
+- `POST` on that job cancels the snapshot.
+- `POST .../record-exports/:jobId/download` requires the review hash and, when the snapshot carries a spreadsheet-escaping warning, explicit acknowledgement. The response is the pinned file (`holy-sheet-records.csv` or `holy-sheet-records.xlsx`) with `nosniff` and `no-store`. A supplied filename or unexpected content type is not adopted.
+
+The records screen shows Export records when the current collection grant includes view and export. Create, edit, link and field reads stay with the native record kernel. A saved view exports its current version, filtered rows and permitted default columns. Chosen records export only the checked loaded rows and columns the operator can already view, excluding attachment and record fields. A saved view that includes those fields still fails closed when any exported row has a value. HS IDs and core relationship IDs stay off until the operator opts in.
+
+## Still open
+
+Native UI, keyboard and mobile workflow qualification remains open. Approved tenant and typed-reference adapters are not supplied. Representative large-export throughput is not qualified. Operational cleanup cadence must be qualified before activation: existing maintenance calls `expireRecordExportSnapshots`, and no schedule was added. Worker limits remain process and resource isolation (256 MiB, fifteen seconds, 64 MiB output), not an OS network sandbox claim. A job id held only in another session is not listed or recovered here. The eight-active-job cap still applies. This connection does not mark HOLY-27 Done.
