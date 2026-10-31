@@ -272,7 +272,7 @@ function LayoutFieldControl({ field, value, disabled, readOnly, id, onChange }: 
   const change = (next: unknown) => { if (!locked) onChange(next); };
   if (field.kind === "boolean") return <input id={id} type="checkbox" checked={value === true} disabled={locked} onChange={(event) => change(event.target.checked)} />;
   if (field.kind === "single-select") return <select id={id} value={typeof value === "string" ? value : ""} disabled={locked} onChange={(event) => change(event.target.value)}><option value="">Choose</option>{field.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select>;
-  if (field.kind === "long-text") return <textarea id={id} readOnly={locked} value={value === undefined || value === null ? "" : String(value)} onChange={(event) => change(event.target.value)} />;
+  if (field.kind === "long-text") return <textarea id={id} readOnly={locked} required={field.required && !locked} value={value === undefined || value === null ? "" : String(value)} onChange={(event) => change(event.target.value)} />;
   if (field.kind === "currency") {
     const current = value && typeof value === "object" ? value as { currency?: string; minorUnits?: string; scale?: number } : {};
     const next = (patch: { currency?: string; minorUnits?: string; scale?: number }) => change({ currency: current.currency ?? "", minorUnits: current.minorUnits ?? "", scale: current.scale ?? 2, ...patch });
@@ -289,6 +289,23 @@ type PublishedLayout = {
   needsLayoutReview: boolean;
   canCreate: boolean;
 };
+type ConditionProjection = { field: string; visible: boolean; required: boolean };
+function acceptedConditionProjection(body: unknown): ConditionProjection[] | null {
+  if (!body || typeof body !== "object" || !Array.isArray((body as { fields?: unknown }).fields)) return null;
+  const states: ConditionProjection[] = [];
+  for (const item of (body as { fields: unknown[] }).fields) {
+    if (!item || typeof item !== "object") return null;
+    const row = item as Record<string, unknown>;
+    if (typeof row.field !== "string" || typeof row.visible !== "boolean" || typeof row.required !== "boolean") return null;
+    if ("hiddenValues" in row && row.hiddenValues !== "retained") return null;
+    if (Object.keys(row).some((key) => key !== "field" && key !== "visible" && key !== "required" && key !== "hiddenValues")) return null;
+    states.push({ field: row.field, visible: row.visible, required: row.required });
+  }
+  return states;
+}
+function conditionVisible(states: ConditionProjection[] | null, key: string) {
+  return states?.find((state) => state.field === key)?.visible !== false;
+}
 function acceptedPublishedLayout(body: unknown): PublishedLayout | null {
   if (!body || typeof body !== "object" || !("published" in body)) return null;
   const published = (body as { published?: unknown }).published;
@@ -315,8 +332,8 @@ function layoutHostFields(layout: PublishedLayout, catalogue: FieldMeta[], nameW
   }
   return fields;
 }
-function RecordFormLayout({ layout, fields, name, values, nameDisabled, fieldsDisabled, nameWritable, hasUnsavedChanges, scopeKey, onName, onValue }: { layout: PublishedLayout; fields: FieldMeta[]; name: string; values: Record<string, unknown>; nameDisabled: boolean; fieldsDisabled: boolean; nameWritable: boolean; hasUnsavedChanges: boolean; scopeKey: string; onName: (value: string) => void; onValue: (key: string, value: unknown) => void }) {
-  return <RecordLayout scopeKey={scopeKey} snapshot={{ publicationRevision: layout.publicationRevision, schemaVersion: layout.schemaVersion, definition: layout.definition }} fields={layoutHostFields(layout, fields, nameWritable)} hasUnsavedChanges={hasUnsavedChanges} renderField={(field, control) => {
+function RecordFormLayout({ layout, fields, name, values, nameDisabled, fieldsDisabled, nameWritable, hasUnsavedChanges, scopeKey, conditions, onName, onValue }: { layout: PublishedLayout; fields: FieldMeta[]; name: string; values: Record<string, unknown>; nameDisabled: boolean; fieldsDisabled: boolean; nameWritable: boolean; hasUnsavedChanges: boolean; scopeKey: string; conditions?: ConditionProjection[]; onName: (value: string) => void; onValue: (key: string, value: unknown) => void }) {
+  return <RecordLayout scopeKey={scopeKey} snapshot={{ publicationRevision: layout.publicationRevision, schemaVersion: layout.schemaVersion, definition: layout.definition }} fields={layoutHostFields(layout, fields, nameWritable)} conditions={conditions} hasUnsavedChanges={hasUnsavedChanges} renderField={(field, control) => {
     if (field.key === "name") return <input id={control.id} required={!control.readOnly && !nameDisabled} minLength={1} maxLength={200} value={name} disabled={nameDisabled} readOnly={control.readOnly} onChange={(event) => { if (!control.readOnly && !nameDisabled) onName(event.target.value); }} />;
     const meta = fields.find((item) => item.key === field.key);
     if (!meta) return null;
@@ -472,6 +489,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     [canCreate, setCanCreate] = useState<boolean | null>(null),
     [collectionLayout, setCollectionLayout] = useState<PublishedLayout | null>(null),
     [recordLayout, setRecordLayout] = useState<PublishedLayout | null>(null),
+    [createConditions, setCreateConditions] = useState<ConditionProjection[] | null>(null),
+    [recordConditions, setRecordConditions] = useState<ConditionProjection[] | null>(null),
     [canImport, setCanImport] = useState(false),
     [canExport, setCanExport] = useState(false),
     [drafts, setDrafts] = useState<Record<string, unknown>>({}),
@@ -513,6 +532,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
   const duplicatesBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-duplicates`;
   const mergesBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-merges`;
   const layoutsBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-layouts`;
+  const conditionsBase = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/record-conditions`;
   async function json(url: string, init?: RequestInit) {
     const response = await fetch(url, {
         credentials: "same-origin",
@@ -528,6 +548,14 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     if (recordId) params.set("recordId", recordId);
     try { return acceptedPublishedLayout(await json(`${layoutsBase}?${params}`)); }
     catch { return null; }
+  }
+  async function readConditionProjection(collectionId: string, recordId?: string, values?: Record<string, unknown>) {
+    try {
+      const body = values && Object.keys(values).length
+        ? await json(conditionsBase, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "state", collection: collectionId, ...(recordId ? { recordId } : {}), values }) })
+        : await json(`${conditionsBase}?${new URLSearchParams({ collection: collectionId, projection: "state", ...(recordId ? { recordId } : {}) })}`);
+      return acceptedConditionProjection(body);
+    } catch { return null; }
   }
   function submittedFieldValues(source: Record<string, unknown>, layout: PublishedLayout | null) {
     const editable = layout ? new Set(layout.definition.tabs.flatMap((tab) => tab.sections.flatMap((section) => section.fields.filter((slot) => slot.mode === "edit").map((slot) => slot.field)))) : null;
@@ -602,6 +630,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setSchemaPreview(null);
     setCollectionLayout(null);
     setRecordLayout(null);
+    setCreateConditions(null);
+    setRecordConditions(null);
     setViews([]);
     setCanManageViews(false);
     setActiveViewId("");
@@ -611,6 +641,22 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
     setViewCursor(null);
     void load(true, false);
   }, [collection]);
+  const draftKey = JSON.stringify(drafts);
+  const editKey = JSON.stringify(edits);
+  useEffect(() => {
+    const recordId = selected?.id;
+    const layout = recordId ? recordLayout : collectionLayout;
+    const values = recordId ? edits : drafts;
+    if (!layout && Object.keys(values).length === 0) return;
+    const targetCollection = selected?.collection ?? collection;
+    let cancel = false;
+    void readConditionProjection(targetCollection, recordId, values).then((projection) => {
+      if (cancel) return;
+      if (recordId) setRecordConditions(projection);
+      else setCreateConditions(projection);
+    });
+    return () => { cancel = true; };
+  }, [collection, selected?.id, selected?.collection, collectionLayout, recordLayout, draftKey, editKey]);
   async function open(id: string) {
     setBusy(true);
     setError("");
@@ -621,6 +667,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
       setEditName(record.name);
       setEdits({});
       setRecordLayout(layout);
+      setRecordConditions(null);
       setPreview(null);
       setDeletePreview(null);
       setDuplicates(null);
@@ -1536,6 +1583,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               <h2>Collection fields</h2>
               <p>Schema permission does not grant field-value read, write, or history. Defaults apply only to future records. Built-in identity, tenant, and parent rules stay fixed. Sensitivity can be raised here and cannot be lowered. Fields are not deleted.</p>
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/layout`}>Arrange record layout</a>. Publishing a layout does not change record values or grant access.</p>
+              <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(collection)}/conditions`}>Conditional fields</a>. Typed conditions show or require fields. Hiding a field keeps its value until an explicit edit clears it.</p>
               <p>{schemaCatalogue.customFieldCount} of {schemaCatalogue.limits.maxFields} custom fields. Select fields allow {schemaCatalogue.limits.maxChoices} choices.</p>
               <ul>
                 {schemaCatalogue.fields.filter((field) => field.core).map((field) => <li key={field.key}>{field.label} · built-in · not editable</li>)}
@@ -1594,9 +1642,10 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
           {selected ? (
             <>
               <form onSubmit={save}>
-                {recordLayout ? <RecordFormLayout layout={recordLayout} fields={fields} name={editName} values={Object.fromEntries(fields.map((field) => [field.key, Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]]))} nameDisabled={archivedRecord} fieldsDisabled={busy || archivedRecord || !selected.capabilities.includes("edit")} nameWritable={!archivedRecord && selected.capabilities.includes("edit")} hasUnsavedChanges={editName !== selected.name || Object.keys(edits).length > 0} scopeKey={`${collection}:${selected.id}`} onName={setEditName} onValue={(key, value) => setEdits((current) => ({ ...current, [key]: value }))} /> : <label>Name <input required minLength={1} maxLength={200} value={editName} disabled={archivedRecord} onChange={(event) => setEditName(event.target.value)} /></label>}
+                {recordLayout ? <RecordFormLayout layout={recordLayout} fields={fields} name={editName} values={Object.fromEntries(fields.map((field) => [field.key, Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]]))} nameDisabled={archivedRecord} fieldsDisabled={busy || archivedRecord || !selected.capabilities.includes("edit")} nameWritable={!archivedRecord && selected.capabilities.includes("edit")} hasUnsavedChanges={editName !== selected.name || Object.keys(edits).length > 0} scopeKey={`${collection}:${selected.id}`} conditions={recordConditions ?? undefined} onName={setEditName} onValue={(key, value) => setEdits((current) => ({ ...current, [key]: value }))} /> : <label>Name <input required minLength={1} maxLength={200} value={editName} disabled={archivedRecord} onChange={(event) => setEditName(event.target.value)} /></label>}
                 <button disabled={busy || archivedRecord || !selected.capabilities.includes("edit")}>Save changes</button>
-                {!recordLayout && fields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy || archivedRecord || !selected.capabilities.includes("edit")} value={Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]} onChange={(value) => setEdits((current) => ({ ...current, [field.key]: value }))} />)}
+                {!recordLayout && recordConditions?.some((state) => !state.visible) && <p role="note">Hidden fields retain their values. Clear them only with an explicit permitted edit.</p>}
+                {!recordLayout && fields.filter((field) => conditionVisible(recordConditions, field.key)).map((field) => <FieldEditor key={field.key} field={field} disabled={busy || archivedRecord || !selected.capabilities.includes("edit")} value={Object.hasOwn(edits, field.key) ? edits[field.key] : selected.values?.[field.key]} onChange={(value) => setEdits((current) => ({ ...current, [field.key]: value }))} />)}
               </form>
               {archivedRecord && <p>This record is archived and stays readable. Unarchive it before saving changes or adding links.</p>}
               <p>Fields you cannot view are omitted. A name change keeps those hidden values.</p>
@@ -1819,7 +1868,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
             </>
           ) : (
             <form onSubmit={create}>
-              {collectionLayout ? <RecordFormLayout layout={collectionLayout} fields={fields} name={createName} values={drafts} nameDisabled={false} fieldsDisabled={busy} nameWritable={canCreate !== false} hasUnsavedChanges={createName.trim().length > 0 || Object.keys(drafts).length > 0} scopeKey={`${collection}:create`} onName={(value) => { setCreateName(value); setDuplicates(null); }} onValue={(key, value) => { setDrafts((current) => ({ ...current, [key]: value })); setDuplicates(null); }} /> : <label>Name <input required minLength={1} maxLength={200} value={createName} onChange={(event) => { setCreateName(event.target.value); setDuplicates(null); }} /></label>}
+              {collectionLayout ? <RecordFormLayout layout={collectionLayout} fields={fields} name={createName} values={drafts} nameDisabled={false} fieldsDisabled={busy} nameWritable={canCreate !== false} hasUnsavedChanges={createName.trim().length > 0 || Object.keys(drafts).length > 0} scopeKey={`${collection}:create`} conditions={createConditions ?? undefined} onName={(value) => { setCreateName(value); setDuplicates(null); }} onValue={(key, value) => { setDrafts((current) => ({ ...current, [key]: value })); setDuplicates(null); }} /> : <label>Name <input required minLength={1} maxLength={200} value={createName} onChange={(event) => { setCreateName(event.target.value); setDuplicates(null); }} /></label>}
               {collection === "accounts" && (
                 <label>
                   Parent organisation ID <input required value={createParent} onChange={(event) => setCreateParent(event.target.value)} />
@@ -1835,7 +1884,8 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
                   </label>
                 </>
               )}
-              {!collectionLayout && writableFields.map((field) => <FieldEditor key={field.key} field={field} disabled={busy} value={drafts[field.key]} onChange={(value) => { setDrafts((current) => ({ ...current, [field.key]: value })); setDuplicates(null); }} />)}
+              {!collectionLayout && createConditions?.some((state) => !state.visible) && <p role="note">Hidden fields retain their values. Clear them only with an explicit permitted edit.</p>}
+              {!collectionLayout && writableFields.filter((field) => conditionVisible(createConditions, field.key)).map((field) => <FieldEditor key={field.key} field={field} disabled={busy} value={drafts[field.key]} onChange={(value) => { setDrafts((current) => ({ ...current, [field.key]: value })); setDuplicates(null); }} />)}
               {collectionLayout && canCreate === true && collectionLayout.canCreate === false && <p role="status">Creation is paused until the published layout places every required field in an editable slot.</p>}
               {(collection === "accounts" || collection === "contracts") && <p>Linked organisations and accounts must be active. Unarchive a record before using it in a new link.</p>}
               <section aria-label="Duplicate suggestions">
