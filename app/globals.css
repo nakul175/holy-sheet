@@ -431,3 +431,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
  .hs-search-results button { grid-template-columns:minmax(0,1fr); }
  .hs-search-results button p { grid-column:1; white-space:normal; overflow-wrap:anywhere; }
 }
+.record-responsibility{display:grid;gap:8px;margin:16px 0;padding:12px;border:1px solid var(--line);border-radius:10px}
+.record-responsibility button,.record-responsibility input{min-height:44px}
+.record-responsibility [role=listbox]{display:grid;gap:8px;margin:0;padding:0}
+.record-responsibility [role=option]{text-align:left}

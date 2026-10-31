@@ -2,6 +2,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import RecordBoard, { acceptedBoard, type BoardCard, type BoardColumnModel, type BoardModel } from "./record-board";
 import RecordComments from "./record-comments";
+import RecordResponsibility from "./record-responsibility";
 import RecordNotifications from "./record-notifications";
 import RecordCalendar, { acceptedCalendar, calendarMonthRange, currentCalendarMonth, type CalendarEvent, type CalendarModel } from "./record-calendar";
 import RecordDashboard, { acceptedDashboard, type DashboardModel } from "./record-dashboard";
@@ -2099,6 +2100,7 @@ export default function RecordBrowser({ workspaceId, tenantId }: { workspaceId: 
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/collections/${encodeURIComponent(selected.collection)}/periodic-review`}>Periodic review for this collection</a>. See whether this collection has records due for a scheduled review you are allowed to view.</p>
               <p><a href={`/workspaces/${encodeURIComponent(workspaceId)}/tenants/${encodeURIComponent(tenantId)}/catalogue?collection=${encodeURIComponent(selected.collection)}`}>Field definitions for this collection</a>. Open the data catalogue for the types, required fields, and reference lists you are allowed to view.</p>
               <RecordComments key={selected.id} workspaceId={workspaceId} tenantId={tenantId} recordId={selected.id} />
+              <RecordResponsibility key={`responsibility-${selected.id}`} workspaceId={workspaceId} tenantId={tenantId} recordId={selected.id} />
               <dl>
                 <dt>Immutable ID</dt>
                 <dd>{selected.id}</dd>
