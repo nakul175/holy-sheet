@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { blockTypes,mediaIdPattern,type Block } from './types';
+import { recordRefAttributeError } from "./record-page-refs";
 import { richSchema } from "./rich-schema";
 
 export type RichNode = { type: string; text?: string; attrs?: Record<string, unknown>; marks?: { type: string; attrs?: Record<string, unknown> }[]; content?: RichNode[] };
@@ -8,7 +9,7 @@ export const documentLimits = {bytes:25_000_000,blocks:10_000,depth:12} as const
 export const languages = ["plaintext", "bash", "javascript", "typescript", "json", "html", "css", "sql", "python", "java", "csharp", "cpp", "go", "rust", "php", "ruby", "yaml", "markdown"];
 export const palette = ["#171717", "#6b7280", "#1d4ed8", "#15803d", "#92400e", "#b91c1c", "#6d28d9"];
 export const highlights = ["#fef3c7", "#dbeafe", "#dcfce7", "#fee2e2", "#ede9fe"];
-export const nodeTypes = ["doc", "text", "paragraph", "heading", "bulletList", "orderedList", "listItem", "taskList", "taskItem", "horizontalRule", "blockquote", "callout", "codeBlock", "table", "tableRow", "tableCell", "tableHeader", "image", "file", "details", "detailsSummary", "detailsContent", "tableOfContents", "pageLink", "hardBreak"];
+export const nodeTypes = ["doc", "text", "paragraph", "heading", "bulletList", "orderedList", "listItem", "taskList", "taskItem", "horizontalRule", "blockquote", "callout", "codeBlock", "table", "tableRow", "tableCell", "tableHeader", "image", "file", "details", "detailsSummary", "detailsContent", "tableOfContents", "pageLink", "recordRef", "recordView", "hardBreak"];
 export const idTypes = nodeTypes.filter(t => !["doc", "text", "hardBreak"].includes(t));
 export function stableStringify(value:unknown):string {
   function sort(v:unknown):unknown { if(Array.isArray(v))return v.map(sort);if(v&&typeof v==='object')return Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,item])=>[k,sort(item)]));return v; }
@@ -27,6 +28,7 @@ export class DocumentError extends Error {
 }
 export const saveInput = z.object({ operationId: z.string().uuid(), baseVersion: z.number().int().positive(), title: z.string().max(240), document: z.unknown() }).strict();
 const allowedAttrs = new Set(["id", "level", "start", "checked", "language", "colspan", "rowspan", "colwidth", "align", "theme", "icon", "alt", "title", "caption", "width", "attachmentId", "src", "pageId", "open"]);
+const recordAttrs: Record<string, string[]> = { recordRef: ["nodeVersion", "recordId", "collectionId", "display", "fields"], recordView: ["nodeVersion", "viewId", "collectionId", "layout", "columns", "limit"] };
 
 export function validateDocument(input: unknown): RichNode {
   if (new TextEncoder().encode(JSON.stringify(input) ?? "").byteLength > documentLimits.bytes) throw new DocumentError("Document exceeds the 25 MB safety limit. Split the page; your draft is retained.", "payload_too_large", 413);
@@ -40,11 +42,18 @@ export function validateDocument(input: unknown): RichNode {
     if (n.type === "doc" && parent) throw new DocumentError("Nested document");
     if (n.type === "text" && (typeof n.text !== "string" || n.content)) throw new DocumentError("Invalid text");
     if (n.type !== "text" && n.text !== undefined) throw new DocumentError("Text must use structured text nodes");
-    if (n.attrs && (typeof n.attrs !== "object" || Array.isArray(n.attrs) || Object.keys(n.attrs).some(k => !allowedAttrs.has(k)))) throw new DocumentError(`Unsupported attributes on ${n.type}`);
+    if (n.attrs && (typeof n.attrs !== "object" || Array.isArray(n.attrs) || Object.keys(n.attrs).some(k => !allowedAttrs.has(k) && !recordAttrs[n.type]?.includes(k)))) throw new DocumentError(`Unsupported attributes on ${n.type}`);
     for (const [key,v] of Object.entries(n.attrs ?? {})) {
+      if ((key === "fields" || key === "columns") && Array.isArray(v)) {
+        if (v.length > 12 || v.some(item => typeof item !== "string" || item.length > 100)) throw new DocumentError("Invalid record block fields");
+        continue;
+      }
       if (key !== "colwidth" && !["string", "number", "boolean"].includes(typeof v) && v !== null) throw new DocumentError("Invalid attribute value");
       if (typeof v === "string" && v.length > 2048) throw new DocumentError("Attribute too long");
     }
+    const recordError = recordRefAttributeError(n.type, n.attrs);
+    if (recordError) throw new DocumentError(recordError);
+    if ((n.type === "recordRef" || n.type === "recordView") && n.content?.length) throw new DocumentError("Record blocks cannot store nested content");
     if (idTypes.includes(n.type)) {
       const id = n.attrs?.id;
       if (typeof id !== "string" || !/^[a-zA-Z0-9_-]{1,100}$/.test(id) || ids.has(id)) throw new DocumentError("Missing or duplicate stable block ID");

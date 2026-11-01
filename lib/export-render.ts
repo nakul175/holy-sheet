@@ -3,6 +3,7 @@ import fonts from 'pdfmake/build/fonts/Roboto.js';
 import type {Content,ContentText,TDocumentDefinitions} from 'pdfmake/interfaces';
 import type {RichNode} from './document';
 import {exportHref,exportText,pdfSafeText,type ExportInput} from './export-plan';
+import {formatPrintedAtIst} from './record-page-refs';
 type Renderer=typeof pdfmake&{virtualfs:{writeFileSync:(name:string,data:string,encoding:'base64')=>void}};
 const renderer=pdfmake as Renderer;
 for(const [name,value] of Object.entries(fonts.vfs))renderer.virtualfs.writeFileSync(name,value.data,value.encoding);
@@ -33,9 +34,21 @@ export async function renderPdf(input:ExportInput):Promise<Buffer>{
   }
   if(n.type==='image'||n.type==='file'){const label=n.type==='image'?'Image':'File',description=String(n.attrs?.[n.type==='image'?'alt':'title']??'');out.push({text:pdfSafeText(`[${label} omitted${description?': '+description:''}]`,cell),italics:true,color:'#475569',margin:[0,3,0,8]});if(n.attrs?.caption)out.push({text:pdfSafeText(String(n.attrs.caption),cell),fontSize:10,margin:[0,0,0,8]});continue;}
   if(n.type==='pageLink'){const ref=input.references[String(n.attrs?.pageId)],url=ref?.available&&ref.url&&exportHref(ref.url,input.origin);out.push({text:pdfSafeText(ref?.available?ref.title??'Page':'[Page reference unavailable]',cell),...(url?{link:url,color:'#2453a6',decoration:'underline' as const}:{}),margin:[0,0,0,8]});continue;}
+  if(n.type==='recordRef'||n.type==='recordView'){out.push(...renderRecordPdf(n,input,cell));continue;}
   if(n.type==='tableOfContents'){out.push({stack:[{text:'Contents',bold:true},...headings.map(h=>({text:pdfSafeText('- '+h,cell),margin:[0,2,0,2] as [number,number,number,number]}))],margin:[0,5,0,12]});continue;}
   out.push(...blocks(n.content??[],cell,depth));
  }return out;}
  const definition:TDocumentDefinitions={pageSize:'A4',pageOrientation:wide?'landscape':'portrait',pageMargins:[40,40,40,44],defaultStyle:{font:'Roboto',fontSize:11,lineHeight:1.2,color:'#172033'},info:{title:input.title,creator:'Holy Sheet',producer:'Holy Sheet',creationDate:new Date(input.createdAt),modDate:new Date(input.createdAt)},content:[{text:pdfSafeText(input.title),fontSize:26,bold:true,margin:[0,0,0,18]},...blocks(input.document.content??[])],footer:(page,pages)=>({text:`Saved version ${input.version}  |  ${page} / ${pages}`,fontSize:8,color:'#475569',alignment:'center',margin:[0,12,0,0]}),pageBreakBefore:(node,container)=>!!node.headlineLevel&&container.getFollowingNodesOnPage().length===0&&container.getNodesOnNextPage().length>0};
  return Buffer.from(await renderer.createPdf(definition).getBuffer());
+}
+function renderRecordPdf(node:RichNode,input:ExportInput,cell:boolean):Content[]{
+ const key=node.type==='recordRef'?String(node.attrs?.recordId??''):`view:${String(node.attrs?.viewId??'')}`;
+ const slice=input.recordReferences?.[key];
+ const printed={text:pdfSafeText(formatPrintedAtIst(new Date(input.createdAt)),cell),fontSize:8,color:'#475569',margin:[0,2,0,8] as [number,number,number,number]};
+ if(!slice?.available)return [{text:'Restricted record',italics:true,color:'#475569',margin:[0,0,0,4]},printed];
+ if(slice.kind==='record'){const url=exportHref(slice.url,input.origin);const lines:Content[]=[{text:pdfSafeText(`Record: ${slice.title}`,cell),...(url?{link:url,color:'#2453a6',decoration:'underline' as const}:{}),margin:[0,0,0,4]}];for(const field of slice.fields)lines.push({text:pdfSafeText(`${field.label}: ${field.value??'—'}`,cell),margin:[0,0,0,2]});lines.push(printed);return lines;}
+ const body=slice.rows.map(row=>row.cells.map((value,index)=>({text:pdfSafeText(value===null||slice.columns[index]?.hidden?'—':value,true),fontSize:9})));
+ const header=slice.columns.map(column=>({text:pdfSafeText(column.label,true),bold:true,fontSize:9,fillColor:'#edf1f6'}));
+ const url=exportHref(slice.url,input.origin);
+ return [{text:pdfSafeText(slice.collectionName,cell),...(url?{link:url,color:'#2453a6',decoration:'underline' as const}:{}),margin:[0,0,0,4] as [number,number,number,number]},...(header.length?[{table:{widths:header.map(()=>'*' as const),headerRows:1,body:[header,...body]},layout:'lightHorizontalLines' as const,margin:[0,0,0,4] as [number,number,number,number]}]:[]),{text:pdfSafeText(slice.countLabel,cell),fontSize:9,margin:[0,0,0,2] as [number,number,number,number]},printed];
 }

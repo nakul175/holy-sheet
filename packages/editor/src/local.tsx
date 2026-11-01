@@ -3,6 +3,7 @@ import HolySheetApp from '../../../components/holy-sheet-app';
 import {SessionGate} from './boundary';
 import type {LocalEditorProps} from './contracts';
 export {createHolySheetSessionProvider} from './boundary';
+export {recordReferenceNodeVersion} from '../../../lib/record-page-refs';
 export type {LocalEditorProps,SessionProvider,ViewContext} from './contracts';
 /** The actual HS editor, API client and recovery implementation, compiled from their canonical sources. */
 export function HolySheetEditor(props:LocalEditorProps){

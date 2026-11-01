@@ -462,3 +462,16 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .record-compare-only-right{background:#f3e8ff;box-shadow:inset 4px 0 #6d28d9}
 .record-compare tr:focus-visible,.record-compare button:focus-visible,.record-compare input:focus-visible{outline:2px solid #5141b3;outline-offset:2px}
 .record-compare-pick{display:flex;gap:8px;align-items:center}
+.record-ref-block,.record-ref-chip,.record-ref-card,.record-ref-view,.record-ref-placeholder,.record-picker{max-width:100%;box-sizing:border-box}
+.record-ref-placeholder{min-height:72px;border:1px solid #e7e6df;border-radius:9px;padding:14px;margin:15px 0;background:#fcfcfa}
+.record-ref-chip,.record-ref-card{display:block;border:1px solid #e7e6df;border-radius:9px;padding:10px 14px;margin:15px 0;background:#fcfcfa;text-decoration:none}
+.record-ref-card dl{display:grid;gap:6px;margin:10px 0 0}
+.record-ref-card dt{font-size:11px;color:#73736d}
+.record-ref-view{border:1px solid #e7e6df;border-radius:9px;padding:14px;margin:15px 0;background:#fcfcfa}
+.record-ref-view ul{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;padding:0;list-style:none}
+.record-ref-view li{border:1px solid #e2e2dd;border-radius:999px;padding:4px 8px;font-size:12px}
+.record-ref-scroll{overflow-x:auto}
+.record-ref-view table{width:100%;border-collapse:collapse}
+.record-ref-view th,.record-ref-view td{border-bottom:1px solid #e7e6df;padding:8px;text-align:left;font-size:13px}
+.record-picker{display:grid;gap:10px}
+.record-picker fieldset{border:0;margin:0;padding:0;display:grid;gap:8px}
