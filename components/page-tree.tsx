@@ -259,9 +259,9 @@ export default function PageTree({ workspaceId, spaceId, spaceName, activeId, on
     <div className={`page-tree-space${drop?.id === "space" ? " drop-inside" : ""}`} onDragOver={event => { if (!dragging.current) return; event.preventDefault(); setDrop({ id: "space", place: "inside" }); }} onDrop={event => { event.preventDefault(); const dragged = dragging.current ? find(dragging.current) : undefined; dragging.current = null; setDrop(null); if (!dragged) return; const index = siblingDestination(roots.map(node => node.id), dragged.id, "", "after"); void commitMove({ pageId: dragged.id, spaceId, parentId: null, index }, { spaceId: dragged.spaceId, parentId: dragged.parentId, index: siblingsOf(dragged).findIndex(node => node.id === dragged.id) }); }}>
       {canCreate && <button type="button" className="page-tree-add" aria-label={`New page in ${spaceName}`} disabled={busy} onClick={() => void createChild(null)}><UiIcon name="plus"/>New page</button>}
     </div>
-    <div ref={scroller} className="page-tree page-tree-virtual" role="tree" aria-label={`${spaceName} pages`} aria-describedby={hintId} onKeyDown={onKey} onScroll={event => setScrollTop(event.currentTarget.scrollTop)} onDragLeave={() => setDrop(null)}>
-      {!ready && <div className="page-tree-skeleton" role="status" aria-busy="true">Loading pages</div>}
-      {ready && !rows.length && <p className="space-empty">No pages yet</p>}
+    {!ready && <div className="page-tree-skeleton" role="status" aria-busy="true">Loading pages</div>}
+    {ready && !rows.length && <p className="space-empty">No pages yet</p>}
+    {rows.length > 0 && <div ref={scroller} className="page-tree page-tree-virtual" role="tree" aria-label={`Pages in ${spaceName}`} aria-describedby={hintId} onKeyDown={onKey} onScroll={event => setScrollTop(event.currentTarget.scrollTop)} onDragLeave={() => setDrop(null)}>
       <div style={{ position: "relative", height: rows.length * PAGE_TREE_ROW_PX }}>
         {visibleRows.map((row, offset) => {
           const top = (range.start + offset) * PAGE_TREE_ROW_PX;
@@ -275,7 +275,7 @@ export default function PageTree({ workspaceId, spaceId, spaceName, activeId, on
           </div>;
         })}
       </div>
-    </div>
+    </div>}
     <p id={hintId} className="page-tree-live">Arrow keys move in the tree. Enter opens. F2 renames. N or plus creates a subpage. Alt plus Shift plus arrows reorder. Command or Control plus Shift plus M opens Move page. Escape cancels an empty new page.</p>
     <div className="page-tree-live" aria-live="polite">{drop ? `Drop ${drop.place === "inside" && drop.id === "space" ? `inside ${spaceName}` : `${drop.place} ${find(drop.id)?.title ?? ""}`}` : ""}</div>
     {toast && <div className="page-tree-toast" role="status"><span>Page moved. {toast.atIst}. Undo is available for 10 seconds.</span><button type="button" onClick={() => { const current = find(toast.pageId); const redo = current ? { spaceId: current.spaceId, parentId: current.parentId, index: siblingsOf(current).findIndex(node => node.id === current.id) } : null; const inverse = toast.inverse; setToast(null); void commitMove({ pageId: toast.pageId, ...inverse }, redo && redo.index >= 0 ? redo : null); }}>Undo</button></div>}

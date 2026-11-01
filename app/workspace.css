@@ -230,6 +230,9 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .page-tree-host { display:grid; gap:4px; }
 .page-tree-virtual { max-height:min(70vh, 640px); overflow:auto; }
 .page-tree-space { min-height:28px; border-radius:8px; }
+.sidebar .page-tree-space .page-tree-add { display:flex; align-items:center; gap:8px; width:100%; min-height:44px; margin:0; padding:8px 10px; border:0; border-radius:8px; background:transparent; color:#f4f6ff; font-size:13px; text-align:left; }
+.sidebar .page-tree-space .page-tree-add svg { width:16px; color:#f4f6ff; }
+.sidebar .page-tree-space .page-tree-add:hover { background:#ffffff14; color:#fff; }
 .page-tree .page-tree-row { display:flex; align-items:center; gap:2px; }
 .page-tree .page-tree-row button { width:auto; min-height:36px; }
 .page-tree .page-tree-open { flex:1; min-width:0; }

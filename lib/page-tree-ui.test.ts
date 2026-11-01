@@ -57,6 +57,15 @@ it("requires inherited-access confirmation before a move is applied", async () =
   expect(JSON.parse(String(applied)).confirmExpanded).toBe(true);
 });
 
+it("does not claim an ARIA tree when a space has no visible pages", async () => {
+  mocks.request.mockResolvedValue(slice([]));
+  await render();
+  expect(host.querySelector("[role=tree]")).toBeNull();
+  expect(host.textContent).toContain("No pages yet");
+  expect(host.querySelector("[aria-label='New page in Ops']")).toBeTruthy();
+  expect(host.textContent).not.toContain("Ops pages");
+});
+
 it("hides the expander when a reader has no visible children and virtualises a long list", async () => {
   const many = Array.from({ length: 80 }, (_, index) => node(`p${index}`, { hasVisibleChildren: index === 0, title: index === 0 ? "P-100" : `Page ${index}` }));
   mocks.request.mockResolvedValue(slice(many));
@@ -66,7 +75,7 @@ it("hides the expander when a reader has no visible children and virtualises a l
   expect(host.textContent).not.toMatch(/childCount|hidden/i);
   expect(host.querySelectorAll("[role=treeitem]").length).toBeGreaterThan(0);
   expect(host.querySelectorAll("[role=treeitem]").length).toBeLessThan(40);
-  expect(host.querySelector("[role=tree]")?.getAttribute("aria-label")).toBe("Ops pages");
+  expect(host.querySelector("[role=tree]")?.getAttribute("aria-label")).toBe("Pages in Ops");
 });
 
 it("shows a skeleton while a branch loads and then only the visible child", async () => {
