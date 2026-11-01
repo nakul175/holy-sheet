@@ -32,8 +32,22 @@ body { font-family:var(--font-public-sans),system-ui,sans-serif; -webkit-font-sm
 .workspace-label strong { display:block; font-size:14px; }
 .workspace-label small { display:block; margin-top:3px; font-size:11px; color:#bfc2dc; }
 .sidebar-heading { padding:0 10px; color:#aeb2d1; font-size:10px; font-weight:650; text-transform:uppercase; letter-spacing:.11em; }
-.sidebar .snippet-library-link:link,.sidebar .snippet-library-link:visited,.sidebar .space-reviews-link:link,.sidebar .space-reviews-link:visited { color:#c8cbe1; text-decoration:underline; text-underline-offset:3px; }
-.sidebar .snippet-library-link:hover,.sidebar .space-reviews-link:hover { color:#fff; }
+.sidebar .snippet-library-link:link,.sidebar .snippet-library-link:visited,.sidebar .space-reviews-link:link,.sidebar .space-reviews-link:visited,.sidebar .variant-switcher-link:link,.sidebar .variant-switcher-link:visited { color:#c8cbe1; text-decoration:underline; text-underline-offset:3px; }
+.sidebar .snippet-library-link:hover,.sidebar .space-reviews-link:hover,.sidebar .variant-switcher-link:hover { color:#fff; }
+.sidebar .variant-switcher { margin:8px 16px 12px; font-size:14px; }
+.sidebar .variant-switcher-link:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+.document-variants { display:grid; gap:8px; margin:0 0 16px; }
+.variant-switcher { display:flex; flex-wrap:wrap; align-items:center; margin:0; font-size:14px; font-weight:650; }
+a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link:link,a.variant-diff-link:visited { color:var(--navy); text-decoration:underline; text-underline-offset:3px; }
+.variant-switcher-link:focus-visible,.variant-diff-link:focus-visible { outline:2px solid #5141b3; outline-offset:2px; }
+.variant-offer { margin:0; padding:12px 14px; border:1px solid #d9d6ea; border-radius:10px; background:#f7f6fb; }
+.variant-offer p { margin:0; }
+.variant-stale-badge { margin:0; padding:10px 12px; border-radius:10px; background:#fff7ed; color:#9a3412; font-weight:700; }
+.variant-trash-note { margin:0; font-weight:700; color:#9a3412; }
+.variant-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:0; }
+.variant-dialog { display:grid; gap:12px; }
+.variant-dialog label { display:grid; gap:4px; }
+.variant-diff { white-space:pre-wrap; }
 .workspace-home .snippet-library-link:link,.workspace-home .snippet-library-link:visited,.snippet-library a:link,.snippet-library a:visited { color:var(--navy); text-decoration:underline; text-underline-offset:3px; }
 .sidebar nav { margin-top:19px; }
 .sidebar section { margin-bottom:25px; }

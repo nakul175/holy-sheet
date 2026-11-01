@@ -13,13 +13,14 @@ export type PublicationSearchOptions={ownerId?:string;updatedFrom?:string;update
 
 // Governed documents must enter search through the reader's authorised revision,
 // before matching or allocating snapshots. The draft index is never a prefilter.
-export async function publicationSearchCandidates(r:Repository,tx:Sql,actor:Actor,input:{query:string;workspaceId:string;spaceId?:string},permitted:string,work:ProjectionBudget,options?:PublicationSearchOptions){
+export async function publicationSearchCandidates(r:Repository,tx:Sql,actor:Actor,input:{query:string;workspaceId:string;spaceId?:string;language?:string},permitted:string,work:ProjectionBudget,options?:PublicationSearchOptions){
  const results:SearchResult[]=[],extras:SearchResult[]=[],revisions:[string,string][]=[];
  tx=projectionSql(tx,work);
  const base:unknown[]=[input.workspaceId,actor.id,input.spaceId??null],filters:string[]=[];
  if(options?.ownerId){base.push(options.ownerId);filters.push(`p.owner_id=$${base.length}`);}
  if(options?.updatedFrom){base.push(options.updatedFrom);filters.push(`(p.updated_at AT TIME ZONE 'UTC')::date>=$${base.length}::date`);}
  if(options?.updatedTo){base.push(options.updatedTo);filters.push(`(p.updated_at AT TIME ZONE 'UTC')::date<=$${base.length}::date`);}
+ if(input.language){base.push(input.language);filters.push(`EXISTS(SELECT 1 FROM hs_variant_members vm WHERE vm.page_id=p.id AND vm.lang=$${base.length})`);}
  const filterSql=filters.length?` AND ${filters.join(' AND ')}`:'',afterParam=base.length+1;
  // A page with no publication is unavailable to readers. Exclude it before
  // traversal/resource accounting; authoring access uses the native role ceiling.

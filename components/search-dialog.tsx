@@ -4,6 +4,7 @@ import {Dialog} from './editor/dialog';
 import {requestJson} from './editor/use-document-session';
 import {searchKinds,type SearchKind,type SearchResult,type Space} from '../lib/types';
 import {parseQuery} from '../lib/search';
+import {languageChoices} from '../lib/document-variant-copy';
 type Response={results:SearchResult[];nextCursor:string|null};
 const labels:Record<SearchKind,string>={page:'Page',block:'Block',record:'Record',field:'Field',attachment:'Attachment'};
 function Highlight({text,query}:{text:string;query:string}){
@@ -13,12 +14,12 @@ function Highlight({text,query}:{text:string;query:string}){
  return <>{text.split(pattern).map((part,i)=>i%2?<mark key={i}>{part}</mark>:part)}</>;
 }
 export function SearchExperience({spaces,workspaceId,workspaceName,onOpen,onOpenPage,resultsId}:{spaces:Space[];workspaceId:string;workspaceName:string;onOpen:(result:SearchResult)=>void;onOpenPage?:()=>void;resultsId?:string}){
- const [query,setQuery]=useState(''),[spaceId,setSpaceId]=useState(''),[kinds,setKinds]=useState<SearchKind[]>([...searchKinds]),[collection,setCollection]=useState(''),[owner,setOwner]=useState(''),[from,setFrom]=useState(''),[to,setTo]=useState(''),[results,setResults]=useState<SearchResult[]>([]),[selected,setSelected]=useState(0),[cursor,setCursor]=useState<string|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0);
+ const [query,setQuery]=useState(''),[spaceId,setSpaceId]=useState(''),[language,setLanguage]=useState(''),[kinds,setKinds]=useState<SearchKind[]>([...searchKinds]),[collection,setCollection]=useState(''),[owner,setOwner]=useState(''),[from,setFrom]=useState(''),[to,setTo]=useState(''),[results,setResults]=useState<SearchResult[]>([]),[selected,setSelected]=useState(0),[cursor,setCursor]=useState<string|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0);
  const generation=useRef(0),request=useRef<AbortController|null>(null),buttons=useRef<(HTMLButtonElement|null)[]>([]),input=useRef<HTMLInputElement>(null),generatedId=useId(),listId=resultsId??generatedId;
  const chosen=searchKinds.filter(kind=>kinds.includes(kind));
  const fetchResults=async(next:string|null,version:number)=>{
   request.current?.abort();const abort=new AbortController();request.current=abort;setBusy(true);setError('');
-  try{const p=new URLSearchParams({q:query,workspaceId,type:chosen.join(',')});if(spaceId)p.set('spaceId',spaceId);if(collection.trim())p.set('collection',collection.trim());if(owner.trim())p.set('owner',owner.trim());if(from)p.set('from',from);if(to)p.set('to',to);if(next)p.set('cursor',next);
+  try{const p=new URLSearchParams({q:query,workspaceId,type:chosen.join(',')});if(spaceId)p.set('spaceId',spaceId);if(language)p.set('language',language);if(collection.trim())p.set('collection',collection.trim());if(owner.trim())p.set('owner',owner.trim());if(from)p.set('from',from);if(to)p.set('to',to);if(next)p.set('cursor',next);
    const data=await requestJson<Response>('/api/search?'+p,{signal:abort.signal});
    if(version!==generation.current||abort.signal.aborted)return;
    setResults(old=>next?[...old,...data.results.filter(item=>!old.some(existing=>existing.id===item.id))]:data.results);setCursor(data.nextCursor);
@@ -35,13 +36,14 @@ export function SearchExperience({spaces,workspaceId,workspaceName,onOpen,onOpen
   return()=>{clearTimeout(timer);request.current?.abort();};
  // Filters and query own the request generation; pagination is explicit.
  // eslint-disable-next-line react-hooks/exhaustive-deps
- },[query,spaceId,workspaceId,retry,collection,owner,from,to,kinds.join(',')]);
+ },[query,spaceId,language,workspaceId,retry,collection,owner,from,to,kinds.join(',')]);
  const move=(index:number)=>{const next=Math.max(0,Math.min(results.length-1,index));setSelected(next);buttons.current[next]?.focus();};
  const open=(result:SearchResult)=>onOpen(result);
  return <>
   <p>Workspace: <strong>{workspaceName}</strong></p>
   <div className="hs-search-row"><input ref={input} role="combobox" aria-autocomplete="list" aria-expanded={results.length>0} aria-controls={listId} aria-activedescendant={results.length?`${listId}-${selected}`:undefined} aria-label="Search titles and content" maxLength={512} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='ArrowDown'&&results.length){e.preventDefault();move(0);}if(e.key==='ArrowUp'&&results.length){e.preventDefault();move(results.length-1);}if((e.key==='Home'||e.key==='End')&&results.length){e.preventDefault();move(e.key==='Home'?0:results.length-1);}if(e.key==='Enter'&&results[selected]){e.preventDefault();open(results[selected]);}}} placeholder="Search pages, records, and files…"/>
    <select aria-label="Filter by space" value={spaceId} onChange={e=>setSpaceId(e.target.value)}><option value="">All accessible spaces</option>{spaces.filter(s=>s.workspaceId===workspaceId).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
+   <select aria-label="Language" value={language} onChange={e=>setLanguage(e.target.value)}><option value="">All languages</option>{languageChoices.map(item=><option key={item.tag} value={item.tag}>{item.name}</option>)}</select>
   </div>
   <div className="hs-search-filters">
    <fieldset><legend>Result types</legend><div className="hs-search-types" role="group" aria-label="Result types">{searchKinds.map(kind=><label key={kind}><input type="checkbox" checked={kinds.includes(kind)} onChange={e=>setKinds(current=>e.target.checked?[...current,kind]:current.filter(item=>item!==kind))}/>{labels[kind]}</label>)}</div></fieldset>
@@ -54,7 +56,7 @@ export function SearchExperience({spaces,workspaceId,workspaceName,onOpen,onOpen
   <div id={listId} className="results hs-search-results" role="listbox" aria-label="Search results" aria-busy={busy}>
    <p role="status" aria-live="polite">{!chosen.length?'Choose at least one result type':from&&to&&from>to?'Updated from must be on or before updated to':query.trim().length<2?'Enter at least two characters':busy?'Searching…':error?'':results.length?`${results.length} accessible results shown`:'No accessible results found'}</p>
    {error&&<div role="alert"><p>{error}</p><button onClick={()=>setRetry(v=>v+1)}>Retry search</button></div>}
-   {!error&&results.map((result,i)=><button key={result.id} id={`${listId}-${i}`} role="option" aria-selected={i===selected} ref={el=>{buttons.current[i]=el;}} className={i===selected?'selected':''} onFocus={()=>setSelected(i)} onKeyDown={e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'||e.key==='Home'||e.key==='End'){e.preventDefault();move(e.key==='ArrowDown'?i+1:e.key==='ArrowUp'?i-1:e.key==='Home'?0:results.length-1);}if(e.key==='Enter'){e.preventDefault();open(result);}}} onClick={()=>open(result)}><span className="hs-search-badge">{labels[result.kind??'page']}</span>{result.badge&&<span className="hs-search-badge review-expired-badge">{result.badge}</span>}<strong><Highlight text={result.title} query={query}/></strong><span>{result.path.filter(Boolean).join(' / ')}</span><p><Highlight text={result.preview||'Title match'} query={query}/></p><time dateTime={result.updatedAt}>Edited {new Date(result.updatedAt).toLocaleString()}</time></button>)}
+   {!error&&results.map((result,i)=><button key={result.id} id={`${listId}-${i}`} role="option" aria-selected={i===selected} ref={el=>{buttons.current[i]=el;}} className={i===selected?'selected':''} onFocus={()=>setSelected(i)} onKeyDown={e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'||e.key==='Home'||e.key==='End'){e.preventDefault();move(e.key==='ArrowDown'?i+1:e.key==='ArrowUp'?i-1:e.key==='Home'?0:results.length-1);}if(e.key==='Enter'){e.preventDefault();open(result);}}} onClick={()=>open(result)}><span className="hs-search-badge">{labels[result.kind??'page']}</span>{result.language&&<span className="hs-search-badge">{result.language}</span>}{result.badge&&<span className="hs-search-badge review-expired-badge">{result.badge}</span>}<strong><Highlight text={result.title} query={query}/></strong><span>{result.path.filter(Boolean).join(' / ')}</span><p><Highlight text={result.preview||'Title match'} query={query}/></p><time dateTime={result.updatedAt}>Edited {new Date(result.updatedAt).toLocaleString()}</time></button>)}
    {!error&&cursor&&<button disabled={busy} onClick={()=>void fetchResults(cursor,generation.current)}>Load more</button>}
   </div>
   {onOpenPage&&<p><button type="button" onClick={onOpenPage}>Open search page</button></p>}
