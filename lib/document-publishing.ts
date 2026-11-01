@@ -21,7 +21,7 @@ export const publishingCommand=z.discriminatedUnion('action',[
  z.object({...base,action:z.literal('configure'),reviewers:z.array(identity).min(1).max(20)}).strict(),
  z.object({...base,action:z.literal('submit'),sourceVersion:version,bindings:z.array(referenceBinding).max(100).optional()}).strict(),
  z.object({...base,action:z.enum(['approve','reject']),reviewId:z.string().uuid(),snapshotHash:z.string().regex(/^[a-f0-9]{64}$/),reason:z.string().trim().min(1).max(1000)}).strict(),
- z.object({...base,action:z.literal('publish'),reviewId:z.string().uuid(),snapshotHash:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
+ z.object({...base,action:z.literal('publish'),reviewId:z.string().uuid(),snapshotHash:z.string().regex(/^[a-f0-9]{64}$/),bump:z.enum(['major','minor']).optional()}).strict(),
  z.object({...base,action:z.literal('withdraw'),reason:z.string().trim().min(1).max(1000)}).strict(),
 ]);
 type Workflow={version:number;policy_version:number;reviewers:string[];publication_id:string|null};
@@ -150,9 +150,12 @@ export async function changePublishing(r:Repository,actor:Actor,pageId:string,in
     await reviewer(r,tx,pageId,{id:row.decided_by},w);
     if((await tx.query('SELECT id FROM hs_document_publications WHERE review_id=$1',[row.id])).rows.length)throw new DocumentError('This review was already published. Submit a new review before publishing again.','publication_already_published',409);
     const id=randomUUID();
-    await tx.query('INSERT INTO hs_document_publications(id,page_id,review_id,source_version,title,document,manifest,snapshot_hash,published_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',[id,pageId,row.id,row.source_version,row.title,JSON.stringify(row.document),JSON.stringify(row.manifest),row.snapshot_hash,actor.id]);
+    const priorCount=Number((await tx.query<{n:number}>('SELECT COUNT(*)::int AS n FROM hs_document_publications WHERE page_id=$1',[pageId])).rows[0]?.n??0);
+    const versionNumber=priorCount+1;
+    const bump=c.bump??(versionNumber===1?'major':'minor');
+    await tx.query('INSERT INTO hs_document_publications(id,page_id,review_id,source_version,title,document,manifest,snapshot_hash,published_by,version_number,bump) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[id,pageId,row.id,row.source_version,row.title,JSON.stringify(row.document),JSON.stringify(row.manifest),row.snapshot_hash,actor.id,versionNumber,bump]);
     await bindPublicationThreads(tx,pageId,id,row.document);
-    await tx.query('UPDATE hs_document_workflows SET publication_id=$2 WHERE page_id=$1',[pageId,id]);result={...result,publicationId:id,sourceVersion:row.source_version};
+    await tx.query('UPDATE hs_document_workflows SET publication_id=$2 WHERE page_id=$1',[pageId,id]);result={...result,publicationId:id,sourceVersion:row.source_version,versionNumber,bump};
    }else{
     await tx.query('UPDATE hs_document_workflows SET publication_id=NULL WHERE page_id=$1',[pageId]);
     result={...result,withdrawnPublicationId:w.publication_id};
