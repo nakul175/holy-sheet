@@ -459,6 +459,12 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .hs-search-results button strong,.hs-search-results button span { overflow-wrap:anywhere; }
 .hs-search-results button time { grid-column:1 / -1; color:#555362; font-size:11px; }
 .hs-search-results mark { background:#ffea9c; color:#242126; font-weight:700; text-decoration:underline; text-underline-offset:2px; }
+.hs-search-result { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 8px; padding:8px 12px; }
+.hs-search-result [role=menu] { display:grid; grid-column:1 / -1; gap:4px; }
+.hs-search-result [role=menuitem], .hs-search-palette button, .hs-search-jumps button, .hs-search-peek button { min-height:44px; text-align:left; }
+.hs-search-shortcuts, .hs-search-toast { padding:0 12px; color:#555362; font-size:13px; }
+.hs-search-peek { margin:0 12px 12px; padding:12px; border:1px solid #d8d8e2; border-radius:8px; }
+.hs-block-highlight { outline:3px solid #5141b3; background:#fff4c2; }
 @media(max-width:600px) {
  .hs-search-row { grid-template-columns:minmax(0,1fr); }
  .hs-search-row input,.hs-search-row select { width:100%; box-sizing:border-box; }

@@ -5,7 +5,12 @@ import {observeOutline,jumpToOutline,type OutlineSnapshot} from './editor/page-o
 import {restoreTemporarySections,type TemporarySection} from './editor/section-navigation';
 import styles from './page-outline.module.css';
 import {savedHeadingIds} from './editor/heading-links';
+import {watchSearchBlockJump} from './editor/search-block-jump';
 import {CopyHeadingLink,HeadingLinkDestination} from './heading-links';
+function SearchBlockJump({host,scope,pageId,available}:{host:RefObject<HTMLElement|null>;scope:string;pageId:string;available:boolean}){
+ useEffect(()=>{const node=host.current;if(!available||!node)return;return watchSearchBlockJump({host:node,scope,pageId});},[host,scope,pageId,available]);
+ return null;
+}
 export default function PageOutline({documentHost,preferenceKey,available,pageId,savedDocument}:{documentHost:RefObject<HTMLElement|null>;preferenceKey:string;available:boolean;pageId?:string;savedDocument?:unknown}){
  const [open,setOpen]=useState(false),[snapshot,setSnapshot]=useState<OutlineSnapshot&{key:string}>({root:null,headings:[],key:''}),[selected,setSelected]=useState(''),[notice,setNotice]=useState('');
  const panel=useRef<HTMLElement>(null),opener=useRef<HTMLButtonElement>(null),temporary=useRef<TemporarySection[]>([]),selectedId=useRef('');const panelId=useId();
@@ -25,7 +30,7 @@ export default function PageOutline({documentHost,preferenceKey,available,pageId
  },[open,available,documentHost,preferenceKey]);
  const current=available&&snapshot.key===preferenceKey;
  const headings=current?snapshot.headings:[];
- return <>{pageId&&<HeadingLinkDestination host={documentHost} scope={preferenceKey} pageId={pageId} available={available} saved={confirmed.current}/>}<button ref={opener} aria-expanded={open} aria-controls={open?panelId:undefined} onClick={()=>{if(open)close();else setOpen(true);}}>Page outline</button>{open&&createPortal(<aside ref={panel} id={panelId} className={styles.panel} role="dialog" aria-modal="false" aria-labelledby={panelId+'-title'} onKeyDown={event=>{if(event.key==='Escape'&&!event.defaultPrevented&&!event.nativeEvent.isComposing){event.preventDefault();event.stopPropagation();close();}}}>
+ return <>{pageId&&<HeadingLinkDestination host={documentHost} scope={preferenceKey} pageId={pageId} available={available} saved={confirmed.current}/>}{pageId&&<SearchBlockJump host={documentHost} scope={preferenceKey} pageId={pageId} available={available}/>}<button ref={opener} aria-expanded={open} aria-controls={open?panelId:undefined} onClick={()=>{if(open)close();else setOpen(true);}}>Page outline</button>{open&&createPortal(<aside ref={panel} id={panelId} className={styles.panel} role="dialog" aria-modal="false" aria-labelledby={panelId+'-title'} onKeyDown={event=>{if(event.key==='Escape'&&!event.defaultPrevented&&!event.nativeEvent.isComposing){event.preventDefault();event.stopPropagation();close();}}}>
   <header className={styles.header}><h2 id={panelId+'-title'}>Page outline</h2><button aria-label="Close page outline" onClick={close}>×</button></header>
   <p className={styles.hint}>Jump to a heading on this page.</p>
   {!current||!snapshot.root?<p role="status">Outline unavailable while this page or its access is being checked.</p>:!headings.length?<p role="status">No headings on this page.</p>:<nav aria-label="Current page headings" className={styles.navigation} onKeyDown={event=>{

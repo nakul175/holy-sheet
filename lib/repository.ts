@@ -16,6 +16,7 @@ import {commitSyncedPlacements,overlaySyncedContent,prelockSyncedPages,presentSy
 import {commitSnippetPlacements,presentSnippetDocument} from './snippets';
 import { provisionSpaceHome } from './space-home';
 import { spaceHomeMemberRead } from './space-home-shared';
+import { syncRecordReferenceLinks } from './search-jump';
 
 type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
 export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole;publicationFingerprint?:string};
@@ -156,6 +157,7 @@ export class Repository {
       await validateNewPageReferences(this,tx,actor,p.workspace_id,next,stripSyncedContent(activeDocument.document));
       await validateRecordPageReferences(tx,actor,p.workspace_id,next,stripSyncedContent(activeDocument.document));
       const current=await this.get(id,actor,tx,undefined,false);
+      if(stableStringify(next)!==stableStringify(current.document))await syncRecordReferenceLinks(tx,actor,p.workspace_id,id,next,input.operationId);
       if(!synced.contentChanged&&!snippets.changed&&nextTitle===p.title&&stableStringify(next)===stableStringify(current.document)){
         await tx.query('INSERT INTO hs_operations(page_id,operation_id,actor_id,request_hash,version) VALUES($1,$2,$3,$4,$5)',[id,input.operationId,actor.id,hash,p.version]);
         return {page:await this.get(id,actor,tx),acknowledgedOperationId:input.operationId,committedVersion:p.version,replayed:false,merged};
