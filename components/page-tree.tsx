@@ -28,6 +28,15 @@ type Draft = { id: string; kind: "create" | "rename"; value: string; operationId
 type Flat = { kind: "node"; node: PageTreeNode; depth: number } | { kind: "skeleton"; key: string; depth: number };
 
 const post = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+let treeQueue: Promise<void> = Promise.resolve();
+let treeQueued = 0;
+function enqueueTreeRequest<T>(run: () => Promise<T>): Promise<T> {
+  treeQueued += 1;
+  const result = treeQueue.then(run, run);
+  treeQueue = result.finally(() => { treeQueued -= 1; }).then(() => undefined, () => undefined);
+  return result;
+}
+const requestTree = <T,>(url: string, init?: RequestInit) => enqueueTreeRequest(() => requestJson<T>(url, init));
 
 export default function PageTree({ workspaceId, spaceId, spaceName, activeId, onOpen }: { workspaceId: string; spaceId: string; spaceName: string; activeId?: string; onOpen: (id: string) => void }) {
   const hintId = useId();
@@ -58,7 +67,7 @@ export default function PageTree({ workspaceId, spaceId, spaceName, activeId, on
   const load = useCallback(async (parentId: string | null) => {
     const params = new URLSearchParams({ spaceId });
     if (parentId) params.set("parentId", parentId);
-    const slice = await requestJson<PageTreeSlice>(`${endpoint}?${params}`);
+    const slice = await requestTree<PageTreeSlice>(`${endpoint}?${params}`);
     if (!slice || !Array.isArray(slice.nodes)) throw new ApiError(PAGE_TREE_UNAVAILABLE, 404, "not_found");
     if (!mounted.current) return slice;
     if (parentId) setChildren(current => ({ ...current, [parentId]: slice.nodes }));
@@ -79,7 +88,7 @@ export default function PageTree({ workspaceId, spaceId, spaceName, activeId, on
     let live = true;
     setReady(false);
     void load(null).then(() => { if (live) setReady(true); }).catch(error => { if (live) { setReady(true); setNotice(error instanceof Error ? error.message : PAGE_TREE_UNAVAILABLE); } });
-    const interval = setInterval(() => { if (document.visibilityState !== "hidden") void reloadAll().catch(() => undefined); }, PAGE_TREE_REFRESH_MS);
+    const interval = setInterval(() => { if (document.visibilityState === "hidden" || treeQueued > 0) return; void reloadAll().catch(() => undefined); }, PAGE_TREE_REFRESH_MS);
     return () => { live = false; mounted.current = false; clearInterval(interval); };
   }, [load, reloadAll]);
 
@@ -118,7 +127,7 @@ export default function PageTree({ workspaceId, spaceId, spaceName, activeId, on
     const operationId = crypto.randomUUID();
     setBusy(true);
     try {
-      const created = await requestJson<{ pageId: string }>(endpoint, post({ kind: "create", spaceId, parentId, operationId }));
+      const created = await requestTree<{ pageId: string }>(endpoint, post({ kind: "create", spaceId, parentId, operationId }));
       if (parentId) {
         setExpanded(current => new Set(current).add(parentId));
         await load(parentId);
@@ -133,7 +142,7 @@ export default function PageTree({ workspaceId, spaceId, spaceName, activeId, on
   async function cancelDraft(current: Draft) {
     setDraft(null);
     if (current.kind === "create" && current.operationId) {
-      try { await requestJson(endpoint, post({ kind: "cancel", operationId: current.operationId })); }
+      try { await requestTree(endpoint, post({ kind: "cancel", operationId: current.operationId })); }
       catch (error) { if (!(error instanceof ApiError) || error.status === 404) showError(error); else if (error.code !== "page_not_empty") showError(error); }
     }
     await reloadAll().catch(() => undefined);
@@ -142,7 +151,7 @@ export default function PageTree({ workspaceId, spaceId, spaceName, activeId, on
   async function commitRename(node: PageTreeNode, title: string) {
     setBusy(true);
     try {
-      await requestJson(endpoint, post({ kind: "rename", pageId: node.id, title, baseVersion: node.version, operationId: crypto.randomUUID() }));
+      await requestTree(endpoint, post({ kind: "rename", pageId: node.id, title, baseVersion: node.version, operationId: crypto.randomUUID() }));
       setDraft(null);
       setNotice("");
       if (node.parentId) await load(node.parentId); else await load(null);
@@ -151,7 +160,7 @@ export default function PageTree({ workspaceId, spaceId, spaceName, activeId, on
   }
 
   async function applyPending(next: Pending, confirmExpanded: boolean) {
-    const result = await requestJson<PageTreeMoveResult>(endpoint, post({ kind: "apply", ...next.intent, operationId: next.operationId, expectedTreeVersion: next.preview.treeVersion, previewDigest: next.preview.digest, confirmExpanded }));
+    const result = await requestTree<PageTreeMoveResult>(endpoint, post({ kind: "apply", ...next.intent, operationId: next.operationId, expectedTreeVersion: next.preview.treeVersion, previewDigest: next.preview.digest, confirmExpanded }));
     setPending(null);
     setMoveFor(null);
     setChecked(false);
@@ -164,7 +173,7 @@ export default function PageTree({ workspaceId, spaceId, spaceName, activeId, on
     if (busy) return;
     setBusy(true);
     try {
-      const preview = await requestJson<PageTreeMovePreview>(endpoint, post({ kind: "preview", pageId: intent.pageId, spaceId: intent.spaceId, parentId: intent.parentId, index: intent.index }));
+      const preview = await requestTree<PageTreeMovePreview>(endpoint, post({ kind: "preview", pageId: intent.pageId, spaceId: intent.spaceId, parentId: intent.parentId, index: intent.index }));
       const next = { preview, intent, inverse, operationId: crypto.randomUUID() };
       if (preview.expandsAccess) { setPending(next); setChecked(false); setMoveFor(null); return; }
       await applyPending(next, false);
