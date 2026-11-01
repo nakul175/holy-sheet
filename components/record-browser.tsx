@@ -648,6 +648,7 @@ export default function RecordBrowser({ workspaceId, tenantId, initialCollection
     [schemaPreview, setSchemaPreview] = useState<SchemaPreview | null>(null),
     [views, setViews] = useState<SavedView[]>([]),
     [canManageViews, setCanManageViews] = useState(false),
+    [canManageImportProfiles, setCanManageImportProfiles] = useState(false),
     [activeViewId, setActiveViewId] = useState(""),
     [viewDraft, setViewDraft] = useState<ViewDraft>(emptyViewDraft),
     [viewRows, setViewRows] = useState<ViewRow[]>([]),
@@ -748,6 +749,7 @@ export default function RecordBrowser({ workspaceId, tenantId, initialCollection
         setCanBulkRelate(Array.isArray(permissionResult?.collectionCapabilities) && ["view", "edit", "link", "bulk"].every((capability) => permissionResult.collectionCapabilities.includes(capability)));
         setCanExport(Array.isArray(permissionResult?.collectionCapabilities) && permissionResult.collectionCapabilities.includes("view") && permissionResult.collectionCapabilities.includes("export"));
         setCanManageViews(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("manage-views") : false);
+        setCanManageImportProfiles(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("manage-import-profiles") : false);
         setSchemaCatalogue(schemaResult);
         setViews(viewResult);
       }
@@ -767,6 +769,7 @@ export default function RecordBrowser({ workspaceId, tenantId, initialCollection
     setTrashCursor(null);
     setDuplicates(null);
     setCanImport(false);
+    setCanManageImportProfiles(false);
     setCanExport(false);
     setCanBulkRelate(false);
     setMergeSurvivorId("");
@@ -1863,6 +1866,7 @@ export default function RecordBrowser({ workspaceId, tenantId, initialCollection
               tenantId={tenantId}
               collection={collection}
               canCreate={canCreate === true}
+              canManageSharedProfiles={canManageImportProfiles}
               fields={writableFields.map((field) => ({
                 key: field.key,
                 label: field.label,

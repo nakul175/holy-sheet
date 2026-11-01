@@ -1,5 +1,7 @@
 "use client";
 import { FormEvent, useEffect, useRef, useState } from "react";
+import ImportMappingProfiles from "./import-mapping-profiles";
+import type { PositionalImportMapping } from "../lib/import-mapping-profile";
 import {
   acceptedImport,
   buildImportMapping,
@@ -44,6 +46,7 @@ export default function RecordImport({
   tenantId,
   collection,
   canCreate,
+  canManageSharedProfiles = false,
   fields,
   onCommitted,
 }: {
@@ -51,6 +54,7 @@ export default function RecordImport({
   tenantId: string;
   collection: string;
   canCreate: boolean;
+  canManageSharedProfiles?: boolean;
   fields: ImportFieldInput[];
   onCommitted?: () => void;
 }) {
@@ -394,6 +398,22 @@ export default function RecordImport({
       if (alive.current) setBusy(false);
     }
   }
+  function applyProfileMapping(mapping: PositionalImportMapping) {
+    setMode(mapping.mode);
+    setNameColumn(mapping.nameColumn === undefined ? "" : String(mapping.nameColumn));
+    setIdColumn(mapping.idColumn === undefined ? "" : String(mapping.idColumn));
+    setParentColumn(mapping.parentOrganisationColumn === undefined ? "" : String(mapping.parentOrganisationColumn));
+    setLegalColumn(mapping.legalOrganisationColumn === undefined ? "" : String(mapping.legalOrganisationColumn));
+    setAccountColumn(mapping.accountColumn === undefined ? "" : String(mapping.accountColumn));
+    setDrafts((current) => {
+      const next: Record<string, ImportFieldDraft> = {};
+      for (const key of Object.keys(current)) next[key] = emptyDraft();
+      for (const field of mapping.fields) next[field.fieldKey] = { column: String(field.column), lookup: field.referenceLookup ?? "id", currencyCode: field.currency?.code ?? "", currencyScale: field.currency ? String(field.currency.scale) : "" };
+      return next;
+    });
+    setSavedMapping("");
+    setNotice("Profile applied to the mapping draft. Records stay unchanged until you save the mapping and commit a reviewed batch.");
+  }
   function updateDraft(key: string, patch: Partial<ImportFieldDraft>) {
     setDrafts((current) => ({ ...current, [key]: { ...(current[key] ?? emptyDraft()), ...patch } }));
   }
@@ -498,6 +518,16 @@ export default function RecordImport({
             {mappingDirty && savedMapping && <p>Save the mapping before review or commit.</p>}
             <button disabled={!editable || locked || !draft.ok || (!!savedMapping && !mappingDirty)}>Save mapping</button>
           </form>
+          <ImportMappingProfiles
+            workspaceId={workspaceId}
+            tenantId={tenantId}
+            collection={collection}
+            jobId={job.id}
+            mapping={draft.ok ? draft.mapping : null}
+            canManageShared={canManageSharedProfiles}
+            disabled={!editable || locked}
+            onUseMapping={applyProfileMapping}
+          />
           {job.state === "reviewing" && <button type="button" disabled={locked || mappingDirty} onClick={() => void reviewBatch()}>Review next 100 rows</button>}
           {!!rows.length && (
             <table aria-label="Import preview">

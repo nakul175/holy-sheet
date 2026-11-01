@@ -3,7 +3,7 @@ import {DocumentError,stableStringify} from './document';
 import {createHash} from 'node:crypto';
 export const standardCollections=['organisations','accounts','contacts','employees','contracts'] as const;
 export type StandardCollection=typeof standardCollections[number];
-export const recordCapabilities=['view','create','edit','link','import','export','bulk','archive','delete','restore','merge','schema','manage-views','history','restore-values','manage-templates','manage-permissions','manage-forms','manage-reviews','review'] as const;
+export const recordCapabilities=['view','create','edit','link','import','export','bulk','archive','delete','restore','merge','schema','manage-views','history','restore-values','manage-templates','manage-permissions','manage-forms','manage-reviews','review','manage-import-profiles'] as const;
 export type RecordCapability=typeof recordCapabilities[number];
 /** Record grants cannot invent collection administration. Matches the record-grant check. */
 export const recordGrantCapabilities=['view','edit','link','import','export','bulk','archive','delete','restore','merge','history','restore-values','review'] as const;
