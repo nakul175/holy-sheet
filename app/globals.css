@@ -470,6 +470,15 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .record-compare-only-left{background:#e8f1ff;box-shadow:inset 4px 0 #1d4ed8}
 .record-compare-only-right{background:#f3e8ff;box-shadow:inset 4px 0 #6d28d9}
 .record-compare tr:focus-visible,.record-compare button:focus-visible,.record-compare input:focus-visible{outline:2px solid #5141b3;outline-offset:2px}
+.bulk-relationships{display:grid;gap:12px;margin:16px 0;padding:12px;border:1px solid var(--line);border-radius:10px}
+.bulk-relationships button,.bulk-relationships input,.bulk-relationships select{min-height:44px}
+.bulk-relationships-actions{display:flex;flex-wrap:wrap;gap:8px}
+.bulk-relationships-sources{display:grid;gap:4px;max-height:240px;overflow:auto}
+.bulk-relationships-scroll{overflow-x:auto}
+.bulk-relationships table{border-collapse:collapse;min-width:100%}
+.bulk-relationships th,.bulk-relationships td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+.bulk-relationships button:focus-visible,.bulk-relationships input:focus-visible,.bulk-relationships select:focus-visible,.bulk-relationships a:focus-visible{outline:2px solid #5141b3;outline-offset:2px}
+@media(max-width:720px){.bulk-relationships{padding:12px}.bulk-relationships-actions{display:grid}.bulk-relationships-actions button,.bulk-relationships input,.bulk-relationships select{width:100%}}
 .record-compare-pick{display:flex;gap:8px;align-items:center}
 .record-ref-block,.record-ref-chip,.record-ref-card,.record-ref-view,.record-ref-placeholder,.record-picker{max-width:100%;box-sizing:border-box}
 .record-ref-placeholder{min-height:72px;border:1px solid #e7e6df;border-radius:9px;padding:14px;margin:15px 0;background:#fcfcfa}
