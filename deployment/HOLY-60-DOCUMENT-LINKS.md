@@ -25,7 +25,7 @@ One page or one file can be linked to several records. The link is a row in `hs_
 
 HS-AC-N23-02’s “same file on every linked record” is implemented: one `hs_linked_files` row is what every Documents tab reads, including a later name or `updated_at` change, and an optional `media_id` points at existing media bytes without copying them.
 
-HS-AC-N23-02’s “upload v2 and the new version shows everywhere” is deferred. HOLY-61 versioned attachments are not on this tip, and this change does not add a parallel version history. When versions exist, they should hang off `hs_linked_files.id` so every current link shows them without a second association model.
+HS-AC-N23-02’s “upload v2 and the new version shows everywhere” is implemented by HOLY-61. Versions hang off `hs_linked_files.id`, and `current_version_id` is what every linked record’s Documents tab reads. See `deployment/HOLY-61-VERSIONED-ATTACHMENTS.md`.
 
 ## Staging QA
 
@@ -34,7 +34,7 @@ Bug Off folder to create, status Not Run until an isolated signed-in FX-WIKI-202
 | Case | AC | Local evidence | Staging |
 | --- | --- | --- | --- |
 | F01 | HS-AC-N23-01 | `lib/document-record-links.test.ts` page many-to-many | Not Run |
-| F02 | HS-AC-N23-02 | Same file id on three records. Version upload blocked on HOLY-61 | Not Run. Version step Blocked on HOLY-61 |
+| F02 | HS-AC-N23-02 | Same file id on three records. Version step is covered by HOLY-61 | Not Run |
 | F03 | HS-AC-N23-03 | Unlink, last-link choice, 30-day bin | Not Run |
 | F04 | HS-AC-N23-04 | 30 documents, type, owner, updated, cursor | Not Run |
 | F05 | HS-AC-N23-05 | Viewer and read-only page refused | Not Run |

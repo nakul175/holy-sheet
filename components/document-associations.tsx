@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { VersionDrawer } from "./attachment-versions";
 import { ApiError, requestJson } from "./editor/use-document-session";
 
 type Item = {
@@ -14,6 +15,7 @@ type Item = {
   linkedAtLabel: string;
   href: string | null;
   canUnlink: boolean;
+  currentVersionNo?: number | null;
 };
 
 type ListReply = { items: Item[]; nextCursor: string | null; countLabel: string; canLink: boolean };
@@ -139,6 +141,8 @@ function RecordDocumentsPanel({ workspaceId, tenantId, recordId }: { workspaceId
                 {item.href ? <a href={item.href}>{item.title}</a> : <span>{item.title ?? item.label}</span>}
                 {item.label && <small>{item.label}</small>}
                 <small>{item.docType} · {item.linkedAtLabel}</small>
+                {item.docType === "file" && typeof item.currentVersionNo === "number" && <small>Current v{item.currentVersionNo}</small>}
+                {item.docType === "file" && item.availability === "visible" && <VersionDrawer workspaceId={workspaceId} tenantId={tenantId} recordId={recordId} fileId={item.docId} fileName={item.title} />}
                 {item.canUnlink && <button type="button" disabled={busy} onClick={() => void mutate({ action: "unlink", docType: item.docType, docId: item.docId, recordId })}>Unlink</button>}
                 {item.docType === "file" && item.canUnlink && item.availability === "visible" && (
                   <form aria-label={`Also link ${item.title ?? "file"}`} onSubmit={event => { event.preventDefault(); const record = new FormData(event.currentTarget).get("recordId"); if (typeof record === "string" && record.trim()) void mutate({ action: "link", docType: "file", docId: item.docId, recordId: record.trim() }); }}>

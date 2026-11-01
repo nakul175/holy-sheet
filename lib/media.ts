@@ -14,15 +14,15 @@ export type MediaRow = {id:string;page_id:string;uploader_id:string;name:string;
 export const mediaPolicy = {images:["png","jpg","jpeg","webp","gif"],files:["pdf","docx","xlsx","pptx","csv","txt","md","markdown"],imageBytes:10_000_000,fileBytes:25_000_000,pageBytes:100_000_000,pageObjects:100};
 const mimeTypes:Record<string,string>={png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",webp:"image/webp",gif:"image/gif",pdf:"application/pdf",docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",pptx:"application/vnd.openxmlformats-officedocument.presentationml.presentation",csv:"text/csv",txt:"text/plain",md:"text/markdown",markdown:"text/markdown"};
 const extension=(name:string)=>name.split(".").at(-1)?.toLowerCase()??"";
-export function validateMediaMetadata(name:string,size:number) {
+export function validateMediaMetadata(name:string,size:number,byteLimit?:number) {
   const ext=extension(name), mime=mimeTypes[ext];
   if(!mime||!name.trim()||name.length>240||/[\u0000-\u001f\/\\]/.test(name)||!Number.isSafeInteger(size)||size<1)throw new DocumentError("Unsupported file name or type");
-  const limit=mediaPolicy.images.includes(ext)?mediaPolicy.imageBytes:mediaPolicy.fileBytes;
+  const limit=byteLimit??(mediaPolicy.images.includes(ext)?mediaPolicy.imageBytes:mediaPolicy.fileBytes);
   if(size>limit)throw new DocumentError(`This file exceeds the ${limit/1_000_000} MB limit`,"file_too_large",413);
   return {ext,mime};
 }
-export async function validateMediaBytes(name:string,bytes:Uint8Array){
-  const {ext,mime}=validateMediaMetadata(name,bytes.length);
+export async function validateMediaBytes(name:string,bytes:Uint8Array,byteLimit?:number){
+  const {ext,mime}=validateMediaMetadata(name,bytes.length,byteLimit);
   if(["txt","csv","md","markdown"].includes(ext)){try{new TextDecoder("utf-8",{fatal:true}).decode(bytes);}catch{throw new DocumentError("Text files must be valid UTF-8");}if(bytes.includes(0))throw new DocumentError("Binary content is not allowed in text files");}
   else {const detected=await fileTypeFromBuffer(bytes);if(!detected||detected.mime!==mime)throw new DocumentError("The file bytes do not match its extension");}
   if(ext==='pdf'&&/\/Encrypt\b/.test(Buffer.from(bytes).toString('latin1')))throw new DocumentError("Password-protected PDF files cannot be verified");
@@ -30,7 +30,7 @@ export async function validateMediaBytes(name:string,bytes:Uint8Array){
   return mime;
 }
 function client(){const endpoint=process.env.S3_ENDPOINT;if(process.env.NODE_ENV==='production'&&endpoint&&new URL(endpoint).protocol!=='https:')throw new DocumentError('Production object storage requires HTTPS','storage_configuration',503);return new S3Client({region:process.env.S3_REGION??"us-east-1",endpoint,forcePathStyle:true});}
-async function putObject(key:string,bytes:Uint8Array,mime:string){
+export async function putObject(key:string,bytes:Uint8Array,mime:string){
   if(process.env.S3_BUCKET){await client().send(new PutObjectCommand({Bucket:process.env.S3_BUCKET,Key:key,Body:bytes,ContentType:mime}));return;}
   if(process.env.NODE_ENV==="production")throw new DocumentError("Private object storage is not configured","storage_unavailable",503);
   const dir=path.join(process.cwd(),".holy-sheet/media");await mkdir(dir,{recursive:true});await writeFile(path.join(dir,key),bytes,{mode:0o600});
