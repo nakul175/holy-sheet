@@ -1,6 +1,8 @@
 import {expect,test,type APIRequestContext,type Page} from '@playwright/test';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 import type {Editor} from '@tiptap/core';
+import {releaseRoutesWhenDone} from './release-routes';
+releaseRoutesWhenDone();
 
 const imageId='00000000-0000-4000-8000-000000000138';
 async function fixture(request:APIRequestContext,origin:string){

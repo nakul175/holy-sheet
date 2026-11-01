@@ -3,6 +3,8 @@ import {writeFile} from 'node:fs/promises';
 import type {Editor} from '@tiptap/core';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 import {normalizeRichDocument,semanticRichDocument} from '../../lib/editor-document';
+import {releaseRoutesWhenDone} from './release-routes';
+releaseRoutesWhenDone();
 
 const unicode='A👩‍💻e\u0301\tZ\r\n\r\nEnd\n';
 async function fixture(request:APIRequestContext,origin:string,code=unicode){

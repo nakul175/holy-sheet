@@ -1,6 +1,8 @@
 import {test,expect,type APIRequestContext,type Page} from '@playwright/test';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 import type {Editor} from '@tiptap/core';
+import {releaseRoutesWhenDone} from './release-routes';
+releaseRoutesWhenDone();
 
 const text=(value:string)=>({type:'text',text:value});
 const blocks=[

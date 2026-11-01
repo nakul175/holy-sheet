@@ -3,6 +3,8 @@ import {writeFile} from 'node:fs/promises';
 import type {Editor} from '@tiptap/core';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 import {normalizeRichDocument,semanticRichDocument} from '../../lib/editor-document';
+import {releaseRoutesWhenDone} from './release-routes';
+releaseRoutesWhenDone();
 import {readingAppearanceKey} from '../../lib/reading-appearance';
 const text=(value:string)=>({type:'text',text:value});
 const content=()=>[

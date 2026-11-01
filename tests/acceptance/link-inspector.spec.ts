@@ -1,6 +1,8 @@
 import {expect,test,type APIRequestContext,type Page} from '@playwright/test';
 import type {Editor} from '@tiptap/core';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
+import {releaseRoutesWhenDone} from './release-routes';
+releaseRoutesWhenDone();
 
 const origin='http://127.0.0.1:53341';
 const href='https://example.test/inspect/%F0%9F%98%80?literal=%3Ctag%3E&long='+('x'.repeat(500));
