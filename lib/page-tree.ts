@@ -174,6 +174,11 @@ async function readContext(tx: Sql, actor: Actor, workspaceId: string, lock = fa
   };
 }
 
+/** Membership-scoped page graph for HOLY-4 checks. Missing membership is the same not-found as an unknown workspace. */
+export async function loadPageAccessContext(tx: Sql, actor: Actor, workspaceId: string) {
+  return readContext(tx, actor, workspaceId);
+}
+
 function ordered(rows: Row[]) {
   return [...rows].sort((a, b) => a.position - b.position || time(b.updated_at) - time(a.updated_at) || a.id.localeCompare(b.id));
 }
