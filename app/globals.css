@@ -493,3 +493,10 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .record-ref-view th,.record-ref-view td{border-bottom:1px solid #e7e6df;padding:8px;text-align:left;font-size:13px}
 .record-picker{display:grid;gap:10px}
 .record-picker fieldset{border:0;margin:0;padding:0;display:grid;gap:8px}
+.ack-banner{position:sticky;top:52px;z-index:4;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin:0 0 18px;padding:12px 14px;border:1px solid #fed7aa;border-radius:10px;background:#fff7ed}
+.ack-banner p{margin:0;font-weight:650}
+.ack-banner button:disabled{opacity:.55}
+.ack-request,.ack-dashboard{display:grid;gap:12px}
+.ack-request label,.ack-dashboard label{display:flex;gap:8px;align-items:center}
+.ack-dashboard table{width:100%;border-collapse:collapse}
+.ack-dashboard th,.ack-dashboard td{border-bottom:1px solid var(--line);padding:8px;text-align:left}
