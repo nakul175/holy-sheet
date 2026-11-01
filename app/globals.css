@@ -532,3 +532,19 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .space-reviews th,.space-reviews td{border-bottom:1px solid var(--line);padding:8px;text-align:left}
 .space-reviews-scroll{overflow-x:auto}
 .review-settings button:focus-visible,.review-toolbar a:focus-visible,.review-toolbar select:focus-visible,.space-reviews a:focus-visible{outline:2px solid #5141b3;outline-offset:2px}
+.space-home-link{display:inline-block;margin:0 16px 8px;font-size:13px}
+.space-home-page{max-width:960px;margin:0 auto;padding:24px 16px;color:#1f1d2e}
+.space-home-page h1,.space-home-page h2,.space-home-page h3{margin:0 0 8px}
+.space-home-overview,.space-home-widgets section{border:1px solid var(--line);border-radius:12px;padding:16px;background:#fff}
+.space-home-overview{margin:16px 0}
+.space-home-kicker,.space-home-meta{color:#3f3d4d;font-size:14px}
+.space-home-widgets{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.space-home-pins,.space-home-list{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.space-home-pin,.space-home-list li{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.space-home-pin-actions,.space-home-pin-form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.space-home-page button,.space-home-page select{min-height:44px}
+.space-home-page a:focus-visible,.space-home-page button:focus-visible,.space-home-page select:focus-visible,.space-home-pin:focus-visible{outline:2px solid #5141b3;outline-offset:2px}
+@media (max-width: 420px){
+ .space-home-widgets{grid-template-columns:1fr}
+ .space-home-page{padding:16px 12px}
+}

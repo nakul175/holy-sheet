@@ -14,6 +14,8 @@ import { publishedDocument } from './document-publishing';
 import {governedAuthoringAllowed,projectionSql,type ProjectionBudget} from './publication-projection';
 import {commitSyncedPlacements,overlaySyncedContent,prelockSyncedPages,presentSyncedDocument,stripSyncedContent} from './synced-blocks';
 import {commitSnippetPlacements,presentSnippetDocument} from './snippets';
+import { provisionSpaceHome } from './space-home';
+import { spaceHomeMemberRead } from './space-home-shared';
 
 type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
 export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole;publicationFingerprint?:string};
@@ -44,7 +46,7 @@ export class Repository {
       FROM hs_pages p JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
       JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$2 AND m.active=true
       LEFT JOIN hs_pages parent ON parent.id=p.parent_id AND parent.deleted_at IS NULL AND parent.workspace_id=p.workspace_id AND (parent.owner_id=$2 OR m.role IN ('owner','admin'))
-      WHERE p.id=$1 AND p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.subject IS NOT NULL)) ${lock ? "FOR UPDATE OF p,m" : ""}`,[id,actor.id]);
+      WHERE p.id=$1 AND p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.subject IS NOT NULL) OR ${spaceHomeMemberRead("$2")}) ${lock ? "FOR UPDATE OF p,m" : ""}`,[id,actor.id]);
     if(!rows.length) throw new DocumentError("Page is restricted or unavailable","not_found",404);
     if(edit && !canEdit(rows[0].role)) throw new DocumentError("This page is read only","read_only",403);
     return rows[0];
@@ -68,7 +70,7 @@ export class Repository {
   async list(actor:Actor) {
     const {rows}=await this.db.query<{id:string}>(`WITH RECURSIVE permitted AS (
       SELECT p.id,p.workspace_id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
-      WHERE p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
+      WHERE p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))) OR ${spaceHomeMemberRead("$1")})
       UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN permitted p ON c.parent_id=p.id AND c.workspace_id=p.workspace_id WHERE c.deleted_at IS NULL
     ) SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.id ORDER BY p.position,p.updated_at DESC,p.id`,[actor.id]);
     const pages=await Promise.all(rows.map(async row=>{try{return await this.get(row.id,actor);}catch(e){if(e instanceof DocumentError&&e.status===404)return null;throw e;}}));return pages.filter((p):p is DocumentPage=>p!==null);
@@ -79,7 +81,7 @@ export class Repository {
   async createSpace(actor:Actor,name:string,workspaceId:string) {
     if(!name.trim() || name.length>80)throw new DocumentError("Space name must be between 1 and 80 characters");
     const id=crypto.randomUUID();
-    return this.db.transaction(async tx=>{await tx.query('SELECT w.id FROM hs_workspaces w JOIN hs_members m ON m.workspace_id=w.id AND m.user_id=$2 AND m.active=true WHERE w.id=$1 FOR UPDATE OF w',[workspaceId,actor.id]);const m=await tx.query<{user_id:string;role:string}>("SELECT user_id,role FROM hs_members WHERE workspace_id=$1 AND user_id=$2 AND active=true FOR UPDATE",[workspaceId,actor.id]);if(!m.rows.length)throw new DocumentError("Workspace unavailable","not_found",404);if(m.rows[0].role==='observer')throw new DocumentError("Observers cannot create spaces","read_only",403);await tx.query("INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)",[id,workspaceId,name.trim()]);return {id,workspaceId,name:name.trim()};});
+    return this.db.transaction(async tx=>{await tx.query('SELECT w.id FROM hs_workspaces w JOIN hs_members m ON m.workspace_id=w.id AND m.user_id=$2 AND m.active=true WHERE w.id=$1 FOR UPDATE OF w',[workspaceId,actor.id]);const m=await tx.query<{user_id:string;role:string}>("SELECT user_id,role FROM hs_members WHERE workspace_id=$1 AND user_id=$2 AND active=true FOR UPDATE",[workspaceId,actor.id]);if(!m.rows.length)throw new DocumentError("Workspace unavailable","not_found",404);if(m.rows[0].role==='observer')throw new DocumentError("Observers cannot create spaces","read_only",403);await tx.query("INSERT INTO hs_spaces(id,workspace_id,name) VALUES($1,$2,$3)",[id,workspaceId,name.trim()]);await provisionSpaceHome(this,tx,actor,id,workspaceId);return {id,workspaceId,name:name.trim()};});
   }
   async create(actor:Actor,title:string,spaceId:string,parentId?:string|null,operationId?:string) {
     return this.db.transaction(async tx=>{
