@@ -24,6 +24,7 @@ import { collab, getVersion, receiveTransaction, sendableSteps } from "prosemirr
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { ensureIds, highlights, idTypes, languages, palette, plainText, safeUrl, stableStringify, type RichNode } from "../../lib/document";
 import { Callout, FileBlock, FindExtension, PageLink, TableOfContents, findKey } from "./extensions";
+import { RecordPickerDialog, RecordRef, RecordViewBlock, RecordViewPickerDialog } from "./record-ref-blocks";
 import { requestJson } from "./use-document-session";
 import UploadDialog from "./upload-dialog";
 import { Dialog } from './dialog';
@@ -79,7 +80,7 @@ const catalogue:Insert[]=[
   {name:"Bulleted list",description:"Unordered ideas",type:"bulletList"},{name:"Numbered list",description:"A sequence of steps",type:"orderedList"},{name:"Checklist",description:"Track what is done",type:"taskList"},
   {name:"Quote",description:"A passage worth calling out",type:"blockquote"},{name:"Callout",description:"An important note",type:"callout"},{name:"Divider",description:"A quiet visual break",type:"horizontalRule"},
   {name:"Code",description:"Code with syntax highlighting",type:"codeBlock"},{name:"Table",description:"Rows, columns and checklists",type:"table"},{name:"Collapsible section",description:"A title with nested content",type:"details"},
-  {name:"Table of contents",description:"Navigate the page headings",type:"tableOfContents"},{name:"Page link",description:"Reference a Holy Sheet page",type:"pageLink"},{name:"Image",description:"PNG, JPEG, WebP or GIF · up to 10 MB",type:"image"},{name:"File",description:"Documents and text · up to 25 MB",type:"file"},
+  {name:"Table of contents",description:"Navigate the page headings",type:"tableOfContents"},{name:"Page link",description:"Reference a Holy Sheet page",type:"pageLink"},{name:"Record",description:"Inline chip or field card for a live record",type:"recordRef"},{name:"Records view",description:"Live filtered list or table",type:"recordView"},{name:"Image",description:"PNG, JPEG, WebP or GIF · up to 10 MB",type:"image"},{name:"File",description:"Documents and text · up to 25 MB",type:"file"},
 ];
 export { normalizeRichDocument } from "../../lib/editor-document";
 
@@ -110,7 +111,7 @@ export default function RichEditor(props:RichEditorProps){
 }
 
 function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId,preferenceKey,onComment,onOpenComments,onOpenHistory,onCreateSubpage,commentsReady=true,threads=noThreads,activeThreadId=null,onOpenThread,navigateThread=0,mediaEnabled=true,recoveryActorId,resumeUpload,onRecoveryClosed,collaboration}:{collaboration?:(CollaborationStart&{clientId:string})}&RichEditorProps){
-  const [insertOpen,setInsertOpen]=useState(false),[query,setQuery]=useState(""),[active,setActive]=useState(0),[notice,setNotice]=useState(""),[linkOpen,setLinkOpen]=useState(false),[pageOpen,setPageOpen]=useState(false),[media,setMedia]=useState<"image"|"file"|null>(null),[findOpen,setFindOpen]=useState(false),[findQuery,setFindQuery]=useState(""),[matchCase,setMatchCase]=useState(false),[wholeWords,setWholeWords]=useState(false),[matchIndex,setMatchIndex]=useState(0);
+  const [insertOpen,setInsertOpen]=useState(false),[query,setQuery]=useState(""),[active,setActive]=useState(0),[notice,setNotice]=useState(""),[linkOpen,setLinkOpen]=useState(false),[pageOpen,setPageOpen]=useState(false),[recordOpen,setRecordOpen]=useState(false),[viewOpen,setViewOpen]=useState(false),[media,setMedia]=useState<"image"|"file"|null>(null),[findOpen,setFindOpen]=useState(false),[findQuery,setFindQuery]=useState(""),[matchCase,setMatchCase]=useState(false),[wholeWords,setWholeWords]=useState(false),[matchIndex,setMatchIndex]=useState(0);
   const [transformOpen,setTransformOpen]=useState(false),[transformPlan,setTransformPlan]=useState<TransformPlan|null>(null);
   const [inspectedLink,setInspectedLink]=useState<InspectedLink|null>(null);
   const [toolboxOpen,setToolboxOpen]=useState(true),[toolboxPinned,setToolboxPinned]=useState(true),[moreBlocks,setMoreBlocks]=useState(false);
@@ -128,7 +129,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
   const editor=useEditor({immediatelyRender:false,editable,content:document,extensions:[
     StarterKit.configure({heading:{levels:[1,2,3]},codeBlock:false,undoRedo:{depth:100,newGroupDelay:750},link:{openOnClick:false,autolink:false,linkOnPaste:false,isAllowedUri:url=>safeUrl(url),HTMLAttributes:{target:"_blank",rel:"noopener noreferrer",tabindex:"0"}}}),
     TextStyle,Color,Highlight.configure({multicolor:true}),TaskList,TaskItem.configure({nested:true}),TableKit.configure({table:{resizable:true,allowTableNodeSelection:true}}),
-    LazyCodeBlock.configure({defaultLanguage:"plaintext"}),CodeWrapping.configure({scope:preferenceKey}),ReadingGuide,ProtectedImage.configure({allowBase64:false}),Details.configure({persist:false}),DetailsSummary,DetailsContent,Callout,TableOfContents,PageLink.configure({sourcePageId:pageId}),FileBlock,FindExtension,DiscussionAnchors.configure({onOpen:id=>onOpenThread?.(id)}),
+    LazyCodeBlock.configure({defaultLanguage:"plaintext"}),CodeWrapping.configure({scope:preferenceKey}),ReadingGuide,ProtectedImage.configure({allowBase64:false}),Details.configure({persist:false}),DetailsSummary,DetailsContent,Callout,TableOfContents,PageLink.configure({sourcePageId:pageId}),RecordRef.configure({pageId}),RecordViewBlock.configure({pageId}),FileBlock,FindExtension,DiscussionAnchors.configure({onOpen:id=>onOpenThread?.(id)}),
     UniqueID.configure({types:idTypes,attributeName:"id",generateID:()=>crypto.randomUUID()}),TableReadingGuides,...(collaborationExtension.current?[CollaborationIdentities,collaborationExtension.current]:[]),
   ],editorProps:{attributes:{class:"rich-prose",role:"textbox",tabindex:"0","aria-label":"Document content","aria-multiline":"true",spellcheck:"true"},transformPastedHTML:sanitizePaste,
     handleDOMEvents:{keydown:(view,event)=>{if(view.editable||event.isComposing)return false;if(editor&&handleTableKeyDown(editor,event,()=>findButton.current?.focus(),setNotice))return true;if(isPageFindShortcut(event)){event.preventDefault();if(editor)savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);return true;}return false;}},
@@ -154,6 +155,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
         view.dispatch(tr.scrollIntoView());return true;
       }
       if(event.key==="/"&&view.state.selection.empty&&view.state.selection.$from.parent.type.name==="paragraph"&&!view.state.selection.$from.parent.textContent){event.preventDefault();slash.current=true;insertAt.current=view.state.selection.from;setQuery("");setActive(0);setInsertOpen(true);return true;}
+      if(event.key==="@"&&view.state.selection.empty&&view.state.selection.$from.parent.type.name==="paragraph"&&(!view.state.selection.$from.parent.textContent||/\s$/.test(view.state.selection.$from.parent.textContent.slice(0,view.state.selection.$from.parentOffset)))){event.preventDefault();setRecordOpen(true);return true;}
       if(isPageFindShortcut(event)){event.preventDefault();if(editor)savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);return true;}
       if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="k"&&(!view.state.selection.empty||view.state.selection.$from.marks().some(m=>m.type.name==="link"))){event.preventDefault();setLinkOpen(true);return true;}
       if((event.metaKey||event.ctrlKey)&&event.shiftKey&&event.key.toLowerCase()==="s"){event.preventDefault();editor?.chain().focus().toggleStrike().run();return true;}
@@ -198,7 +200,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
   function closeInsert(){if(slash.current&&query)editor?.chain().focus().insertContent('/'+query).run();else if(slash.current)editor?.chain().focus().insertContent('/').run();slash.current=false;setInsertOpen(false);}
   function insert(item:Insert){
     if(!editor||!editable)return;setInsertOpen(false);slash.current=false;
-    if(item.type==="pageLink"){setPageOpen(true);return;}if(item.type==="image"||item.type==="file"){openMedia(item.type);return;}
+    if(item.type==="pageLink"){setPageOpen(true);return;}if(item.type==="recordRef"){setRecordOpen(true);return;}if(item.type==="recordView"){setViewOpen(true);return;}if(item.type==="image"||item.type==="file"){openMedia(item.type);return;}
     const chain=editor.chain().focus();if(insertAt.current!==null)chain.setTextSelection(insertAt.current);
     if(item.type==="paragraph")chain.setParagraph().run();
     else if(item.type==="heading")chain.setHeading({level:item.level as 1|2|3}).run();
@@ -257,7 +259,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
         <section aria-labelledby="toolbox-text"><span id="toolbox-text" className="toolbox-label">Text</span>{toolbar()}</section>
         <section aria-labelledby="toolbox-insert"><div className="toolbox-section-heading"><span id="toolbox-insert" className="toolbox-label">Insert</span><kbd>/</kbd></div><div className="toolbox-insert-grid">
           <button type="button" disabled={!editable} onClick={()=>insertKind('heading')}>H1 <span>Heading</span></button><button type="button" disabled={!editable} onClick={()=>insertKind('bulletList')}>☷ <span>List</span></button><button type="button" disabled={!editable} onClick={()=>insertKind('taskList')}>☑ <span>Checklist</span></button><button type="button" disabled={!editable} onClick={()=>insertKind('table')}>▦ <span>Table</span></button><button type="button" disabled={!editable||!mediaEnabled} onClick={()=>insertKind('image')}>▧ <span>Image</span></button><button type="button" disabled={!editable} onClick={onCreateSubpage}>＋ <span>Subpage</span></button>
-        </div><button type="button" className="toolbox-more" aria-expanded={moreBlocks} onClick={()=>setMoreBlocks(value=>!value)}>More blocks <span>{moreBlocks?'−':'+'}</span></button>{moreBlocks&&<div className="toolbox-more-grid"><button type="button" disabled={!editable} onClick={()=>insertKind('blockquote')}>Quote</button><button type="button" disabled={!editable} onClick={()=>insertKind('callout')}>Callout</button><button type="button" disabled={!editable} onClick={()=>insertKind('horizontalRule')}>Divider</button><button type="button" disabled={!editable} onClick={()=>insertKind('codeBlock')}>Code</button><button type="button" disabled={!editable} onClick={()=>insertKind('details')}>Section</button><button type="button" disabled={!editable} onClick={()=>insertKind('pageLink')}>Page link</button><button type="button" className="toolbox-browse" disabled={!editable} onClick={addBlock}>Browse all blocks</button></div>}</section>
+        </div><button type="button" className="toolbox-more" aria-expanded={moreBlocks} onClick={()=>setMoreBlocks(value=>!value)}>More blocks <span>{moreBlocks?'−':'+'}</span></button>{moreBlocks&&<div className="toolbox-more-grid"><button type="button" disabled={!editable} onClick={()=>insertKind('blockquote')}>Quote</button><button type="button" disabled={!editable} onClick={()=>insertKind('callout')}>Callout</button><button type="button" disabled={!editable} onClick={()=>insertKind('horizontalRule')}>Divider</button><button type="button" disabled={!editable} onClick={()=>insertKind('codeBlock')}>Code</button><button type="button" disabled={!editable} onClick={()=>insertKind('details')}>Section</button><button type="button" disabled={!editable} onClick={()=>insertKind('pageLink')}>Page link</button><button type="button" disabled={!editable} onClick={()=>insertKind('recordRef')}>Record</button><button type="button" disabled={!editable} onClick={()=>insertKind('recordView')}>Records view</button><button type="button" className="toolbox-browse" disabled={!editable} onClick={addBlock}>Browse all blocks</button></div>}</section>
         <section className="toolbox-utilities" aria-label="Review tools"><button type="button" onClick={onOpenComments}>◯ <span>Comments</span><small>{threads.length||''}</small></button><button type="button" disabled={!onOpenHistory} onClick={onOpenHistory}>↺ <span>History</span></button></section>
       </div>}
     </aside>}
@@ -287,6 +289,8 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
     {linkOpen&&<LinkDialog editor={editor} onClose={()=>setLinkOpen(false)}/>}
     {inspectedLink&&<LinkInspector link={inspectedLink} onClose={()=>setInspectedLink(null)}/>}
     {pageOpen&&<PageDialog sourcePageId={pageId} onClose={()=>setPageOpen(false)} onSelect={id=>{editor.chain().focus().insertContent({type:'pageLink',attrs:{id:crypto.randomUUID(),pageId:id}}).run();setPageOpen(false);}}/>}
+    {recordOpen&&<RecordPickerDialog pageId={pageId} onClose={()=>setRecordOpen(false)} onInsert={node=>{editor.chain().focus().insertContent(node).run();setRecordOpen(false);}}/>}
+    {viewOpen&&<RecordViewPickerDialog pageId={pageId} onClose={()=>setViewOpen(false)} onInsert={node=>{editor.chain().focus().insertContent(node).run();setViewOpen(false);}}/>}
     {media&&mediaTarget&&<UploadDialog key={mediaRecovered?.recordId??mediaTarget.insertId??`${media}:${mediaTarget.blockId}`} pageId={pageId} actorId={recoveryActorId} type={media} initialFile={mediaFile} target={mediaTarget} recovered={mediaRecovered} writable={editable} onClose={closeMedia} onReady={(id,alt,caption,name)=>{applyReadyMedia(editor,mediaTarget,{id,alt,caption,name});closeMedia();}}/>}
   </div>;
 }
