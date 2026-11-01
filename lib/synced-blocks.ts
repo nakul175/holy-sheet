@@ -62,6 +62,8 @@ export function stripSyncedContent(document: RichNode): RichNode {
       const attrs: Record<string, unknown> = {};
       if (typeof node.attrs?.id === "string") attrs.id = node.attrs.id;
       if (typeof node.attrs?.syncedId === "string" && node.attrs.syncedId) attrs.syncedId = node.attrs.syncedId;
+      if (typeof node.attrs?.snippetId === "string" && node.attrs.snippetId) attrs.snippetId = node.attrs.snippetId;
+      if (typeof node.attrs?.pinVersion === "number") attrs.pinVersion = node.attrs.pinVersion;
       return { type: "syncedBlock", attrs };
     }
     if (!node.content) return node;
@@ -216,6 +218,7 @@ export async function presentSyncedDocument(r: Repository, tx: Sql, actor: Actor
       return { ...node, content };
     }
     const blockId = String(node.attrs?.id ?? "");
+    if (typeof node.attrs?.snippetId === "string" && node.attrs.snippetId) return node;
     const syncedId = typeof node.attrs?.syncedId === "string" ? node.attrs.syncedId : null;
     if (!syncedId) return node;
     const view = await describeSyncedBlock(r, tx, actor, pageId, blockId, syncedId);
@@ -308,6 +311,11 @@ export async function commitSyncedPlacements(r: Repository, tx: Sql, actor: Acto
     }
     const blockId = String(node.attrs?.id ?? "");
     if (!blockId) throw new DocumentError("Synced block is missing its placement id");
+    if (typeof node.attrs?.snippetId === "string" && node.attrs.snippetId) {
+      const attrs: Record<string, unknown> = { id: blockId, snippetId: node.attrs.snippetId };
+      if (typeof node.attrs.pinVersion === "number") attrs.pinVersion = node.attrs.pinVersion;
+      return { type: "syncedBlock", attrs };
+    }
     kept.add(blockId);
     let syncedId = typeof node.attrs?.syncedId === "string" ? node.attrs.syncedId : "";
     const incoming = contentDoc(node.content);

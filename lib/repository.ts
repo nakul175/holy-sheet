@@ -13,6 +13,7 @@ import { validateRecordPageReferences } from './record-page-ref-store';
 import { publishedDocument } from './document-publishing';
 import {governedAuthoringAllowed,projectionSql,type ProjectionBudget} from './publication-projection';
 import {commitSyncedPlacements,overlaySyncedContent,prelockSyncedPages,presentSyncedDocument,stripSyncedContent} from './synced-blocks';
+import {commitSnippetPlacements,presentSnippetDocument} from './snippets';
 
 type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
 export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole;publicationFingerprint?:string};
@@ -59,7 +60,7 @@ export class Repository {
       const {rows}=await tx.query<{node:RichNode}>("SELECT node FROM hs_blocks WHERE page_id=$1 AND parent_id IS NULL ORDER BY position",[id]);
       document={type:"doc",content:rows.map(r=>r.node)};
     }
-    if(present)document=await presentSyncedDocument(this,tx,actor,id,document);
+    if(present){document=await presentSyncedDocument(this,tx,actor,id,document);document=await presentSnippetDocument(this,tx,actor,id,document);}
     const blocks:Page['blocks']=(document.content ?? []).map((n,i)=>{work?.check();const block={id:String(n.attrs?.id),pageId:id,parentBlockId:null,type:n.type==="heading"?"heading" as const:"paragraph" as const,text:plainText(n),position:i};work?.check();return block;});
     work?.check();
     return {id:p.id,workspaceId:p.workspace_id,workspaceName:p.workspace_name,spaceId:p.space_id,spaceName:p.space_name,parentPageId:p.parent_id,parentTitle:p.parent_title,title:p.title,visibility:p.visibility,position:p.position,version:p.version,updatedAt:new Date(p.updated_at).toISOString(),schemaVersion:p.schema_version,role:p.role,publicationFingerprint,document,blocks};
@@ -148,11 +149,12 @@ export class Repository {
       }
       if(mediaIds.size>100||mediaBytes>100_000_000)throw new DocumentError("Active page upload allowance exceeded; your draft is retained","quota_exceeded",422);
       const synced=await commitSyncedPlacements(this,tx,actor,id,next,input.operationId);
-      next=synced.stored;
+      const snippets=await commitSnippetPlacements(this,tx,actor,id,synced.stored,input.operationId);
+      next=snippets.stored;
       await validateNewPageReferences(this,tx,actor,p.workspace_id,next,stripSyncedContent(activeDocument.document));
       await validateRecordPageReferences(tx,actor,p.workspace_id,next,stripSyncedContent(activeDocument.document));
       const current=await this.get(id,actor,tx,undefined,false);
-      if(!synced.contentChanged&&nextTitle===p.title&&stableStringify(next)===stableStringify(current.document)){
+      if(!synced.contentChanged&&!snippets.changed&&nextTitle===p.title&&stableStringify(next)===stableStringify(current.document)){
         await tx.query('INSERT INTO hs_operations(page_id,operation_id,actor_id,request_hash,version) VALUES($1,$2,$3,$4,$5)',[id,input.operationId,actor.id,hash,p.version]);
         return {page:await this.get(id,actor,tx),acknowledgedOperationId:input.operationId,committedVersion:p.version,replayed:false,merged};
       }

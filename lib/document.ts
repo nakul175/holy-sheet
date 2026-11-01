@@ -27,7 +27,7 @@ export class DocumentError extends Error {
   constructor(message: string, public code = "invalid_document", public status = 422, public details?: unknown) { super(message); }
 }
 export const saveInput = z.object({ operationId: z.string().uuid(), baseVersion: z.number().int().positive(), title: z.string().max(240), document: z.unknown() }).strict();
-const allowedAttrs = new Set(["id", "level", "start", "checked", "language", "colspan", "rowspan", "colwidth", "align", "theme", "icon", "alt", "title", "caption", "width", "attachmentId", "src", "pageId", "open", "syncedId", "syncVersion", "syncState", "syncLocked", "syncUndo"]);
+const allowedAttrs = new Set(["id", "level", "start", "checked", "language", "colspan", "rowspan", "colwidth", "align", "theme", "icon", "alt", "title", "caption", "width", "attachmentId", "src", "pageId", "open", "syncedId", "syncVersion", "syncState", "syncLocked", "syncUndo", "snippetId", "pinVersion"]);
 const recordAttrs: Record<string, string[]> = { recordRef: ["nodeVersion", "recordId", "collectionId", "display", "fields"], recordView: ["nodeVersion", "viewId", "collectionId", "layout", "columns", "limit"] };
 
 export function validateDocument(input: unknown): RichNode {
@@ -76,6 +76,11 @@ export function validateDocument(input: unknown): RichNode {
       if (syncVersion != null && !(Number.isInteger(syncVersion) && Number(syncVersion) >= 0)) throw new DocumentError("Invalid synced block");
       if (n.attrs?.syncLocked != null && typeof n.attrs.syncLocked !== "boolean") throw new DocumentError("Invalid synced block");
       if (n.attrs?.syncUndo != null && typeof n.attrs.syncUndo !== "boolean") throw new DocumentError("Invalid synced block");
+      const snippetId = n.attrs?.snippetId;
+      if (snippetId != null && snippetId !== "" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(snippetId))) throw new DocumentError("Invalid snippet placement");
+      if (snippetId && syncedId) throw new DocumentError("Invalid snippet placement");
+      const pinVersion = n.attrs?.pinVersion;
+      if (pinVersion != null && !(Number.isInteger(pinVersion) && Number(pinVersion) > 0)) throw new DocumentError("Invalid snippet placement");
     }
     if (n.type === "tableOfContents" && parent !== "doc") throw new DocumentError("Table of contents must be at page root");
     if (n.type === "detailsSummary" && !plainText(n).trim()) throw new DocumentError("Section title is required");
