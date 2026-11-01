@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useEffect, useState } from "react";
+import BulkRelationships from "./bulk-relationships";
 import RecordBoard, { acceptedBoard, type BoardCard, type BoardColumnModel, type BoardModel } from "./record-board";
 import RecordComments from "./record-comments";
 import RecordCompare from "./record-compare";
@@ -637,6 +638,7 @@ export default function RecordBrowser({ workspaceId, tenantId, initialCollection
     [createConditions, setCreateConditions] = useState<ConditionProjection[] | null>(null),
     [recordConditions, setRecordConditions] = useState<ConditionProjection[] | null>(null),
     [canImport, setCanImport] = useState(false),
+    [canBulkRelate, setCanBulkRelate] = useState(false),
     [canExport, setCanExport] = useState(false),
     [drafts, setDrafts] = useState<Record<string, unknown>>({}),
     [edits, setEdits] = useState<Record<string, unknown>>({}),
@@ -743,6 +745,7 @@ export default function RecordBrowser({ workspaceId, tenantId, initialCollection
         setCanManage(permissionResult?.canManage === true);
         setCanCreate(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("create") : null);
         setCanImport(Array.isArray(permissionResult?.collectionCapabilities) && permissionResult.collectionCapabilities.includes("view") && permissionResult.collectionCapabilities.includes("import"));
+        setCanBulkRelate(Array.isArray(permissionResult?.collectionCapabilities) && ["view", "edit", "link", "bulk"].every((capability) => permissionResult.collectionCapabilities.includes(capability)));
         setCanExport(Array.isArray(permissionResult?.collectionCapabilities) && permissionResult.collectionCapabilities.includes("view") && permissionResult.collectionCapabilities.includes("export"));
         setCanManageViews(Array.isArray(permissionResult?.collectionCapabilities) ? permissionResult.collectionCapabilities.includes("manage-views") : false);
         setSchemaCatalogue(schemaResult);
@@ -765,6 +768,7 @@ export default function RecordBrowser({ workspaceId, tenantId, initialCollection
     setDuplicates(null);
     setCanImport(false);
     setCanExport(false);
+    setCanBulkRelate(false);
     setMergeSurvivorId("");
     setMergeNameFrom("survivor");
     setMergeParentFrom("");
@@ -1843,6 +1847,15 @@ export default function RecordBrowser({ workspaceId, tenantId, initialCollection
               Load 50 more
             </button>
           ))}
+          {canBulkRelate && collection !== "organisations" ? (
+            <BulkRelationships
+              key={collection}
+              workspaceId={workspaceId}
+              tenantId={tenantId}
+              collection={collection}
+              records={(activeViewId && viewRows.length ? viewRows : items).map((item) => ({ id: item.id, name: item.name }))}
+            />
+          ) : null}
           {canImport && (
             <RecordImport
               key={collection}
