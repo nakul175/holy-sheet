@@ -5,10 +5,11 @@ import { monitorAccess } from "../../lib/access-monitor";
 import { canEdit,type PageRole } from "../../lib/types";
 import { ensureIds, mergeDocuments, schemaVersion, stableStringify, type RichNode } from "../../lib/document";
 import { semanticRichDocument } from "../../lib/editor-document";
+import { publishSyncedConflict } from "../../lib/synced-block-editor";
 import { decryptDraft, discardDraft, importDraftKey, recoveryDrafts, storeDraft, type DraftProtection, type RecoveryRecord } from "../../lib/recovery-client";
 
-export class ApiError extends Error { constructor(message:string,public status:number,public code:string,public retryAfter=0){super(message);} }
-export async function requestJson<T>(url:string,options?:RequestInit):Promise<T>{const r=await fetch(url,{cache:"no-store",...options});const data=await r.json();if(!r.ok)throw new ApiError(data.error??"Request failed",r.status,data.code,Number(r.headers.get("retry-after")??0));return data;}
+export class ApiError extends Error { constructor(message:string,public status:number,public code:string,public retryAfter=0,public details?:unknown){super(message);} }
+export async function requestJson<T>(url:string,options?:RequestInit):Promise<T>{const r=await fetch(url,{cache:"no-store",...options});const data=await r.json();if(!r.ok)throw new ApiError(data.error??"Request failed",r.status,data.code??"error",Number(r.headers.get("retry-after")??0),data.details);return data;}
 const post=(body:unknown):RequestInit=>({method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
 const signature=(title:string,document:RichNode)=>stableStringify([title,semanticRichDocument(document)]);
 const editableDocument=(page:DocumentPage)=>canEdit(page.role)&&page.schemaVersion===schemaVersion;
@@ -117,7 +118,7 @@ export function useDocumentSession(pageId:string,onSaved?:()=>void){
       if(!collaborationActive.current||collaborativeStatus.current!=='error')setError("");onSaved?.();
     }catch(e){
       if(!alive.current||epoch!==permissionEpoch.current)return;
-      if(e instanceof ApiError&&e.status===401)setAuthRequired(true);const failure=e instanceof ApiError?e:new ApiError("Could not confirm the save. Your draft is retained.",503,"network_error");setError(failure.message);void checkpoint();
+      if(e instanceof ApiError&&e.status===401)setAuthRequired(true);const failure=e instanceof ApiError?e:new ApiError("Could not confirm the save. Your draft is retained.",503,"network_error");setError(failure.message);if(failure.code==="synced_conflict")publishSyncedConflict(failure.details);void checkpoint();
       if(collaborationActive.current)metadataFailure.current={status:failure.status===409?'conflict':[401,404].includes(failure.status)||(failure.status===403&&failure.code==='read_only')?'readonly':navigator.onLine?'error':'offline',message:failure.message};
       if(failure.status===409){blocked.current=true;setStatus("conflict");try{const d=await requestJson<{page:DocumentPage}>(`/api/v1/pages/${pageId}/document`);if(alive.current&&epoch===permissionEpoch.current)setLatest(d.page);}catch{setError("Access changed; reconnect and sign in to recover your draft.");}}
       else if([401,404].includes(failure.status)||(failure.status===403&&failure.code==='read_only')){protection.current=null;setStatus("readonly");if(failure.status!==403){setPage(null);current.current=null;}else if(current.current)setCurrent({...current.current,role:"viewer"});}

@@ -24,6 +24,9 @@ import { collab, getVersion, receiveTransaction, sendableSteps } from "prosemirr
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { ensureIds, highlights, idTypes, languages, palette, plainText, safeUrl, stableStringify, type RichNode } from "../../lib/document";
 import { Callout, FileBlock, FindExtension, PageLink, TableOfContents, findKey } from "./extensions";
+import { SyncedBlock } from "./synced-block";
+import { parseSyncedClipboard } from "../../lib/synced-block-copy";
+import { turnIntoSyncedBlock } from "../../lib/synced-block-editor";
 import { RecordPickerDialog, RecordRef, RecordViewBlock, RecordViewPickerDialog } from "./record-ref-blocks";
 import { requestJson } from "./use-document-session";
 import UploadDialog from "./upload-dialog";
@@ -129,7 +132,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
   const editor=useEditor({immediatelyRender:false,editable,content:document,extensions:[
     StarterKit.configure({heading:{levels:[1,2,3]},codeBlock:false,undoRedo:{depth:100,newGroupDelay:750},link:{openOnClick:false,autolink:false,linkOnPaste:false,isAllowedUri:url=>safeUrl(url),HTMLAttributes:{target:"_blank",rel:"noopener noreferrer",tabindex:"0"}}}),
     TextStyle,Color,Highlight.configure({multicolor:true}),TaskList,TaskItem.configure({nested:true}),TableKit.configure({table:{resizable:true,allowTableNodeSelection:true}}),
-    LazyCodeBlock.configure({defaultLanguage:"plaintext"}),CodeWrapping.configure({scope:preferenceKey}),ReadingGuide,ProtectedImage.configure({allowBase64:false}),Details.configure({persist:false}),DetailsSummary,DetailsContent,Callout,TableOfContents,PageLink.configure({sourcePageId:pageId}),RecordRef.configure({pageId}),RecordViewBlock.configure({pageId}),FileBlock,FindExtension,DiscussionAnchors.configure({onOpen:id=>onOpenThread?.(id)}),
+    LazyCodeBlock.configure({defaultLanguage:"plaintext"}),CodeWrapping.configure({scope:preferenceKey}),ReadingGuide,ProtectedImage.configure({allowBase64:false}),Details.configure({persist:false}),DetailsSummary,DetailsContent,Callout,TableOfContents,PageLink.configure({sourcePageId:pageId}),RecordRef.configure({pageId}),RecordViewBlock.configure({pageId}),FileBlock,SyncedBlock.configure({pageId}),FindExtension,DiscussionAnchors.configure({onOpen:id=>onOpenThread?.(id)}),
     UniqueID.configure({types:idTypes,attributeName:"id",generateID:()=>crypto.randomUUID()}),TableReadingGuides,...(collaborationExtension.current?[CollaborationIdentities,collaborationExtension.current]:[]),
   ],editorProps:{attributes:{class:"rich-prose",role:"textbox",tabindex:"0","aria-label":"Document content","aria-multiline":"true",spellcheck:"true"},transformPastedHTML:sanitizePaste,
     handleDOMEvents:{keydown:(view,event)=>{if(view.editable||event.isComposing)return false;if(editor&&handleTableKeyDown(editor,event,()=>findButton.current?.focus(),setNotice))return true;if(isPageFindShortcut(event)){event.preventDefault();if(editor)savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);return true;}return false;}},
@@ -163,6 +166,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
       return false;
     },
     handlePaste:(view,event)=>{if(!editor||!view.editable)return false;const clipboard=event.clipboardData,text=clipboard?.getData('text/plain')??'',html=clipboard?.getData('text/html')??'';
+      const syncedId=parseSyncedClipboard(text.trim());if(syncedId){event.preventDefault();editor.chain().focus().insertContent({type:'syncedBlock',attrs:{id:crypto.randomUUID(),syncedId}}).run();return true;}
       if(plainPasteUntil.current>Date.now()||view.state.selection.$from.parent.type.name==='codeBlock'){plainPasteUntil.current=0;event.preventDefault();try{applyTablePaste(editor,{grids:[],warnings:[],text},capturePastePoint(editor),'plain');}catch(e){setNotice(e instanceof Error?e.message:'Literal paste could not be applied.');}return true;}
       if(clipboard?.files.length){event.preventDefault();openFileIntent(Array.from(clipboard.files));return true;}
       if(/<table[\s>]/i.test(html)||text.includes('\t')){event.preventDefault();try{const point=capturePastePoint(editor),source=parseTablePasteSource(editor,html,text);setPasteReview({source,point});}catch(e){setNotice(e instanceof Error?e.message:'Paste could not be prepared; existing content is unchanged.');}return true;}
@@ -250,6 +254,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
     {collaboration&&<div className="live-collaborators" role="status" aria-live="polite" aria-label="People editing this page">{collaborators.filter(person=>person.clientId!==collaboration.clientId).slice(0,5).map(person=><span key={person.sessionId} title={`${person.name} is editing`}>{person.name.slice(0,1).toUpperCase()}</span>)}{collaborators.filter(person=>person.clientId!==collaboration.clientId).length>5&&<span>+{collaborators.length-6}</span>}</div>}
     <div className="editor-actions" role="toolbar" aria-label="Document tools">
       {button("Undo","↶",()=>editor.chain().focus().undo().run(),false,!state?.undo)}{button("Redo","↷",()=>editor.chain().focus().redo().run(),false,!state?.redo)}
+      <button type="button" disabled={!editable} onMouseDown={event=>event.preventDefault()} onClick={()=>{try{turnIntoSyncedBlock(editor);setNotice("Synced block created. Copy synced block to place it on another page.");}catch(error){setNotice(error instanceof Error?error.message:"Select the blocks to sync.");}}}>Turn into synced block</button>
       <ReadingGuideControl model={readingGuide}/>
       <button ref={findButton} className="find-button" onClick={()=>{savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);}}>⌕ Find</button>
     </div>

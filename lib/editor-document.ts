@@ -7,6 +7,7 @@ export function semanticRichDocument(document:RichNode):RichNode {
     }
     if(value&&typeof value==="object")return Object.fromEntries(Object.entries(value).flatMap(([name,item])=>{
       if(item===null||(name==="content"&&Array.isArray(item)&&item.length===0))return [];
+      if(name==="syncVersion"||name==="syncState"||name==="syncLocked"||name==="syncUndo")return [];
       return [[name,walk(item,name)]];
     }));
     return value;
