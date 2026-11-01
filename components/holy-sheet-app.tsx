@@ -35,6 +35,7 @@ import ShortcutHelpDialog from './shortcut-help-dialog';
 import {FocusModeLauncher,FocusModeExit,usePersonalFocusMode} from './personal-focus-mode';
 import PageStatistics from './page-statistics';
 import CreatePage from './create-page-dialog';
+import { LinkedRecords } from './document-associations';
 
 export default function HolySheetApp({initialPageId,embedded=false}:{initialPageId:string;embedded?:boolean}){
   const router=useRouter(),[pages,setPages]=useState<(Page & {role?:string})[]>([]),[spaces,setSpaces]=useState<Space[]>([]),[createMode,setCreateMode]=useState<'page'|'subpage'|null>(null),[sharingOpen,setSharingOpen]=useState(false),[searchOpen,setSearchOpen]=useState(false),[navigationError,setNavigationError]=useState(''),[linkNotice,setLinkNotice]=useState('');
@@ -92,6 +93,7 @@ export default function HolySheetApp({initialPageId,embedded=false}:{initialPage
       {!supportedSchema&&<SchemaFallback title={page.title} schemaVersion={page.schemaVersion} document={page.document}/>}
       <footer className="page-footer"><span>{!supportedSchema||!canEdit(page.role)?'View only':'Changes save automatically'}</span><PageStatistics key={`${session.actorId}:${page.workspaceId}:${page.id}:${page.role}:${session.accessUnverified}`} document={page.document} supportedSchema={supportedSchema} available={!session.accessUnverified&&!session.authRequired&&page.id===initialPageId}/></footer>
       </article>
+      {supportedSchema&&<LinkedRecords key={`links:${page.id}`} pageId={page.id}/>}
     </main>
     {templatesOpen&&(!templateSnapshot||supportedSchema)&&<TemplatesDialog workspaceId={page.workspaceId} initialSpaceId={page.spaceId} sourcePage={page} spaces={spaces} snapshot={templateSnapshot} onClose={()=>setTemplatesOpen(false)} onCreated={id=>{setTemplatesOpen(false);void open(id);}}/>}
     {shortcutHelpOpen&&<ShortcutHelpDialog editable={supportedSchema&&canEdit(page.role)&&status!=='readonly'&&!session.accessUnverified} onClose={()=>{setShortcutHelpOpen(false);setTimeout(()=>{if(accountTools.current)accountTools.current.open=true;shortcutLauncher.current?.focus();},0);}}/>}
