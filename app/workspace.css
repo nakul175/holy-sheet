@@ -32,8 +32,8 @@ body { font-family:var(--font-public-sans),system-ui,sans-serif; -webkit-font-sm
 .workspace-label strong { display:block; font-size:14px; }
 .workspace-label small { display:block; margin-top:3px; font-size:11px; color:#bfc2dc; }
 .sidebar-heading { padding:0 10px; color:#aeb2d1; font-size:10px; font-weight:650; text-transform:uppercase; letter-spacing:.11em; }
-.sidebar .snippet-library-link:link,.sidebar .snippet-library-link:visited,.sidebar .space-reviews-link:link,.sidebar .space-reviews-link:visited,.sidebar .variant-switcher-link:link,.sidebar .variant-switcher-link:visited { color:#c8cbe1; text-decoration:underline; text-underline-offset:3px; }
-.sidebar .snippet-library-link:hover,.sidebar .space-reviews-link:hover,.sidebar .variant-switcher-link:hover { color:#fff; }
+.sidebar .snippet-library-link:link,.sidebar .snippet-library-link:visited,.sidebar .space-reviews-link:link,.sidebar .space-reviews-link:visited,.sidebar .variant-switcher-link:link,.sidebar .variant-switcher-link:visited,.sidebar .import-profile-link:link,.sidebar .import-profile-link:visited { color:#c8cbe1; text-decoration:underline; text-underline-offset:3px; }
+.sidebar .snippet-library-link:hover,.sidebar .space-reviews-link:hover,.sidebar .variant-switcher-link:hover,.sidebar .import-profile-link:hover { color:#fff; }
 .sidebar .variant-switcher { margin:8px 16px 12px; font-size:14px; }
 .sidebar .variant-switcher-link:focus-visible { outline:2px solid #fff; outline-offset:2px; }
 .document-variants { display:grid; gap:8px; margin:0 0 16px; }
