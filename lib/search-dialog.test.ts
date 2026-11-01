@@ -15,6 +15,12 @@ it('identifies scope, excludes W2 filter names and distinguishes minimum/loading
 it('discards an older response even if its transport ignores cancellation',async()=>{
  let first!:(v:unknown)=>void;mocks.request.mockReturnValueOnce(new Promise(r=>{first=r;})).mockResolvedValueOnce({results:[result('new')],nextCursor:null});const v=await mount();try{await query(v.host,'old');await query(v.host,'budget');await act(async()=>first({results:[{...result('old'),title:'STALE'}],nextCursor:null}));expect(v.host.textContent).not.toContain('STALE');expect(v.host.querySelector('mark')?.textContent).toBe('budget');const input=v.host.querySelector('input')!;await act(async()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true})));expect(document.activeElement?.textContent).toContain('Launch budget');await act(async()=>(document.activeElement as HTMLButtonElement).click());expect(v.open).toHaveBeenCalledWith(expect.objectContaining({id:'new'}));}finally{await v.dispose();}
 });
+it('shows an expired review badge on a search result',async()=>{
+ mocks.request.mockResolvedValue({results:[{...result('page-1'),kind:'page',badge:'Expired — may be out of date'}],nextCursor:null});
+ const v=await mount();
+ try{await query(v.host,'launch');expect(v.host.textContent).toContain('Expired — may be out of date');}
+ finally{await v.dispose();}
+});
 it('shows type badges, moves to the ends of the list, and sends type filters',async()=>{
  mocks.request.mockResolvedValue({results:[{...result('page-1'),kind:'page',title:'Launch page'},{...result('record-1'),kind:'record',title:'Launch record',collection:'organisations'}],nextCursor:null});
  const v=await mount();

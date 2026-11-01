@@ -45,6 +45,7 @@ export type SearchResult = {
   match: "title-exact" | "title" | "content" | "field" | "attachment";
   href?: string;
   collection?: string;
+  badge?: string | null;
 };
 
 export type Space = { id: string; workspaceId: string; name: string };
