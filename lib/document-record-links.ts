@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Actor } from "./auth";
 import type { Sql } from "./database";
 import { DocumentError } from "./document";
+import { formatIst } from "./ist-label";
 import { recordHash } from "./shared-record-types";
 import { recordPageHref } from "./record-page-refs";
 import type { Repository } from "./repository";
@@ -35,6 +36,7 @@ export type AssociationItem = {
   linkedAtLabel: string;
   href: string | null;
   canUnlink: boolean;
+  currentVersionNo: number | null;
 };
 
 export type AssociationList = {
@@ -71,10 +73,7 @@ const linkGrant = (actor: string) => `(EXISTS(SELECT 1 FROM hs_data_collection_g
 const restoreGrant = (actor: string) => `(EXISTS(SELECT 1 FROM hs_data_collection_grants g WHERE g.tenant_id=r.tenant_id AND g.user_id=${actor} AND g.collection=r.collection AND 'restore'=ANY(g.capabilities)) OR EXISTS(SELECT 1 FROM hs_data_record_grants g WHERE g.tenant_id=r.tenant_id AND g.record_id=r.id AND g.user_id=${actor} AND 'restore'=ANY(g.capabilities)))`;
 
 export function formatLinkedAtIst(value: string | Date) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const formatted = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
-  return `${formatted} IST`;
+  return formatIst(value);
 }
 
 function istDay(day: string, end: boolean) {
@@ -353,6 +352,7 @@ type DocumentRow = {
   file_owner: string | null;
   file_deleted: string | null;
   file_updated: string | null;
+  current_version_no: number | string | null;
 };
 
 async function visibleDocument(pages: Repository, tx: Sql, actor: Actor, here: Scope, row: DocumentRow, recordCanLink: boolean): Promise<AssociationItem | null> {
@@ -360,12 +360,12 @@ async function visibleDocument(pages: Repository, tx: Sql, actor: Actor, here: S
     if (!row.page_owner || row.page_workspace !== here.workspaceId) return null;
     if (row.page_deleted) {
       if (row.page_owner !== actor.id) return null;
-      return itemFrom(row, row.page_title, "in-trash", "In trash", row.page_owner, row.page_updated ?? row.created_at, recordCanLink, null);
+      return itemFrom(row, row.page_title, "in-trash", "In trash", row.page_owner, row.page_updated ?? row.created_at, recordCanLink, null, null);
     }
     try {
       const page = await pages.access(tx, row.doc_id, actor, false);
       if (page.workspace_id !== here.workspaceId) return null;
-      return itemFrom(row, page.title, "visible", null, page.owner_id, page.updated_at, recordCanLink && canEdit(page.role), `/pages/${page.id}`);
+      return itemFrom(row, page.title, "visible", null, page.owner_id, page.updated_at, recordCanLink && canEdit(page.role), `/pages/${page.id}`, null);
     } catch (error) {
       if (error instanceof DocumentError && error.status === 404) return null;
       throw error;
@@ -373,10 +373,11 @@ async function visibleDocument(pages: Repository, tx: Sql, actor: Actor, here: S
   }
   if (!row.file_owner || row.file_deleted) return null;
   const canEditFile = row.file_owner === actor.id || here.role === "owner" || here.role === "admin";
-  return itemFrom(row, row.file_name, "visible", null, row.file_owner, row.file_updated ?? row.created_at, recordCanLink && canEditFile, null);
+  const currentVersionNo = row.current_version_no === null || row.current_version_no === undefined ? null : Number(row.current_version_no);
+  return itemFrom(row, row.file_name, "visible", null, row.file_owner, row.file_updated ?? row.created_at, recordCanLink && canEditFile, null, Number.isInteger(currentVersionNo) ? currentVersionNo : null);
 }
 
-function itemFrom(row: DocumentRow, title: string | null, availability: "visible" | "in-trash", label: "In trash" | null, ownerId: string, updatedAt: string, canUnlink: boolean, href: string | null): AssociationItem {
+function itemFrom(row: DocumentRow, title: string | null, availability: "visible" | "in-trash", label: "In trash" | null, ownerId: string, updatedAt: string, canUnlink: boolean, href: string | null, currentVersionNo: number | null): AssociationItem {
   return {
     linkId: row.link_id,
     docType: row.doc_type,
@@ -391,6 +392,7 @@ function itemFrom(row: DocumentRow, title: string | null, availability: "visible
     linkedAtLabel: formatLinkedAtIst(row.created_at),
     href,
     canUnlink,
+    currentVersionNo,
   };
 }
 
@@ -421,10 +423,12 @@ export async function listRecordDocuments(pages: Repository, actor: Actor, works
     const rows = await tx.query<DocumentRow>(
       `SELECT l.id AS link_id, l.doc_type, l.doc_id, l.record_id, l.created_at,
         p.title AS page_title, p.owner_id AS page_owner, p.deleted_at AS page_deleted, p.updated_at AS page_updated, p.workspace_id AS page_workspace,
-        f.name AS file_name, f.owner_id AS file_owner, f.deleted_at AS file_deleted, f.updated_at AS file_updated
+        f.name AS file_name, f.owner_id AS file_owner, f.deleted_at AS file_deleted, f.updated_at AS file_updated,
+        cv.version_no AS current_version_no
        FROM hs_document_record_links l
        LEFT JOIN hs_pages p ON l.doc_type='page' AND p.id=l.doc_id
        LEFT JOIN hs_linked_files f ON l.doc_type='file' AND f.id::text=l.doc_id AND f.tenant_id=l.tenant_id
+       LEFT JOIN hs_attachment_versions cv ON cv.id=f.current_version_id AND cv.deleted_at IS NULL
        WHERE l.workspace_id=$1 AND l.record_id=$2
          AND ($3::text IS NULL OR l.doc_type=$3)
          AND ($4::text IS NULL OR COALESCE(p.owner_id, f.owner_id)=$4)
@@ -523,6 +527,7 @@ function recordListItem(here: Scope, query: { docType: DocType; docId: string },
     linkedAtLabel: formatLinkedAtIst(row.created_at),
     href: row.can_view && row.state !== "trashed" ? recordPageHref(here.workspaceId, here.tenantId, row.collection, row.id) : null,
     canUnlink: canEditDocument && row.can_link && row.state === "active",
+    currentVersionNo: null,
   };
 }
 
