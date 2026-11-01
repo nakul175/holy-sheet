@@ -24,7 +24,7 @@ export function richSchema(){
     Node.create({name:"file",group:"block",atom:true,addAttributes(){return {attachmentId:{default:null},title:{default:""}};}}),
     Node.create({name:"recordRef",group:"block",atom:true,addAttributes(){return {nodeVersion:{default:1},recordId:{default:null},collectionId:{default:null},display:{default:"chip"},fields:{default:[]}};}}),
     Node.create({name:"recordView",group:"block",atom:true,addAttributes(){return {nodeVersion:{default:1},viewId:{default:null},collectionId:{default:null},layout:{default:"table"},columns:{default:["name"]},limit:{default:10}};}}),
-    Node.create({name:"syncedBlock",group:"block",content:"block*",defining:true,addAttributes(){return {syncedId:{default:null},syncVersion:{default:null},syncState:{default:null},syncLocked:{default:false},syncUndo:{default:false}};}}),
+    Node.create({name:"syncedBlock",group:"block",content:"block*",defining:true,addAttributes(){return {syncedId:{default:null},syncVersion:{default:null},syncState:{default:null},syncLocked:{default:false},syncUndo:{default:false},snippetId:{default:null},pinVersion:{default:null}};}}),
     UniqueID.configure({types:["paragraph","heading","bulletList","orderedList","listItem","taskList","taskItem","horizontalRule","blockquote","callout","codeBlock","table","tableRow","tableCell","tableHeader","image","file","details","detailsSummary","detailsContent","tableOfContents","pageLink","recordRef","recordView","syncedBlock"],attributeName:"id"}),
   ]);
 }

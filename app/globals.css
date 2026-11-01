@@ -131,6 +131,10 @@ article:hover .add-block,.add-block:focus { opacity:1; }
 .synced-block { border:2px solid #5b4dc7; border-radius:10px; padding:8px 12px 4px; margin:16px 0; background:#f7f5ff; }
 .synced-block.is-restricted,.synced-block.is-unavailable { border-style:dashed; background:transparent; }
 .synced-label { font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#3f348f; }
+.snippet-library-link { display:inline-block; margin:8px 16px; font-size:14px; }
+.snippet-badge { margin:0 0 8px; font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+.snippet-library { max-width:880px; margin:0 auto; padding:24px 16px 64px; }
+.snippet-library .snippet-versions { display:grid; gap:12px; }
 .synced-chrome { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:6px; }
 .synced-chrome ul { display:flex; gap:8px; margin:0; padding:0; list-style:none; }
 .synced-hint,.synced-conflict { flex-basis:100%; }

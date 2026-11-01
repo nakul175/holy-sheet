@@ -5,7 +5,6 @@ import { Plugin } from "@tiptap/pm/state";
 import { useEffect, useState } from "react";
 import { plainText, type RichNode } from "../../lib/document";
 import {
-  SYNCED_CONFLICT_MESSAGE,
   SYNCED_EDIT_HINT,
   SYNCED_POLL_MS,
   SYNCED_RESTRICTED_LABEL,
@@ -16,59 +15,12 @@ import {
   type SyncedConflictDetails,
 } from "../../lib/synced-block-copy";
 import { applyRemoteSyncedContent, deletePlacementLocal, purgeSyncedContent, subscribeSyncedConflict, unsyncLocal } from "../../lib/synced-block-editor";
+import { SnippetPlacement } from "./snippet-block";
+import { SyncedBlockChrome, type SyncedChromeView } from "./synced-block-chrome";
 import { requestJson } from "./use-document-session";
 
-export type SyncedChromeView =
-  | { state: "restricted"; label: string }
-  | { state: "unavailable"; label: string }
-  | { state: "trash"; label: string; canRestore?: boolean }
-  | { state: "live"; label: string; pages: { id: string; title: string }[]; canEdit: boolean; hint: string | null; updatedAtIst?: string | null; canUndo?: boolean };
-
-export function SyncedBlockFrame({ view, content }: { view: { state: string; label: string }; content?: string }) {
-  const [shown, setShown] = useState(view.state === "live" ? content ?? "" : "");
-  useEffect(() => { setShown(view.state === "live" ? content ?? "" : ""); }, [view.state, content]);
-  if (view.state !== "live") return <div className={`synced-block is-${view.state}`} data-synced-state={view.state}><p>{view.label}</p></div>;
-  return <div className="synced-block" data-synced-state="live"><p className="synced-label">{view.label}</p><div>{shown}</div></div>;
-}
-
-export function SyncedBlockChrome({
-  view,
-  conflict,
-  onCopy,
-  onUnsync,
-  onDeletePlacement,
-  onDeleteAll,
-  onUndo,
-  onRestore,
-}: {
-  view: SyncedChromeView;
-  conflict?: { serverText: string; clientText: string } | null;
-  onCopy?: () => void;
-  onUnsync?: () => void;
-  onDeletePlacement?: () => void;
-  onDeleteAll?: () => void;
-  onUndo?: () => void;
-  onRestore?: () => void;
-}) {
-  if (view.state === "restricted") {
-    return <div className="synced-block is-restricted" data-synced-state="restricted" contentEditable={false}><p>{view.label}</p>{view.label === SYNCED_RESTRICTED_LABEL && onUndo ? <button type="button" onMouseDown={event => event.preventDefault()} onClick={onUndo}>Undo delete</button> : null}</div>;
-  }
-  if (view.state === "unavailable") return <div className="synced-block is-unavailable" data-synced-state="unavailable" contentEditable={false}><p>{view.label}</p></div>;
-  if (view.state === "trash") {
-    return <div className="synced-block is-unavailable" data-synced-state="trash" contentEditable={false}><p>{view.label}</p>{onRestore ? <button type="button" onMouseDown={event => event.preventDefault()} onClick={onRestore}>Restore</button> : null}</div>;
-  }
-  return <div className="synced-chrome" contentEditable={false}>
-    <span className="synced-label">{view.label}</span>
-    {view.pages.length > 0 && <ul aria-label="Pages in sync">{view.pages.map(page => <li key={page.id}>{page.title}</li>)}</ul>}
-    {view.hint && <p className="synced-hint">{view.hint}</p>}
-    {view.updatedAtIst && <p><time>{view.updatedAtIst}</time></p>}
-    {onCopy && <button type="button" onMouseDown={event => event.preventDefault()} onClick={onCopy}>Copy synced block</button>}
-    {onUnsync && <button type="button" onMouseDown={event => event.preventDefault()} onClick={onUnsync}>Unsync</button>}
-    {onDeletePlacement && <button type="button" onMouseDown={event => event.preventDefault()} onClick={onDeletePlacement}>Delete from this page</button>}
-    {view.canEdit && onDeleteAll && <button type="button" onMouseDown={event => event.preventDefault()} onClick={onDeleteAll}>Delete all copies</button>}
-    {conflict && <div role="alert" className="synced-conflict"><p>{SYNCED_CONFLICT_MESSAGE}</p><section><h4>Saved version</h4><pre>{conflict.serverText}</pre></section><section><h4>Your version</h4><pre>{conflict.clientText}</pre></section></div>}
-  </div>;
-}
+export { SyncedBlockChrome, SyncedBlockFrame } from "./synced-block-chrome";
+export type { SyncedChromeView } from "./synced-block-chrome";
 
 type Listed = {
   state: string;
@@ -85,7 +37,12 @@ type Listed = {
   canRestore?: boolean;
 };
 
-function SyncedBlockView({ node, editor, extension }: NodeViewProps) {
+function SyncedBlockView(props: NodeViewProps) {
+  if (props.node.attrs.snippetId) return <SnippetPlacement {...props} />;
+  return <SyncedBlockBody {...props} />;
+}
+
+function SyncedBlockBody({ node, editor, extension }: NodeViewProps) {
   const [listed, setListed] = useState<Listed | null>(null);
   const [conflict, setConflict] = useState<SyncedConflictDetails | null>(null);
   const blockId = String(node.attrs.id ?? "");
@@ -152,16 +109,16 @@ export const SyncedBlock = Node.create({
   content: "block*",
   defining: true,
   addOptions() { return { pageId: "" }; },
-  addAttributes() { return { syncedId: { default: null }, syncVersion: { default: null }, syncState: { default: null }, syncLocked: { default: false }, syncUndo: { default: false } }; },
+  addAttributes() { return { syncedId: { default: null }, syncVersion: { default: null }, syncState: { default: null }, syncLocked: { default: false }, syncUndo: { default: false }, snippetId: { default: null }, pinVersion: { default: null } }; },
   parseHTML() { return [{ tag: "section[data-hs-synced]" }]; },
   renderHTML({ HTMLAttributes }) { return ["section", mergeAttributes(HTMLAttributes, { "data-hs-synced": "", "data-sync-state": HTMLAttributes.syncState ?? "live" }), 0]; },
   addNodeView() { return ReactNodeViewRenderer(SyncedBlockView); },
   addProseMirrorPlugins() {
     return [new Plugin({
       filterTransaction(transaction) {
-        if (!transaction.docChanged) return true;
+        if (!transaction.docChanged || transaction.getMeta("snippet-sync")) return true;
         const locked = new Map<string, PMContent>();
-        transaction.before.descendants(node => { if (node.type.name === "syncedBlock" && node.attrs.syncLocked) locked.set(String(node.attrs.id), node.content); });
+        transaction.before.descendants(node => { if (node.type.name === "syncedBlock" && (node.attrs.syncLocked || node.attrs.snippetId)) locked.set(String(node.attrs.id), node.content); });
         let allowed = true;
         transaction.doc.descendants(node => {
           if (node.type.name !== "syncedBlock" || !locked.has(String(node.attrs.id))) return;
