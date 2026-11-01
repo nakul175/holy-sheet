@@ -510,3 +510,22 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .ack-request label,.ack-dashboard label{display:flex;gap:8px;align-items:center}
 .ack-dashboard table{width:100%;border-collapse:collapse}
 .ack-dashboard th,.ack-dashboard td{border-bottom:1px solid var(--line);padding:8px;text-align:left}
+.page-review{display:grid;gap:8px;margin:0 0 16px}
+.review-next{margin:0;font-weight:650}
+.review-verified-badge,.review-overdue-badge{margin:0;font-size:13px;font-weight:700}
+.review-verified-badge{color:#166534}
+.review-overdue-badge{color:#9a3412}
+.review-expired-banner{margin:0;padding:12px 14px;border:1px solid #fecaca;border-radius:10px;background:#fef2f2;color:#991b1b;font-weight:700}
+.review-actions{margin:0 0 12px}
+.review-settings{display:grid;gap:12px}
+.review-settings label,.review-policy{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.review-settings textarea{min-height:72px;width:100%}
+.review-expired-badge{background:#fef2f2;color:#991b1b}
+.space-reviews-link{display:inline-block;margin:0 16px 8px;font-size:13px}
+.space-reviews-page{max-width:960px;margin:0 auto;padding:32px 20px}
+.review-toolbar{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.review-counts{font-weight:650}
+.space-reviews table{width:100%;border-collapse:collapse}
+.space-reviews th,.space-reviews td{border-bottom:1px solid var(--line);padding:8px;text-align:left}
+.space-reviews-scroll{overflow-x:auto}
+.review-settings button:focus-visible,.review-toolbar a:focus-visible,.review-toolbar select:focus-visible,.space-reviews a:focus-visible{outline:2px solid #5141b3;outline-offset:2px}

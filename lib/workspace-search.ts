@@ -8,6 +8,7 @@ import {publicationSearchCandidates} from './publication-search';
 import type {ProjectionBudget} from './publication-projection';
 import type {SearchKind,SearchResult} from './types';
 import {unifiedSearchHits} from './unified-search';
+import {EXPIRED_BANNER,decorateReviewSearch} from './page-review';
 
 export {createSearchWork,type SearchWork} from './search-work';
 import {createSearchWork} from './search-work';
@@ -105,10 +106,11 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
   const extras=[...unified,...(projected.extras??[])];
   const weights={'title-exact':0,title:1,content:2,field:2,attachment:4} as const;
   const ranked=[...ordinary.map(row=>({id:row.id,rank:row.rank,updatedAt:new Date(row.updated_at).toISOString()})),...[...unicode,...projected.results].map(row=>({id:row.id,rank:weights[row.match],updatedAt:row.updatedAt})),...extras.map(hit=>({id:hit.id,rank:searchHitRank(hit),updatedAt:hit.updatedAt}))].sort((a,b)=>a.rank-b.rank||b.updatedAt.localeCompare(a.updatedAt)||(a.id<b.id?-1:a.id>b.id?1:0)).filter((row,index,all)=>all.findIndex(item=>item.id===row.id)===index).map(row=>row.id);
+  const review=await decorateReviewSearch(tx,actor,ranked,extras);
   budget();
   queryHash=hash(JSON.stringify([queryHash,projected.revisionHash]));
   if(ranked.length>20000)throw new DocumentError('Too many pages match. Refine your query or choose a space.','search_too_broad',422);
-  let ids=ranked,position=0;let snapshotId:string=randomUUID();
+  let ids=review.ranked,position=0;let snapshotId:string=randomUUID();
   if(input.cursor){
    const snapshot=(await tx.query<{id:string;page_ids:string[];next_position:number;query_hash:string;user_id:string;workspace_id:string}>(`SELECT s.*,c.next_position FROM hs_search_cursors c JOIN hs_search_snapshots s ON s.id=c.snapshot_id WHERE c.token_hash=$1 AND s.expires_at>clock_timestamp()`,[hash(input.cursor)])).rows[0];
    if(!snapshot||snapshot.user_id!==actor.id||snapshot.workspace_id!==input.workspaceId||snapshot.query_hash!==queryHash)throw invalid();
@@ -119,7 +121,7 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
    if(active>=32)throw new DocumentError('Too many active searches. Retry when an earlier search expires.','search_snapshot_limit',429);
    await tx.query('INSERT INTO hs_search_snapshots(id,user_id,workspace_id,query_hash,space_id,page_ids) VALUES($1,$2,$3,$4,$5,$6)',[snapshotId,actor.id,input.workspaceId,queryHash,input.spaceId??null,JSON.stringify(ids)]);
   }
-  const current=new Set(ranked),selected:string[]=[],extraById=new Map(extras.map(hit=>[hit.id,hit]));
+  const current=new Set(review.ranked),selected:string[]=[],extraById=new Map(review.extras.map(hit=>[hit.id,hit]));
   while(position<ids.length&&selected.length<20){const id=ids[position++];if(current.has(id))selected.push(id);}
   const results:SearchResult[]=[];
   for(const id of selected){
@@ -129,7 +131,7 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
    const page=await r.get(id,actor,tx,projectionWork);budget();if(page.workspaceId!==input.workspaceId)continue;
    const ancestry:string[]=[];let parent=page.parentPageId;const seen=new Set([id]);
    while(parent&&!seen.has(parent)){budget();seen.add(parent);try{const ancestor=await r.get(parent,actor,tx,projectionWork);budget();if(ancestor.workspaceId!==input.workspaceId)break;ancestry.unshift(ancestor.title);parent=ancestor.parentPageId;}catch(error){if(error instanceof DocumentError&&error.status===404)break;throw error;}}
-   const result=searchPages([page],input.query,input.spaceId)[0];budget();if(result){result.kind='page';result.href=`/pages/${encodeURIComponent(result.id)}`;result.path=[page.spaceName,...ancestry];results.push(result);}
+   const result=searchPages([page],input.query,input.spaceId)[0];budget();if(result){result.kind='page';result.href=`/pages/${encodeURIComponent(result.id)}`;result.path=[page.spaceName,...ancestry];if(review.expired.has(result.id))result.badge=EXPIRED_BANNER;results.push(result);}
   }
   let nextCursor:string|null=null;
   if(ids.slice(position).some(id=>current.has(id))){nextCursor=randomBytes(32).toString('base64url');await tx.query('INSERT INTO hs_search_cursors(token_hash,snapshot_id,next_position) VALUES($1,$2,$3)',[hash(nextCursor),snapshotId,position]);}
