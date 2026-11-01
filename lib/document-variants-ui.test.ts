@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
-import { VariantChrome, VariantHost } from "../components/document-variants";
+import { VariantChrome, VariantHost, VariantSwitcher } from "../components/document-variants";
 import type { VariantView } from "../lib/document-variants";
 
 const mocks = vi.hoisted(() => ({ request: vi.fn() }));
@@ -42,6 +42,16 @@ async function render(node: ReturnType<typeof createElement>) {
   await act(async () => root.render(node));
   return { host, unmount: async () => { await act(async () => root.unmount()); host.remove(); } };
 }
+
+it("renders nothing when a page has no variant list", async () => {
+  const missing = await render(createElement(VariantSwitcher, { items: undefined, onOpen: () => undefined }));
+  expect(missing.host.querySelector(".variant-switcher")).toBeNull();
+  await missing.unmount();
+  const chrome = await render(createElement(VariantChrome, { view: {} as VariantView, placement: "document", onOpen: () => undefined }));
+  expect(chrome.host.querySelector(".variant-switcher")).toBeNull();
+  expect(chrome.host.textContent).not.toContain("हिन्दी");
+  await chrome.unmount();
+});
 
 it("renders the language switcher as EN | हिन्दी without a hidden language", async () => {
   const shown = await render(createElement(VariantChrome, { view: view(), placement: "document", onOpen: () => undefined }));

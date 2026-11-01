@@ -8,9 +8,10 @@ import type { VariantView } from "../lib/document-variants";
 
 type Placement = "document" | "sidebar";
 
-export function VariantSwitcher({ items, onOpen }: { items: VariantView["switcher"]; onOpen: (pageId: string) => void }) {
-  if (!items.length) return null;
-  return <nav className="variant-switcher" aria-label="Document language">{items.map((item, index) => <span key={item.pageId}>{index > 0 && <span aria-hidden="true"> | </span>}{item.current ? <span aria-current="true">{item.label}</span> : <a className="variant-switcher-link" href={`/pages/${encodeURIComponent(item.pageId)}`} onClick={event => { event.preventDefault(); onOpen(item.pageId); }}>{item.label}</a>}</span>)}</nav>;
+export function VariantSwitcher({ items, onOpen }: { items?: VariantView["switcher"] | null; onOpen: (pageId: string) => void }) {
+  const languages = items ?? [];
+  if (!languages.length) return null;
+  return <nav className="variant-switcher" aria-label="Document language">{languages.map((item, index) => <span key={item.pageId}>{index > 0 && <span aria-hidden="true"> | </span>}{item.current ? <span aria-current="true">{item.label}</span> : <a className="variant-switcher-link" href={`/pages/${encodeURIComponent(item.pageId)}`} onClick={event => { event.preventDefault(); onOpen(item.pageId); }}>{item.label}</a>}</span>)}</nav>;
 }
 
 export function VariantChrome({ view, placement, onOpen, onChoose, onMark, onDiff }: {
@@ -27,7 +28,7 @@ export function VariantChrome({ view, placement, onOpen, onChoose, onMark, onDif
     {view.banner && <div className="variant-offer" role="status"><p>{view.banner.message}</p><p className="variant-actions"><a className="variant-switcher-link" href={`/pages/${encodeURIComponent(view.banner.pageId)}`} onClick={event => { event.preventDefault(); onChoose?.(view.banner!.language); onOpen(view.banner!.pageId); }}>{`Open ${view.banner.label}`}</a><button type="button" onClick={() => onChoose?.("source")}>{view.banner.stayLabel}</button></p></div>}
     {view.stale && <p className="variant-stale-badge" role="status">{view.stale.badge}{view.stale.diffHref && <> <a className="variant-diff-link" href={view.stale.diffHref} onClick={event => { event.preventDefault(); onDiff?.(); }}>Compare source</a></>}</p>}
     {view.canMarkSynced && view.stale && <p className="variant-actions"><button type="button" onClick={() => onMark?.()}>{`Mark up to date with v${view.stale.sourceVersion}`}</button></p>}
-    {view.trashNotes.map(note => <p key={note.label} className="variant-trash-note" role="status">{`${note.label} ${note.message}`}</p>)}
+    {(view.trashNotes ?? []).map(note => <p key={note.label} className="variant-trash-note" role="status">{`${note.label} ${note.message}`}</p>)}
   </div>;
 }
 
