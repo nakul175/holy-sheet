@@ -46,6 +46,7 @@ export type SearchResult = {
   href?: string;
   collection?: string;
   badge?: string | null;
+  language?: string;
 };
 
 export type Space = { id: string; workspaceId: string; name: string };

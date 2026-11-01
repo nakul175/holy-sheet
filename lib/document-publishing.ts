@@ -8,6 +8,7 @@ import {revisionDigest} from './revision';
 import {bindPublicationThreads} from './discussion-visibility';
 import {publicationWork,projectionSql,type ProjectionBudget} from './publication-projection';
 import {ProjectedContent,cloneProjection} from './projection-content';
+import {notePublishedSourceVersion} from './document-variants';
 
 const hash=(v:unknown)=>createHash('sha256').update(stableStringify(v)).digest('hex');
 const checkedHash=(v:unknown,work?:ProjectionBudget)=>{work?.check();const result=hash(v);work?.check();return result;};
@@ -156,6 +157,7 @@ export async function changePublishing(r:Repository,actor:Actor,pageId:string,in
     await tx.query('INSERT INTO hs_document_publications(id,page_id,review_id,source_version,title,document,manifest,snapshot_hash,published_by,version_number,bump) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[id,pageId,row.id,row.source_version,row.title,JSON.stringify(row.document),JSON.stringify(row.manifest),row.snapshot_hash,actor.id,versionNumber,bump]);
     await bindPublicationThreads(tx,pageId,id,row.document);
     await tx.query('UPDATE hs_document_workflows SET publication_id=$2 WHERE page_id=$1',[pageId,id]);result={...result,publicationId:id,sourceVersion:row.source_version,versionNumber,bump};
+    await notePublishedSourceVersion(tx,pageId,versionNumber);
    }else{
     await tx.query('UPDATE hs_document_workflows SET publication_id=NULL WHERE page_id=$1',[pageId]);
     result={...result,withdrawnPublicationId:w.publication_id};
