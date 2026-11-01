@@ -1,6 +1,8 @@
 import {writeFile} from 'node:fs/promises';
 import {test,expect,type APIRequestContext,type Page as BrowserPage} from '@playwright/test';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
+import {releaseRoutesWhenDone} from './release-routes';
+releaseRoutesWhenDone();
 const heading=(id:string,text:string,level=2)=>({type:'heading',attrs:{id,level},...(text?{content:[{type:'text',text}]}:{})});
 async function fixture(request:APIRequestContext,origin:string,content:unknown[]){const created=await request.post('/api/pages',{headers:{Origin:origin},data:{title:'Disposable HOLY-128 outline fixture '+crypto.randomUUID(),spaceId:'space-product'}});expect(created.status()).toBe(200);const p=(await created.json()).page;const saved=await request.post(`/api/v1/pages/${p.id}/operations`,{headers:{Origin:origin},data:{operationId:crypto.randomUUID(),baseVersion:p.version,title:p.title,document:{type:'doc',content:JSON.parse(JSON.stringify([...content,{type:'paragraph',attrs:{id:'outline-tail'}}],(key,value)=>key==='id'&&typeof value==='string'?p.id+'-'+value:value))}}});expect(saved.status()).toBe(200);return (await(await request.get(`/api/v1/pages/${p.id}/document`)).json());}
 async function openOutline(page:BrowserPage){await page.getByLabel('Page options',{exact:true}).click();await page.getByRole('button',{name:'Page outline',exact:true}).click();return page.getByRole('dialog',{name:'Page outline',exact:true});}

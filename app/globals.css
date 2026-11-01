@@ -128,6 +128,12 @@ article:hover .add-block,.add-block:focus { opacity:1; }
 .rich-prose blockquote { padding:4px 0 4px 22px; border-left:3px solid #d8d5e4; margin:18px 0; color:#6b657a; font-style:italic; }
 .rich-prose hr { border:0; border-top:1px solid #e8e6e2; margin:28px 0; }
 .rich-prose aside[data-hs-callout] { background:#f7f7f4; border:1px solid #e8e7e2; border-radius:10px; padding:12px 18px; margin:18px 0; }
+.synced-block { border:2px solid #5b4dc7; border-radius:10px; padding:8px 12px 4px; margin:16px 0; background:#f7f5ff; }
+.synced-block.is-restricted,.synced-block.is-unavailable { border-style:dashed; background:transparent; }
+.synced-label { font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#3f348f; }
+.synced-chrome { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:6px; }
+.synced-chrome ul { display:flex; gap:8px; margin:0; padding:0; list-style:none; }
+.synced-hint,.synced-conflict { flex-basis:100%; }
 .rich-prose aside[data-theme=blue] { background:#eff6ff; border-color:#bfdbfe; }
 .rich-prose aside[data-theme=green] { background:#f0fdf4; border-color:#bbf7d0; }
 .rich-prose aside[data-theme=amber] { background:#fffbeb; border-color:#fde68a; }

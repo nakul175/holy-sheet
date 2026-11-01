@@ -61,7 +61,7 @@ export async function api(request: Request, fn: (actor: Actor)=>Promise<unknown>
     if(result instanceof Response)return result;
     return Response.json(result,{headers:{"Cache-Control":"no-store","Vary":"Cookie, Authorization"}});
   } catch(e) {
-    if(e instanceof DocumentError) return Response.json({error:e.message,code:e.code,retryable:e.status>=500},{status:e.status,headers:{"Cache-Control":"no-store"}});
+    if(e instanceof DocumentError){const body:Record<string,unknown>={error:e.message,code:e.code,retryable:e.status>=500};if(e.details!==undefined)body.details=e.details;return Response.json(body,{status:e.status,headers:{"Cache-Control":"no-store"}});}
     console.error("HS request failed", e instanceof Error ? e.name : "UnknownError");
     return Response.json({error:"Service temporarily unavailable",code:"service_unavailable",retryable:true},{status:503,headers:{"Cache-Control":"no-store"}});
   }

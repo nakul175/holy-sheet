@@ -3,6 +3,8 @@ import {writeFile} from 'node:fs/promises';
 import type {Editor} from '@tiptap/core';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 import {normalizeRichDocument,semanticRichDocument} from '../../lib/editor-document';
+import {releaseRoutesWhenDone} from './release-routes';
+releaseRoutesWhenDone();
 const text=(value:string)=>({type:'text',text:value});
 const content=()=>[
  {type:'heading',attrs:{id:'heading',level:1},content:[text('Writing without distractions — مرحبا 世界 '+ '界'.repeat(30))]},

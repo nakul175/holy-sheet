@@ -12,6 +12,7 @@ import { validateNewPageReferences } from './page-references';
 import { validateRecordPageReferences } from './record-page-ref-store';
 import { publishedDocument } from './document-publishing';
 import {governedAuthoringAllowed,projectionSql,type ProjectionBudget} from './publication-projection';
+import {commitSyncedPlacements,overlaySyncedContent,prelockSyncedPages,presentSyncedDocument,stripSyncedContent} from './synced-blocks';
 
 type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
 export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole;publicationFingerprint?:string};
@@ -47,7 +48,7 @@ export class Repository {
     if(edit && !canEdit(rows[0].role)) throw new DocumentError("This page is read only","read_only",403);
     return rows[0];
   }
-  async get(id:string,actor:Actor,tx:Sql=this.db,work?:ProjectionBudget):Promise<DocumentPage> {
+  async get(id:string,actor:Actor,tx:Sql=this.db,work?:ProjectionBudget,present=true):Promise<DocumentPage> {
     tx=projectionSql(tx,work);work?.check();
     const p=await this.access(tx,id,actor);
     const mayAuthor=await governedAuthoringAllowed(tx,actor,p);
@@ -58,6 +59,7 @@ export class Repository {
       const {rows}=await tx.query<{node:RichNode}>("SELECT node FROM hs_blocks WHERE page_id=$1 AND parent_id IS NULL ORDER BY position",[id]);
       document={type:"doc",content:rows.map(r=>r.node)};
     }
+    if(present)document=await presentSyncedDocument(this,tx,actor,id,document);
     const blocks:Page['blocks']=(document.content ?? []).map((n,i)=>{work?.check();const block={id:String(n.attrs?.id),pageId:id,parentBlockId:null,type:n.type==="heading"?"heading" as const:"paragraph" as const,text:plainText(n),position:i};work?.check();return block;});
     work?.check();
     return {id:p.id,workspaceId:p.workspace_id,workspaceName:p.workspace_name,spaceId:p.space_id,spaceName:p.space_name,parentPageId:p.parent_id,parentTitle:p.parent_title,title:p.title,visibility:p.visibility,position:p.position,version:p.version,updatedAt:new Date(p.updated_at).toISOString(),schemaVersion:p.schema_version,role:p.role,publicationFingerprint,document,blocks};
@@ -105,6 +107,7 @@ export class Repository {
     });
   }
   async writeDocument(tx:Sql,id:string,document:RichNode,version:number,title:string,actorId?:string,surface='api',restoredFrom?:number) {
+    document=stripSyncedContent(document);
     const rows=documentBlocks(document);
     const previous=await tx.query<{id:string;version:number;node:RichNode;parent_id:string|null}>("SELECT id,version,node,parent_id FROM hs_blocks WHERE page_id=$1",[id]);
     const byId=new Map(previous.rows.map(b=>[b.id,b]));
@@ -122,6 +125,7 @@ export class Repository {
     const document=validateDocument(input.document), title=input.title.trim()||"Untitled";
     const hash=createHash("sha256").update(stableStringify(input)).digest("hex");
     return this.db.transaction(async tx=>{
+      await prelockSyncedPages(tx,document);
       const p=await this.access(tx,id,actor,true,true);
       if(p.schema_version!==schemaVersion)throw new DocumentError("This document requires a newer editor","schema_version",409);
       const existing=await tx.query<{actor_id:string;request_hash:string;version:number}>("SELECT * FROM hs_operations WHERE page_id=$1 AND operation_id=$2",[id,input.operationId]);
@@ -129,29 +133,31 @@ export class Repository {
       let next=document, nextTitle=title, merged=false;
       if(p.version!==input.baseVersion){
         const base=await tx.query<{document:RichNode;title:string}>("SELECT document,title FROM hs_revisions WHERE page_id=$1 AND version=$2",[id,input.baseVersion]);
-        const latest=await this.get(id,actor,tx);
+        const latest=await this.get(id,actor,tx,undefined,false);
         if(!base.rows.length)throw new DocumentError("Base revision unavailable; review against the latest saved page","conflict",409);
-        const candidate=mergeDocuments(base.rows[0].document,latest.document,document);
+        const candidate=mergeDocuments(stripSyncedContent(base.rows[0].document),latest.document,stripSyncedContent(document));
         if(!candidate || (title!==base.rows[0].title && latest.title!==base.rows[0].title && title!==latest.title))throw new DocumentError("This page changed elsewhere. Your draft is retained for review.","conflict",409);
-        next=candidate; nextTitle=title===base.rows[0].title?latest.title:title;merged=true;
+        next=overlaySyncedContent(candidate,document); nextTitle=title===base.rows[0].title?latest.title:title;merged=true;
       }
       // A media object cannot be attached by guessing its ID or borrowing another page's object.
-      let mediaBytes=0;const mediaIds=new Set<string>(),activeDocument=await this.get(id,actor,tx),activeMedia=new Set(documentBlocks(activeDocument.document).filter(b=>b.type==='image'||b.type==='file').map(b=>String(b.node.attrs?.attachmentId)));
-      for(const b of documentBlocks(next))if(["image","file"].includes(b.type)){
+      let mediaBytes=0;const mediaIds=new Set<string>(),activeDocument=await this.get(id,actor,tx,undefined,false),activeMedia=new Set(documentBlocks(activeDocument.document).filter(b=>b.type==='image'||b.type==='file').map(b=>String(b.node.attrs?.attachmentId)));
+      for(const b of documentBlocks(stripSyncedContent(next)))if(["image","file"].includes(b.type)){
         const media=await tx.query<{id:string;size:string}>("SELECT id,size FROM hs_media WHERE id=$1 AND page_id=$2 AND state='ready' FOR UPDATE",[b.node.attrs?.attachmentId,id]);
         if(!media.rows.length||!await usableMedia(tx,id,actor.id,String(b.node.attrs?.attachmentId),activeMedia.has(String(b.node.attrs?.attachmentId))))throw new DocumentError("Attachment is unavailable or still processing");
         if(!mediaIds.has(media.rows[0].id)){mediaIds.add(media.rows[0].id);mediaBytes+=Number(media.rows[0].size);}
       }
       if(mediaIds.size>100||mediaBytes>100_000_000)throw new DocumentError("Active page upload allowance exceeded; your draft is retained","quota_exceeded",422);
-      await validateNewPageReferences(this,tx,actor,p.workspace_id,next,activeDocument.document);
-      await validateRecordPageReferences(tx,actor,p.workspace_id,next,activeDocument.document);
-      const current=activeDocument;
-      if(nextTitle===p.title&&stableStringify(next)===stableStringify(current.document)){
+      const synced=await commitSyncedPlacements(this,tx,actor,id,next,input.operationId);
+      next=synced.stored;
+      await validateNewPageReferences(this,tx,actor,p.workspace_id,next,stripSyncedContent(activeDocument.document));
+      await validateRecordPageReferences(tx,actor,p.workspace_id,next,stripSyncedContent(activeDocument.document));
+      const current=await this.get(id,actor,tx,undefined,false);
+      if(!synced.contentChanged&&nextTitle===p.title&&stableStringify(next)===stableStringify(current.document)){
         await tx.query('INSERT INTO hs_operations(page_id,operation_id,actor_id,request_hash,version) VALUES($1,$2,$3,$4,$5)',[id,input.operationId,actor.id,hash,p.version]);
-        return {page:current,acknowledgedOperationId:input.operationId,committedVersion:p.version,replayed:false,merged};
+        return {page:await this.get(id,actor,tx),acknowledgedOperationId:input.operationId,committedVersion:p.version,replayed:false,merged};
       }
       const version=p.version+1;
-      await this.writeDocument(tx,id,next,version,nextTitle,actor.id,'api');
+      await this.writeDocument(tx,id,next,version,nextTitle,actor.id,synced.surface??'api');
       await tx.query("UPDATE hs_media m SET deleted_at=CASE WHEN EXISTS(SELECT 1 FROM hs_blocks b WHERE b.page_id=$1 AND b.type IN ('image','file') AND b.node->'attrs'->>'attachmentId'=m.id::text) THEN NULL ELSE COALESCE(m.deleted_at,now()) END WHERE m.page_id=$1 AND m.state='ready'",[id]);
       await tx.query("UPDATE hs_pages SET title=$2,version=$3,updated_at=clock_timestamp() WHERE id=$1",[id,nextTitle,version]);
       // A title-only revision does not invalidate already-authorized body step sessions.

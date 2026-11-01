@@ -6,6 +6,7 @@ import {validateRecordPageReferences} from './record-page-ref-store';
 import {richSchema} from './rich-schema';
 import type {Repository} from './repository';
 import type {Sql} from './database';
+import {commitSyncedPlacements,prelockSyncedPages,presentSyncedDocument} from './synced-blocks';
 
 type PageState={page_id:string;epoch:string;step_version:number;document_version:number;document:RichNode};
 type Session={id:string;page_id:string;epoch:string;actor_id:string;client_id:string;active:boolean;expires_at:string};
@@ -65,6 +66,8 @@ export async function pullCollaboration(r:Repository,actor:Actor,pageId:string,i
 });}
 
 export async function submitCollaboration(r:Repository,actor:Actor,pageId:string,input:SubmitInput){return r.db.transaction(async tx=>{
+ const existing=await tx.query<{node:RichNode}>('SELECT node FROM hs_blocks WHERE page_id=$1 AND parent_id IS NULL ORDER BY position',[pageId]);
+ await prelockSyncedPages(tx,{type:'doc',content:existing.rows.map(row=>row.node)});
  const {page,state}=await current(tx,r,actor,pageId,true);if(state.epoch!==input.epoch)throw unavailable();await session(tx,actor,pageId,input);
  const hash=digest(input),prior=(await tx.query<{request_hash:string;last_step_version:number;document_version:number}>('SELECT request_hash,last_step_version,document_version FROM hs_collaboration_batches WHERE page_id=$1 AND operation_id=$2',[pageId,input.operationId])).rows[0];
  if(prior){if(prior.request_hash!==hash)throw new DocumentError('Operation ID was reused with different collaboration steps.','operation_mismatch',409);return {epoch:state.epoch,stepVersion:prior.last_step_version,pageVersion:prior.document_version,replayed:true,steps:await stepsAfter(tx,pageId,state.epoch,input.baseStepVersion)};}
@@ -77,12 +80,14 @@ export async function submitCollaboration(r:Repository,actor:Actor,pageId:string
  if(stableStringify(protectedAtoms(state.document))!==stableStringify(protectedAtoms(next)))throw new DocumentError('Add or remove protected files and page links outside a collaboration session.','collaboration_protected_atom',422);
  if(after.size){const reused=await tx.query<{block_id:string}>('SELECT block_id FROM hs_collaboration_tombstones WHERE page_id=$1 AND block_id=ANY($2::text[])',[pageId,[...after.keys()]]);if(reused.rows.length)throw new DocumentError('A deleted block identity cannot be revived.','collaboration_resurrection',409);}
  const nextPageVersion=page.version+1,first=state.step_version+1,last=state.step_version+decoded.length;
- await r.writeDocument(tx,pageId,next,nextPageVersion,page.title,actor.id,'collaboration');
+ const synced=await commitSyncedPlacements(r,tx,actor,pageId,next,input.operationId);
+ await r.writeDocument(tx,pageId,synced.stored,nextPageVersion,page.title,actor.id,synced.surface??'collaboration');
  await tx.query('UPDATE hs_pages SET version=$2,updated_at=clock_timestamp() WHERE id=$1',[pageId,nextPageVersion]);
  await tx.query('INSERT INTO hs_collaboration_batches(page_id,epoch,operation_id,actor_id,client_id,request_hash,base_step_version,first_step_version,last_step_version,document_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',[pageId,state.epoch,input.operationId,actor.id,input.clientId,hash,input.baseStepVersion,first,last,nextPageVersion]);
  for(let i=0;i<input.steps.length;i++)await tx.query('INSERT INTO hs_collaboration_steps(page_id,epoch,step_version,operation_id,actor_id,client_id,step) VALUES($1,$2,$3,$4,$5,$6,$7)',[pageId,state.epoch,first+i,input.operationId,actor.id,input.clientId,JSON.stringify(input.steps[i])]);
  for(const id of removed)await tx.query('INSERT INTO hs_collaboration_tombstones(page_id,block_id,removed_epoch,removed_step_version) VALUES($1,$2,$3,$4) ON CONFLICT(page_id,block_id) DO NOTHING',[pageId,id,state.epoch,last]);
- await tx.query('UPDATE hs_collaboration_pages SET step_version=$2,document_version=$3,document=$4,updated_at=clock_timestamp() WHERE page_id=$1',[pageId,last,nextPageVersion,JSON.stringify(next)]);
+ const presented=await presentSyncedDocument(r,tx,actor,pageId,synced.stored);
+ await tx.query('UPDATE hs_collaboration_pages SET step_version=$2,document_version=$3,document=$4,updated_at=clock_timestamp() WHERE page_id=$1',[pageId,last,nextPageVersion,JSON.stringify(presented)]);
  await tx.query('INSERT INTO hs_audit(id,actor_id,action,page_id,after_value,correlation_id) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),actor.id,'collaboration.batch',pageId,JSON.stringify({epoch:state.epoch,firstStepVersion:first,lastStepVersion:last,pageVersion:nextPageVersion,stepCount:decoded.length}),input.operationId]);
  return {epoch:state.epoch,stepVersion:last,pageVersion:nextPageVersion,replayed:false,steps:await stepsAfter(tx,pageId,state.epoch,input.baseStepVersion)};
 });}

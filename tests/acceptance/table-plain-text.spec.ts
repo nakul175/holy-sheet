@@ -1,5 +1,7 @@
 import {test,expect,type APIRequestContext,type Page} from '@playwright/test';
 import type {Editor} from '@tiptap/core';
+import {releaseRoutesWhenDone} from './release-routes';
+releaseRoutesWhenDone();
 
 const text=(value:string)=>({type:'text',text:value});
 const content=[

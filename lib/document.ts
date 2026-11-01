@@ -9,7 +9,7 @@ export const documentLimits = {bytes:25_000_000,blocks:10_000,depth:12} as const
 export const languages = ["plaintext", "bash", "javascript", "typescript", "json", "html", "css", "sql", "python", "java", "csharp", "cpp", "go", "rust", "php", "ruby", "yaml", "markdown"];
 export const palette = ["#171717", "#6b7280", "#1d4ed8", "#15803d", "#92400e", "#b91c1c", "#6d28d9"];
 export const highlights = ["#fef3c7", "#dbeafe", "#dcfce7", "#fee2e2", "#ede9fe"];
-export const nodeTypes = ["doc", "text", "paragraph", "heading", "bulletList", "orderedList", "listItem", "taskList", "taskItem", "horizontalRule", "blockquote", "callout", "codeBlock", "table", "tableRow", "tableCell", "tableHeader", "image", "file", "details", "detailsSummary", "detailsContent", "tableOfContents", "pageLink", "recordRef", "recordView", "hardBreak"];
+export const nodeTypes = ["doc", "text", "paragraph", "heading", "bulletList", "orderedList", "listItem", "taskList", "taskItem", "horizontalRule", "blockquote", "callout", "codeBlock", "table", "tableRow", "tableCell", "tableHeader", "image", "file", "details", "detailsSummary", "detailsContent", "tableOfContents", "pageLink", "recordRef", "recordView", "syncedBlock", "hardBreak"];
 export const idTypes = nodeTypes.filter(t => !["doc", "text", "hardBreak"].includes(t));
 export function stableStringify(value:unknown):string {
   function sort(v:unknown):unknown { if(Array.isArray(v))return v.map(sort);if(v&&typeof v==='object')return Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,item])=>[k,sort(item)]));return v; }
@@ -24,10 +24,10 @@ export function safeUrl(raw: string): boolean {
 }
 
 export class DocumentError extends Error {
-  constructor(message: string, public code = "invalid_document", public status = 422) { super(message); }
+  constructor(message: string, public code = "invalid_document", public status = 422, public details?: unknown) { super(message); }
 }
 export const saveInput = z.object({ operationId: z.string().uuid(), baseVersion: z.number().int().positive(), title: z.string().max(240), document: z.unknown() }).strict();
-const allowedAttrs = new Set(["id", "level", "start", "checked", "language", "colspan", "rowspan", "colwidth", "align", "theme", "icon", "alt", "title", "caption", "width", "attachmentId", "src", "pageId", "open"]);
+const allowedAttrs = new Set(["id", "level", "start", "checked", "language", "colspan", "rowspan", "colwidth", "align", "theme", "icon", "alt", "title", "caption", "width", "attachmentId", "src", "pageId", "open", "syncedId", "syncVersion", "syncState", "syncLocked", "syncUndo"]);
 const recordAttrs: Record<string, string[]> = { recordRef: ["nodeVersion", "recordId", "collectionId", "display", "fields"], recordView: ["nodeVersion", "viewId", "collectionId", "layout", "columns", "limit"] };
 
 export function validateDocument(input: unknown): RichNode {
@@ -66,6 +66,17 @@ export function validateDocument(input: unknown): RichNode {
     if (["image","file"].includes(n.type) && (!mediaIdPattern.test(String(n.attrs?.attachmentId)) || (n.type === "image" && !String(n.attrs?.alt ?? "").trim()))) throw new DocumentError("Media requires a verified attachment and image alternative text");
     if (n.attrs?.src && n.attrs.src !== `/api/media/${n.attrs.attachmentId}`) throw new DocumentError("Images must use the protected HS media gateway");
     if (n.type === "pageLink" && !/^[a-zA-Z0-9_-]{1,100}$/.test(String(n.attrs?.pageId))) throw new DocumentError("Invalid page reference");
+    if (n.type === "syncedBlock") {
+      if (parent === "syncedBlock") throw new DocumentError("Synced blocks cannot contain synced blocks");
+      const syncedId = n.attrs?.syncedId;
+      if (syncedId != null && syncedId !== "" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(syncedId))) throw new DocumentError("Invalid synced block");
+      const syncState = n.attrs?.syncState;
+      if (syncState != null && !["live", "restricted", "unavailable", "trash"].includes(String(syncState))) throw new DocumentError("Invalid synced block");
+      const syncVersion = n.attrs?.syncVersion;
+      if (syncVersion != null && !(Number.isInteger(syncVersion) && Number(syncVersion) >= 0)) throw new DocumentError("Invalid synced block");
+      if (n.attrs?.syncLocked != null && typeof n.attrs.syncLocked !== "boolean") throw new DocumentError("Invalid synced block");
+      if (n.attrs?.syncUndo != null && typeof n.attrs.syncUndo !== "boolean") throw new DocumentError("Invalid synced block");
+    }
     if (n.type === "tableOfContents" && parent !== "doc") throw new DocumentError("Table of contents must be at page root");
     if (n.type === "detailsSummary" && !plainText(n).trim()) throw new DocumentError("Section title is required");
     if (n.marks && (!Array.isArray(n.marks) || n.marks.some(m => !m || typeof m!=='object' || !marks.has(m.type)))) throw new DocumentError("Unsupported text style");
@@ -102,7 +113,7 @@ export function validateDocument(input: unknown): RichNode {
 
 export function plainText(n: RichNode): string {
   // Page labels are resolved separately per reader and never indexed here.
-  if (["pageLink","tableOfContents"].includes(n.type)) return "";
+  if (["pageLink","tableOfContents","syncedBlock"].includes(n.type)) return "";
   return n.text ?? (n.content ?? []).map(plainText).join(["paragraph","heading","detailsSummary","codeBlock"].includes(n.type) ? "" : "\n");
 }
 export function ensureIds(doc: RichNode, fresh = false): RichNode {

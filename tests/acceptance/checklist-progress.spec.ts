@@ -1,6 +1,8 @@
 import {test,expect,type Page,type APIRequestContext} from '@playwright/test';
 import type {Editor} from '@tiptap/core';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
+import {releaseRoutesWhenDone} from './release-routes';
+releaseRoutesWhenDone();
 type Saved={id:string;title:string;version:number;document:unknown};
 async function fixture(request:APIRequestContext,origin:string,large=false){
  const made=await request.post('/api/pages',{headers:{Origin:origin},data:{title:'Disposable HOLY141 '+crypto.randomUUID(),spaceId:'space-product'}});expect(made.status()).toBe(200);const page=(await made.json()).page as Saved,id=(name:string)=>page.id+'-'+name;

@@ -2,6 +2,8 @@ import {test,expect,type Page,type APIRequestContext} from '@playwright/test';
 import type {Editor,JSONContent} from '@tiptap/core';
 import axe from 'axe-core';
 import {writeFile} from 'node:fs/promises';
+import {releaseRoutesWhenDone} from './release-routes';
+releaseRoutesWhenDone();
 const p=(text:string):JSONContent=>({type:'paragraph',attrs:{id:crypto.randomUUID()},content:text?[{type:'text',text}]:[]});
 const item=(text:string,checked=false,nested:JSONContent[]=[]):JSONContent=>({type:'taskItem',attrs:{id:crypto.randomUUID(),checked},content:[p(text),...nested]});
 const list=(content:JSONContent[]):JSONContent=>({type:'taskList',attrs:{id:crypto.randomUUID()},content});
