@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test, expect} from './acceptance-fixtures';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 const origin='http://127.0.0.1:53300',hs=origin,host='https://sho-qa.aplyd.org',subject='00000000-0000-4000-8000-000000000001';
 test('a local frame searches 20-result pages, rechecks selection, and withholds its message from a different host',async({page,request})=>{

@@ -9,6 +9,7 @@ import {bindPublicationThreads} from './discussion-visibility';
 import {publicationWork,projectionSql,type ProjectionBudget} from './publication-projection';
 import {ProjectedContent,cloneProjection} from './projection-content';
 import {notePublishedSourceVersion} from './document-variants';
+import {isWorkingCopyPage} from './working-copy-access';
 
 const hash=(v:unknown)=>createHash('sha256').update(stableStringify(v)).digest('hex');
 const checkedHash=(v:unknown,work?:ProjectionBudget)=>{work?.check();const result=hash(v);work?.check();return result;};
@@ -119,6 +120,7 @@ export async function changePublishing(r:Repository,actor:Actor,pageId:string,in
  return r.db.transaction(async raw=>{
   const tx=projectionSql(raw,work);
   const p=await r.access(tx,pageId,actor,true,true),w=await workflow(tx,pageId);
+  if(await isWorkingCopyPage(tx,pageId))throw new DocumentError('Apply the working copy to the original first. This copy cannot skip publishing review.','working_copy_private',403);
   if(['configure','publish','withdraw'].includes(c.action)&&p.role!=='owner')throw fail('publication_owner_required',403);
   if(c.action==='approve'||c.action==='reject'){if(!w)throw fail();await reviewer(r,tx,pageId,actor,w);}
   const prior=(await tx.query<{actor_id:string;request_hash:string;result:unknown}>('SELECT actor_id,request_hash,result FROM hs_document_workflow_operations WHERE page_id=$1 AND operation_id=$2',[pageId,c.operationId])).rows[0];

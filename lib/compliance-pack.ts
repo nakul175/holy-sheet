@@ -8,6 +8,7 @@ import { DocumentError, schemaVersion, stableStringify, validateDocument, type R
 import { publishedDocument } from "./document-publishing";
 import { renderMarkdown, type ExportFormat, type ExportInput, type ExportReference } from "./export-plan";
 import { formatIst } from "./ist-label";
+import { isForeignWorkingCopy } from "./working-copy-access";
 import { exportRecordPageRefs } from "./record-page-ref-store";
 import type { RecordExportSlice } from "./record-page-refs";
 import { canEdit } from "./types";
@@ -326,6 +327,7 @@ export async function createComplianceExport(r: Repository, actor: Actor, worksp
       if (!selected.length) throw unavailable();
     }
     const anchor = selected[0];
+    if (input.scope !== "space" && await isForeignWorkingCopy(tx, input.targetId, actor.id)) throw unavailable();
     if (input.scope !== "space") {
       const root = catalogue.find(page => page.id === input.targetId);
       if (!root) throw unavailable();
@@ -358,6 +360,7 @@ export async function createComplianceExport(r: Repository, actor: Actor, worksp
         } else if (!input.includeTrash || !restorerCanIncludeTrash(still.role, root.owner_id, actor.id)) return abortJob(tx, row);
       }
       const page = selected[index];
+      if (await isForeignWorkingCopy(tx, page.id, actor.id)) continue;
       if (page.deleted_at && (!input.includeTrash || !restorerCanIncludeTrash(still.role, page.owner_id, actor.id))) continue;
       let title = "";
       let version = page.version;

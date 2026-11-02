@@ -1,6 +1,7 @@
 import {createServer,request as httpRequest} from 'node:http';
 import {createConnection,type AddressInfo,type Socket} from 'node:net';
-import {test,expect,type APIRequestContext,type Page as BrowserPage} from '@playwright/test';
+import {type APIRequestContext, type Page as BrowserPage} from '@playwright/test';
+import {test, expect} from './acceptance-fixtures';
 import type {Editor} from '@tiptap/core';
 type Stored={id:string;title:string;version:number;workspaceId:string;document:unknown};
 const heading=(id:string,text:string)=>({type:'heading',attrs:{id,level:2},content:[{type:'text',text}]});

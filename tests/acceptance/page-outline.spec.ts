@@ -1,5 +1,6 @@
 import {writeFile} from 'node:fs/promises';
-import {test,expect,type APIRequestContext,type Page as BrowserPage} from '@playwright/test';
+import {type APIRequestContext, type Page as BrowserPage} from '@playwright/test';
+import {test, expect} from './acceptance-fixtures';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 import {releaseRoutesWhenDone} from './release-routes';
 releaseRoutesWhenDone();

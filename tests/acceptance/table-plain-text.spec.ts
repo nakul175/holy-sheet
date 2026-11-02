@@ -1,4 +1,5 @@
-import {test,expect,type APIRequestContext,type Page} from '@playwright/test';
+import {type APIRequestContext, type Page} from '@playwright/test';
+import {test, expect} from './acceptance-fixtures';
 import type {Editor} from '@tiptap/core';
 import {releaseRoutesWhenDone} from './release-routes';
 releaseRoutesWhenDone();

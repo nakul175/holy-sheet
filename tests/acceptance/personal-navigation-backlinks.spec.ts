@@ -1,4 +1,5 @@
-import {test,expect,type APIRequestContext} from '@playwright/test';
+import {type APIRequestContext} from '@playwright/test';
+import {test, expect} from './acceptance-fixtures';
 const origin='http://127.0.0.1:53300';
 async function create(request:APIRequestContext,title:string){const reply=await request.post(origin+'/api/pages',{headers:{Origin:origin},data:{title,spaceId:'space-product'}});expect(reply.status()).toBe(200);return (await reply.json()).page;}
 test('a failed Recents write can be explicitly retried on mobile without changing the document',async({page,request})=>{

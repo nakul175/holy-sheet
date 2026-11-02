@@ -1,4 +1,5 @@
-import {test,expect,type APIRequestContext} from '@playwright/test';
+import {type APIRequestContext} from '@playwright/test';
+import {test, expect} from './acceptance-fixtures';
 import {readFile} from 'node:fs/promises';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 const origin='http://127.0.0.1:53300';

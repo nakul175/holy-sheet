@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test, expect} from './acceptance-fixtures';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 const origin='http://127.0.0.1:53300';
 for(const width of [1440,390,320])test(`editor WCAG text contrast and usable controls at ${width}px`,async({page,request})=>{
