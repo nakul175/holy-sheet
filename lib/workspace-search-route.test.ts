@@ -9,14 +9,15 @@ it('requires explicit bounded workspace scope before native search',async()=>{
  for(const query of ['q=launch','workspaceId=&q=launch','workspaceId=w&q='+('a'.repeat(513)),'workspaceId=w&q=launch&cursor=bad']){expect((await GET(new Request('http://localhost/api/search?'+query))).status).toBe(400);}expect(mocks.search).not.toHaveBeenCalled();
 });
 it('binds actor and scope and never caches search responses',async()=>{
- const result=await GET(new Request('http://localhost/api/search?workspaceId=w&q=launch&spaceId=s'));expect(result.status).toBe(200);expect(result.headers.get('cache-control')).toBe('no-store');expect(mocks.search).toHaveBeenCalledWith({},expect.objectContaining({id:expect.any(String)}),{query:'launch',workspaceId:'w',spaceId:'s',cursor:undefined},expect.any(AbortSignal));
+ const result=await GET(new Request('http://localhost/api/search?workspaceId=w&q=launch&spaceId=s'));expect(result.status).toBe(200);expect(result.headers.get('cache-control')).toBe('no-store');expect(mocks.search).toHaveBeenCalledWith({},expect.objectContaining({id:expect.any(String)}),expect.objectContaining({query:'launch',workspaceId:'w',spaceId:'s',cursor:undefined,includeArchived:false}),expect.any(AbortSignal));
 });
 it('rejects an unknown result type and forwards bounded filters',async()=>{
  expect((await GET(new Request('http://localhost/api/search?workspaceId=w&q=launch&type=secret'))).status).toBe(400);
  expect((await GET(new Request('http://localhost/api/search?workspaceId=w&q=launch&from=2026-02-02&to=2026-01-01'))).status).toBe(400);
  const result=await GET(new Request('http://localhost/api/search?workspaceId=w&q=launch&type=record,field&collection=organisations&owner=owner-1&from=2026-01-01&to=2026-02-02'));
  expect(result.status).toBe(200);
- expect(mocks.search).toHaveBeenCalledWith({},expect.objectContaining({id:expect.any(String)}),expect.objectContaining({query:'launch',workspaceId:'w',kinds:['record','field'],collection:'organisations',ownerId:'owner-1',updatedFrom:'2026-01-01',updatedTo:'2026-02-02'}),expect.any(AbortSignal));
+ expect(mocks.search).toHaveBeenCalledWith({},expect.objectContaining({id:expect.any(String)}),expect.objectContaining({query:'launch',workspaceId:'w',kinds:['record','field'],collection:'organisations',ownerId:'owner-1',updatedFrom:'2026-01-01',updatedTo:'2026-02-02',includeArchived:false}),expect.any(AbortSignal));
+ const archived=await GET(new Request('http://localhost/api/search?workspaceId=w&q=launch&archived=1&language=en'));expect(archived.status).toBe(200);expect(mocks.search).toHaveBeenLastCalledWith({},expect.objectContaining({id:expect.any(String)}),expect.objectContaining({query:'launch',workspaceId:'w',includeArchived:true,language:'en'}),expect.any(AbortSignal));
 });
 it('does not authenticate a remote request using the local preview actor',async()=>{
  vi.stubEnv('HS_IDENTITY_ISSUER','https://identity.example');vi.stubEnv('HS_IDENTITY_JWKS_URL','https://identity.example/jwks');expect((await GET(new Request('https://holysheet.aplyd.org/api/search?workspaceId=w&q=launch'))).status).toBe(401);expect(mocks.search).not.toHaveBeenCalled();
