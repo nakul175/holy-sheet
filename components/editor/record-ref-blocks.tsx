@@ -192,7 +192,14 @@ function RecordViewNode({ node, editor, extension }: NodeViewProps) {
 }
 
 export const RecordRef = Node.create({ name: "recordRef", addOptions() { return { pageId: "" }; }, group: "block", atom: true, draggable: true, addAttributes() { return { nodeVersion: { default: 1 }, recordId: { default: null }, collectionId: { default: null }, display: { default: "chip" }, fields: { default: [] } }; }, parseHTML: () => [{ tag: "div[data-hs-record-ref]" }], renderHTML: ({ HTMLAttributes }) => ["div", mergeAttributes(HTMLAttributes, { "data-hs-record-ref": "" })], addNodeView: () => ReactNodeViewRenderer(RecordRefView) });
-export const RecordViewBlock = Node.create({ name: "recordView", addOptions() { return { pageId: "" }; }, group: "block", atom: true, draggable: true, addAttributes() { return { nodeVersion: { default: 1 }, viewId: { default: null }, collectionId: { default: null }, layout: { default: "table" }, columns: { default: ["name"] }, limit: { default: 10 } }; }, parseHTML: () => [{ tag: "div[data-hs-record-view]" }], renderHTML: ({ HTMLAttributes }) => ["div", mergeAttributes(HTMLAttributes, { "data-hs-record-view": "" })], addNodeView: () => ReactNodeViewRenderer(RecordViewNode) });
+export const RecordViewBlock = Node.create({ name: "recordView", addOptions() { return { pageId: "" }; }, group: "block", atom: true, draggable: true, addAttributes() { return { nodeVersion: { default: 1 }, viewId: { default: null }, collectionId: { default: null }, layout: { default: "table" }, columns: { default: ["name"] }, limit: { default: 10 }, boundRecordId: { default: null } }; }, parseHTML: () => [{ tag: "div[data-hs-record-view]" }], renderHTML: ({ HTMLAttributes }) => ["div", mergeAttributes(HTMLAttributes, { "data-hs-record-view": "" })], addNodeView: () => ReactNodeViewRenderer(RecordViewNode) });
+
+function RecordPlaceholderView({ node }: NodeViewProps) {
+  const label = String(node.attrs.label || "Record").trim();
+  const display = node.attrs.display === "view" ? "view" : node.attrs.display === "card" ? "card" : "chip";
+  return <NodeViewWrapper className="record-ref-block" contentEditable={false}><p className="record-placeholder">{label} record placeholder · {display}. Record values load after a page is created.</p></NodeViewWrapper>;
+}
+export const RecordPlaceholder = Node.create({ name: "recordPlaceholder", group: "block", atom: true, draggable: true, addAttributes() { return { key: { default: null }, label: { default: "" }, collectionId: { default: null }, display: { default: "chip" }, fields: { default: [] }, columns: { default: [] }, limit: { default: 10 } }; }, parseHTML: () => [{ tag: "div[data-hs-record-placeholder]" }], renderHTML: ({ HTMLAttributes }) => ["div", mergeAttributes(HTMLAttributes, { "data-hs-record-placeholder": "" })], addNodeView: () => ReactNodeViewRenderer(RecordPlaceholderView) });
 
 type Pick = { id: string; title: string; collectionId: string; collectionName: string; fields: { label: string; value: string }[]; catalogue: { key: string; label: string }[] };
 

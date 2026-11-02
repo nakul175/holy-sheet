@@ -4,16 +4,23 @@ import type { Sql } from './database';
 import type { Repository } from './repository';
 import { DocumentError,documentBlocks,schemaVersion,stableStringify,validateDocument,type RichNode } from './document';
 import { revisionDigest } from './revision';
+import { templateStarters } from './template-starters';
 
 type Revision={version:number;title:string;document:RichNode;actor_id:string|null;author_name:string|null;created_at:string;source_surface:string;schema_version:number;restored_from:number|null;superseded_at:string|null;content_hash:string|null};
-export type RevisionSummary={version:number;author:string;createdAt:string;sourceSurface:string;restoredFrom:number|null;current:boolean;expiresAt:string|null;integrity:'recorded'|'legacy'};
+export type RevisionSummary={version:number;author:string;createdAt:string;sourceSurface:string;restoredFrom:number|null;current:boolean;expiresAt:string|null;integrity:'recorded'|'legacy';templateRevision?:number;templateName?:string};
 export type RestorePreview={previewId:string;source:RevisionSummary;title:string;document:RichNode;currentTitle:string;currentDocument:RichNode;expectedVersion:number;warnings:string[];expiresAt:string};
 const unavailable=()=>new DocumentError('Saved version is unavailable or expired','history_unavailable',404);
 async function historyAccess(r:Repository,tx:Sql,pageId:string,actor:Actor){const page=await r.access(tx,pageId,actor,true,true);if(page.schema_version!==schemaVersion)throw new DocumentError('This page requires a different editor schema; history cannot change it','history_schema',409);return page;}
 async function audit(tx:Sql,actor:Actor,pageId:string,action:string,values:unknown,correlation:string=randomUUID()){
   await tx.query('INSERT INTO hs_audit(id,actor_id,action,page_id,after_value,correlation_id) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),actor.id,action,pageId,JSON.stringify(values),correlation]);
 }
-function summary(row:Revision,current:number):RevisionSummary{return {version:row.version,author:row.author_name??'Unknown author (legacy)',createdAt:new Date(row.created_at).toISOString(),sourceSurface:row.source_surface,restoredFrom:row.restored_from,current:row.version===current,expiresAt:row.superseded_at?new Date(new Date(row.superseded_at).getTime()+90*86400_000).toISOString():null,integrity:row.content_hash?'recorded':'legacy'};}
+function summary(row:Revision,current:number,template?:{templateRevision:number;templateName:string}|null):RevisionSummary{return {version:row.version,author:row.author_name??'Unknown author (legacy)',createdAt:new Date(row.created_at).toISOString(),sourceSurface:row.source_surface,restoredFrom:row.restored_from,current:row.version===current,expiresAt:row.superseded_at?new Date(new Date(row.superseded_at).getTime()+90*86400_000).toISOString():null,integrity:row.content_hash?'recorded':'legacy',...(row.source_surface==='template'&&template?{templateRevision:template.templateRevision,templateName:template.templateName}:{})};}
+async function templateHistory(tx:Sql,pageId:string,actorId:string,workspaceId:string){
+  const source=await tx.query<{template_id:string;template_revision:number;name:string|null}>('SELECT src.template_id, src.template_revision, v.name FROM hs_page_template_sources src LEFT JOIN hs_templates t ON t.id::text=src.template_id AND t.workspace_id=$2 AND t.archived_at IS NULL AND (t.owner_id=$3 OR (t.scope_space_id IS NOT NULL AND (t.restricted=false OR EXISTS (SELECT 1 FROM hs_members m WHERE m.workspace_id=t.workspace_id AND m.user_id=$3 AND m.active=true AND m.role IN (\'owner\',\'admin\')) OR EXISTS (SELECT 1 FROM hs_space_template_managers g WHERE g.workspace_id=t.workspace_id AND g.space_id=t.scope_space_id AND g.user_id=$3)))) LEFT JOIN hs_template_revisions v ON v.template_id=t.id AND v.version=src.template_revision WHERE src.page_id=$1',[pageId,workspaceId,actorId]);
+  const row=source.rows[0];if(!row)return null;
+  const starter=templateStarters.find(item=>item.id===row.template_id);
+  return {templateRevision:row.template_revision,templateName:starter?.name??row.name??'Restricted template'};
+}
 async function revision(tx:Sql,pageId:string,version:number,current:number):Promise<Revision>{
   const result=await tx.query<Revision>(`SELECT v.*,u.name AS author_name FROM hs_revisions v LEFT JOIN hs_users u ON u.id=v.actor_id WHERE v.page_id=$1 AND v.version=$2 AND v.version<=$3 AND (v.version=$3 OR v.superseded_at>clock_timestamp()-interval '90 days')`,[pageId,version,current]);
   const row=result.rows[0];if(!row)throw unavailable();
@@ -43,17 +50,17 @@ export async function listHistory(r:Repository,actor:Actor,pageId:string,before?
   return r.db.transaction(async tx=>{
     const page=await historyAccess(r,tx,pageId,actor),ceiling=Math.min(before??page.version+1,page.version+1);
     const result=await tx.query<Revision>(`SELECT v.*,u.name AS author_name FROM hs_revisions v LEFT JOIN hs_users u ON u.id=v.actor_id WHERE v.page_id=$1 AND v.version<$2 AND (v.version=$3 OR v.superseded_at>clock_timestamp()-interval '90 days') ORDER BY v.version DESC LIMIT 21`,[pageId,ceiling,page.version]);
-    const items=result.rows.slice(0,20);await audit(tx,actor,pageId,'history.list',{before:ceiling,versions:items.map(v=>v.version)});
-    return {versions:items.map(v=>summary(v,page.version)),nextBefore:result.rows.length>20?items.at(-1)!.version:null,currentVersion:page.version,retentionDays:90};
+    const items=result.rows.slice(0,20),template=await templateHistory(tx,pageId,actor.id,page.workspace_id);await audit(tx,actor,pageId,'history.list',{before:ceiling,versions:items.map(v=>v.version)});
+    return {versions:items.map(v=>summary(v,page.version,template)),nextBefore:result.rows.length>20?items.at(-1)!.version:null,currentVersion:page.version,retentionDays:90};
   });
 }
 export async function previewHistory(r:Repository,actor:Actor,pageId:string,version:number):Promise<RestorePreview>{
   return r.db.transaction(async tx=>{
-    const page=await historyAccess(r,tx,pageId,actor),source=await revision(tx,pageId,version,page.version),current=await r.get(pageId,actor,tx),snapshot=await permittedSnapshot(tx,pageId,source.document),previewId=randomUUID();
+    const page=await historyAccess(r,tx,pageId,actor),source=await revision(tx,pageId,version,page.version),current=await r.get(pageId,actor,tx),snapshot=await permittedSnapshot(tx,pageId,source.document),previewId=randomUUID(),template=await templateHistory(tx,pageId,actor.id,page.workspace_id);
     const expiry=await tx.query<{expires_at:string}>("INSERT INTO hs_restore_previews(id,user_id,page_id,source_version,expected_version,media_signature,expires_at) VALUES($1,$2,$3,$4,$5,$6,clock_timestamp()+interval '10 minutes') RETURNING expires_at",[previewId,actor.id,pageId,version,page.version,snapshot.signature]);
     await audit(tx,actor,pageId,'history.preview',{sourceVersion:version,currentVersion:page.version});
     if(!source.content_hash)snapshot.warnings.unshift('This legacy snapshot predates integrity recording; its structure has been validated and original authorship is unknown where not recorded.');
-    return {previewId,source:summary(source,page.version),title:source.title,document:snapshot.document,currentTitle:current.title,currentDocument:current.document,expectedVersion:page.version,warnings:snapshot.warnings,expiresAt:new Date(expiry.rows[0].expires_at).toISOString()};
+    return {previewId,source:summary(source,page.version,template),title:source.title,document:snapshot.document,currentTitle:current.title,currentDocument:current.document,expectedVersion:page.version,warnings:snapshot.warnings,expiresAt:new Date(expiry.rows[0].expires_at).toISOString()};
   });
 }
 export async function recordHistoryCompare(r:Repository,actor:Actor,pageId:string,version:number){return r.db.transaction(async tx=>{const page=await historyAccess(r,tx,pageId,actor);await revision(tx,pageId,version,page.version);await audit(tx,actor,pageId,'history.compare',{sourceVersion:version,currentVersion:page.version});return {recorded:true};});}

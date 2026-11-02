@@ -366,7 +366,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .editor-dialog:has(.templates-dialog) { width:min(1000px,95vw); }
 .template-policy,.template-provenance { color:var(--muted); font-size:12px; line-height:1.6; }
 .template-library { padding:16px 0; }
+.template-group { margin:12px 0 4px; }
+.template-group h3 { margin:0 0 8px; font-size:0.95rem; }
 .template-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; margin:16px 0; }
+.template-placeholder-author,.template-record-binding { margin:12px 0; padding:12px; border:1px solid var(--line); border-radius:12px; }
+.record-placeholder { margin:0; padding:10px 12px; border:1px dashed var(--line); border-radius:10px; color:var(--muted); }
 .template-cards button { display:flex; flex-direction:column; gap:8px; text-align:left; padding:16px; border:1px solid var(--line); border-radius:12px; background:white; }
 .template-cards span,.template-cards small { color:var(--muted); }
 .template-preview { border-top:1px solid var(--line); padding:20px 0; }

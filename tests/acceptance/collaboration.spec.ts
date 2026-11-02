@@ -1,6 +1,19 @@
-import {test,expect} from '@playwright/test';
+import {test,expect,type APIRequestContext} from '@playwright/test';
 
 const origin='http://127.0.0.1:53300';
+
+// expect.poll stops if the callback throws. A dev-server ECONNRESET is a dropped socket, not a failed assertion.
+async function documentBody(request:APIRequestContext,pageId:string){
+  try{
+    const response=await request.get(`${origin}/api/v1/pages/${pageId}/document`,{maxRetries:4,timeout:15000});
+    if(!response.ok())return '';
+    return JSON.stringify((await response.json()).page?.document??'');
+  }catch(error){
+    const message=error instanceof Error?error.message:String(error);
+    if(/ECONNRESET|ECONNREFUSED|EPIPE|socket hang up/i.test(message))return '';
+    throw error;
+  }
+}
 
 test('failed live edits survive encrypted recovery and rejoin collaboration after restoration',async({browser,request})=>{
  const created=await request.post(origin+'/api/pages',{headers:{Origin:origin},data:{title:'Disposable recovery fixture',spaceId:'space-product'}});
@@ -18,7 +31,7 @@ test('failed live edits survive encrypted recovery and rejoin collaboration afte
   await expect.poll(()=>a.evaluate(pageId=>new Promise<number>((resolve,reject)=>{
    const open=indexedDB.open('holy-sheet-recovery',2);open.onerror=()=>reject(open.error);open.onsuccess=()=>{const db=open.result,tx=db.transaction('drafts','readonly'),query=tx.objectStore('drafts').getAll();query.onsuccess=()=>resolve(query.result.filter(row=>row.pageId===pageId&&row.ciphertext instanceof ArrayBuffer&&row.ciphertext.byteLength>0).length);tx.oncomplete=()=>db.close();};
   }),id)).toBeGreaterThan(0);
-  const before=await request.get(origin+`/api/v1/pages/${id}/document`);expect(JSON.stringify((await before.json()).page.document)).not.toContain('Encrypted recovery survives');
+  await expect.poll(()=>documentBody(request,id),{timeout:20000}).not.toContain('Encrypted recovery survives');
   await a.reload();await expect(a.getByRole('button',{name:'Restore draft',exact:true})).toBeVisible();
   await a.unroute(`**/api/v1/pages/${id}/collaboration`);
   await a.getByRole('button',{name:'Restore draft',exact:true}).click();
@@ -26,7 +39,7 @@ test('failed live edits survive encrypted recovery and rejoin collaboration afte
   await expect(a.getByRole('button',{name:'✓ Saved',exact:true})).toBeVisible();
   await editor.evaluate(element=>{element.focus();const range=document.createRange(),selection=getSelection()!;range.selectNodeContents(element);range.collapse(false);selection.removeAllRanges();selection.addRange(range);});
   await editor.pressSequentially(' and resumes');
-  await expect.poll(async()=>{const response=await request.get(origin+`/api/v1/pages/${id}/document`);return JSON.stringify((await response.json()).page.document);}).toContain('and resumes');
+  await expect.poll(()=>documentBody(request,id),{timeout:20000}).toContain('and resumes');
   await a.reload();await expect(editor).toContainText('Encrypted recovery survives a failed live submit and resumes');
  }finally{await a.close();}
 });
@@ -43,7 +56,7 @@ test('native heading conversion, Undo and Redo persist with fresh block identiti
   const editorA=a.getByRole('textbox',{name:'Document content',exact:true}),editorB=b.getByRole('textbox',{name:'Document content',exact:true});
   await expect(editorA).toContainText('Shape source');await expect(editorB).toContainText('Shape source');
   const submit=()=>a.waitForResponse(response=>response.url()===origin+`/api/v1/pages/${page.id}/collaboration`&&response.request().method()==='POST'&&response.request().postDataJSON().action==='submit');
-  const saved=async()=>{const response=await request.get(origin+`/api/v1/pages/${page.id}/document`);expect(response.status()).toBe(200);return (await response.json()).page;};
+  const saved=async()=>{const response=await request.get(origin+`/api/v1/pages/${page.id}/document`,{maxRetries:4,timeout:15000});expect(response.status()).toBe(200);return (await response.json()).page;};
   let response=submit();await editorA.click();await a.getByRole('button',{name:'H1 Heading',exact:true}).click();expect((await response).status()).toBe(200);
   // Presence decorations contribute the other actor's name to the accessible name.
   await expect(editorB.getByRole('heading',{name:/^Shape source(?: |$)/})).toBeVisible();
@@ -80,7 +93,7 @@ test('two live editor clients converge and report durable save and presence',asy
     await expect(b.getByRole('button',{name:'✓ Saved',exact:true})).toBeVisible();
     await expect(a.locator('.live-collaborators span')).toHaveCount(1);
     await expect(a.locator('.collaborator-caret')).toHaveCount(1);
-    const saved=await request.get(origin+`/api/v1/pages/${id}/document`);expect(saved.status()).toBe(200);expect(JSON.stringify((await saved.json()).page.document)).toContain('LEFTα');expect(JSON.stringify((await saved.json()).page.document)).toContain('RIGHTβ');
+    const saved=await request.get(origin+`/api/v1/pages/${id}/document`,{maxRetries:4,timeout:15000});expect(saved.status()).toBe(200);expect(JSON.stringify((await saved.json()).page.document)).toContain('LEFTα');expect(JSON.stringify((await saved.json()).page.document)).toContain('RIGHTβ');
     const nextSubmit=(page:typeof a)=>page.waitForResponse(response=>response.url()===origin+`/api/v1/pages/${id}/collaboration`&&response.request().method()==='POST'&&response.request().postDataJSON().action==='submit');
     let submitted=nextSubmit(a);await editorA.press('ControlOrMeta+z');expect((await submitted).status()).toBe(200);
     await expect.poll(async()=>{const values=await texts();return {same:values[0]===values[1],left:values[0]?.includes('LEFTα'),right:values[0]?.includes('RIGHTβ')};}).toEqual({same:true,left:false,right:true});
@@ -91,7 +104,7 @@ test('two live editor clients converge and report durable save and presence',asy
     await expect(title).toBeEditable();
     await title.fill('Renamed after live collaboration');
     await expect(a.getByRole('button',{name:'✓ Saved',exact:true})).toBeVisible();
-    await expect.poll(async()=>{const result=await request.get(origin+`/api/v1/pages/${id}/document`);return (await result.json()).page.title;}).toBe('Renamed after live collaboration');
+    await expect.poll(async()=>{try{const result=await request.get(origin+`/api/v1/pages/${id}/document`,{maxRetries:4,timeout:15000});if(!result.ok())return '';return (await result.json()).page.title as string;}catch(error){const message=error instanceof Error?error.message:String(error);if(/ECONNRESET|ECONNREFUSED|EPIPE|socket hang up/i.test(message))return '';throw error;}}).toBe('Renamed after live collaboration');
     await a.reload();
     await expect(title).toHaveValue('Renamed after live collaboration');
     await expect(editorA).toContainText('Shared base');

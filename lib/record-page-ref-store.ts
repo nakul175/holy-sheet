@@ -174,7 +174,7 @@ async function resolveView(tx: Sql, actor: Actor, workspaceId: string, tenant: s
   if (!tenant || !uuid.test(item.viewId)) return restrictedRecordPlaceholder;
   const view = await tx.query<{ collection: string; definition: RecordViewDefinition | string; name: string }>(
     `SELECT v.collection, v.definition, c.name FROM hs_data_views v JOIN hs_data_collections c ON c.tenant_id=v.tenant_id AND c.id=v.collection
-     WHERE v.id=$1 AND v.tenant_id=$2 AND v.workspace_id=$3 AND v.deleted=false AND (v.scope='workspace' OR v.owner_id=$4)
+     WHERE v.id=$1 AND v.tenant_id=$2 AND v.workspace_id=$3 AND v.deleted=false AND (v.scope='workspace' OR v.owner_id=$4 OR jsonb_exists(v.definition, 'boundRecordId'))
        AND (EXISTS(SELECT 1 FROM hs_data_collection_grants g WHERE g.tenant_id=v.tenant_id AND g.user_id=$4 AND g.collection=v.collection AND 'view'=ANY(g.capabilities))
          OR EXISTS(SELECT 1 FROM hs_data_record_grants g JOIN hs_data_records r ON r.tenant_id=g.tenant_id AND r.id=g.record_id WHERE g.tenant_id=v.tenant_id AND g.user_id=$4 AND r.collection=v.collection AND 'view'=ANY(g.capabilities)))`,
     [item.viewId, tenant, workspaceId, actor.id],
@@ -186,13 +186,16 @@ async function resolveView(tx: Sql, actor: Actor, workspaceId: string, tenant: s
     const fields = pack?.fields ?? [];
     const grants = pack?.grants ?? new Set<string>();
     const visible = visibleKeys(fields, grants);
-    const definition = typeof stored.definition === "string" ? JSON.parse(stored.definition) as RecordViewDefinition : stored.definition;
+    const definition = typeof stored.definition === "string" ? JSON.parse(stored.definition) as RecordViewDefinition & { boundRecordId?: unknown } : stored.definition as RecordViewDefinition & { boundRecordId?: unknown };
+    const boundRecordId = typeof definition.boundRecordId === "string" && uuid.test(definition.boundRecordId) ? definition.boundRecordId : null;
     const columns = item.columns.filter(key => key === "name" || fields.some(field => field.key === key));
     const sort = readerSort(definition.sort ?? [], visible);
     const compiled = compileRecordView({ ...definition, includeArchived: false, columns: columns.length ? columns : ["name"], sort, filters: definition.filters ?? [] }, fields, [tenant, stored.collection, ["active"], false, actor.id]);
     const collectionView = await tx.query("SELECT 1 FROM hs_data_collection_grants WHERE tenant_id=$1 AND user_id=$2 AND collection=$3 AND 'view'=ANY(capabilities)", [tenant, actor.id, stored.collection]);
     compiled.values[3] = collectionView.rows.length > 0;
-    const where = `r.tenant_id=$1 AND r.collection=$2 AND r.merged_into_id IS NULL AND r.state=ANY($3::text[]) AND ($4::boolean OR r.id IN(SELECT g.record_id FROM hs_data_record_grants g WHERE g.tenant_id=$1 AND g.user_id=$5 AND 'view'=ANY(g.capabilities))) AND ${compiled.predicates.join(" AND ") || "true"}`;
+    if (boundRecordId) compiled.values.push(boundRecordId);
+    const boundClause = boundRecordId ? `r.id=$${compiled.values.length}` : "true";
+    const where = `r.tenant_id=$1 AND r.collection=$2 AND r.merged_into_id IS NULL AND r.state=ANY($3::text[]) AND ($4::boolean OR r.id IN(SELECT g.record_id FROM hs_data_record_grants g WHERE g.tenant_id=$1 AND g.user_id=$5 AND 'view'=ANY(g.capabilities))) AND ${boundClause} AND ${compiled.predicates.join(" AND ") || "true"}`;
     const order = compiled.sort.map(entry => `${entry.sql} ${entry.direction.toUpperCase()} NULLS LAST`).join(", ");
     const limit = Math.min(25, Math.max(1, item.limit));
     const values = [...compiled.values, limit];
@@ -222,6 +225,7 @@ async function resolveView(tx: Sql, actor: Actor, workspaceId: string, tenant: s
       };
     });
     const chips = [
+      ...(boundRecordId ? ["Linked record"] : []),
       ...(definition.filters ?? []).flatMap(filter => {
         if (filter.field !== "name" && !visible.has(filter.field)) return [];
         const label = filter.field === "name" ? "Name" : fields.find(field => field.key === filter.field)?.label;

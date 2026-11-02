@@ -3,6 +3,7 @@ import { database, type Database, type Sql } from "./database";
 import type { Actor } from "./auth";
 import { localActor } from "./auth";
 import { DocumentError, documentBlocks, fromLegacy, mergeDocuments, plainText, schemaVersion, stableStringify, validateDocument, type RichNode } from "./document";
+import { assertNoRecordPlaceholders } from "./template-placeholders";
 import { listDemoPages } from "./demo-store";
 import { updateCommentAnchors } from './comment-anchors';
 import { revisionDigest } from './revision';
@@ -120,6 +121,7 @@ export class Repository {
     });
   }
   async writeDocument(tx:Sql,id:string,document:RichNode,version:number,title:string,actorId?:string,surface='api',restoredFrom?:number,operationId?:string) {
+    assertNoRecordPlaceholders(document);
     document=stripSyncedContent(document);
     const rows=documentBlocks(document);
     const previous=await tx.query<{id:string;version:number;node:RichNode;parent_id:string|null}>("SELECT id,version,node,parent_id FROM hs_blocks WHERE page_id=$1",[id]);
