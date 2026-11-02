@@ -14,6 +14,22 @@ export function recordReferenceSupported(version: unknown) {
   return version === recordReferenceNodeVersion;
 }
 
+export function recordPlaceholderAttributeError(attrs: Record<string, unknown> | undefined): string | null {
+  const value = attrs ?? {};
+  const label = String(value.label ?? "").trim();
+  if (!/^[a-z][a-z0-9_]{0,31}$/.test(String(value.key ?? "")) || !label || label.length > 80 || /[\p{Cc}]/u.test(label)) return "Invalid record placeholder";
+  if (!fieldKey.test(String(value.collectionId ?? ""))) return "Invalid record placeholder";
+  if (value.display !== "chip" && value.display !== "card" && value.display !== "view") return "Invalid record placeholder";
+  const fields = Array.isArray(value.fields) ? value.fields : [];
+  const columns = Array.isArray(value.columns) ? value.columns : [];
+  if (fields.length > 12 || columns.length > 12 || new Set(fields).size !== fields.length || new Set(columns).size !== columns.length) return "Invalid record placeholder";
+  if (fields.some(item => typeof item !== "string" || !fieldKey.test(item)) || columns.some(item => typeof item !== "string" || !fieldKey.test(item))) return "Invalid record placeholder";
+  if (value.display === "chip" && fields.length) return "Invalid record placeholder";
+  if (value.display === "card" && !fields.length) return "Invalid record placeholder";
+  if (value.display === "view" && (!columns.includes("name") || !columns.length || !Number.isSafeInteger(value.limit) || Number(value.limit) < 1 || Number(value.limit) > 25)) return "Invalid record placeholder";
+  return null;
+}
+
 export function recordRefAttributeError(type: string, attrs: Record<string, unknown> | undefined): string | null {
   if (type !== "recordRef" && type !== "recordView") return null;
   const value = attrs ?? {};
@@ -31,6 +47,7 @@ export function recordRefAttributeError(type: string, attrs: Record<string, unkn
   if (!Array.isArray(value.columns) || value.columns.length < 1 || value.columns.length > 12 || new Set(value.columns).size !== value.columns.length) return "Invalid record view columns";
   if (value.columns.some(field => typeof field !== "string" || !fieldKey.test(field))) return "Invalid record view columns";
   if (!Number.isSafeInteger(value.limit) || Number(value.limit) < 1 || Number(value.limit) > 25) return "Invalid record view limit";
+  if (value.boundRecordId != null && !uuid.test(String(value.boundRecordId))) return "Invalid record view";
   return null;
 }
 
