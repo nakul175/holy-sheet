@@ -56,6 +56,9 @@ it("clears the landing after access is revoked on the next refresh", async () =>
     spaceId: "sp-ops",
     spaceName: "Ops home",
     canManage: false,
+    archived: false,
+    archivedAtIst: null,
+    canUnarchive: false,
     home: { pageId: "p-100", title: "P-100", summary: "Overview", headings: ["Start here"], templateName: "Space home", role: "viewer", updatedAtIst: "01 Nov 2026, 10:00 IST" },
     widgets: {
       pinned: pins(["pin-1"]),

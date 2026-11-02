@@ -14,7 +14,7 @@ import {searchHitPageId} from './page-review-copy';
 export {createSearchWork,type SearchWork} from './search-work';
 import {createSearchWork} from './search-work';
 
-export type WorkspaceSearchInput={query:string;workspaceId:string;spaceId?:string;cursor?:string;kinds?:SearchKind[];collection?:string;ownerId?:string;updatedFrom?:string;updatedTo?:string;language?:string};
+export type WorkspaceSearchInput={query:string;workspaceId:string;spaceId?:string;cursor?:string;kinds?:SearchKind[];collection?:string;ownerId?:string;updatedFrom?:string;updatedTo?:string;language?:string;includeArchived?:boolean};
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const missing=()=>new DocumentError('Search scope is unavailable.','not_found',404);
 const invalid=()=>new DocumentError('Search changed or expired. Retry from the first page.','search_cursor_invalid',409);
@@ -51,7 +51,7 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
   work.check();
   if(!member)throw missing();
   if(input.spaceId&&!(await tx.query('SELECT id FROM hs_spaces WHERE id=$1 AND workspace_id=$2',[input.spaceId,input.workspaceId])).rows.length)throw missing();
-  const parsed=parseQuery(input.query);const kinds=input.kinds??['page'];const includePages=kinds.includes('page')&&!input.collection;const publicationOptions=!input.collection&&(input.ownerId||input.updatedFrom||input.updatedTo||kinds.includes('block')||kinds.includes('attachment'))?{ownerId:input.ownerId,updatedFrom:input.updatedFrom,updatedTo:input.updatedTo,blocks:kinds.includes('block'),attachments:kinds.includes('attachment')}:undefined;let queryHash=hash(JSON.stringify([input.query.trim(),input.workspaceId,input.spaceId??null,input.kinds??null,input.collection??null,input.ownerId??null,input.updatedFrom??null,input.updatedTo??null,input.language??null]));
+  const parsed=parseQuery(input.query);const kinds=input.kinds??['page'];const includePages=kinds.includes('page')&&!input.collection;const publicationOptions=!input.collection&&(input.ownerId||input.updatedFrom||input.updatedTo||kinds.includes('block')||kinds.includes('attachment'))?{ownerId:input.ownerId,updatedFrom:input.updatedFrom,updatedTo:input.updatedTo,blocks:kinds.includes('block'),attachments:kinds.includes('attachment')}:undefined;let queryHash=hash(JSON.stringify([input.query.trim(),input.workspaceId,input.spaceId??null,input.kinds??null,input.collection??null,input.ownerId??null,input.updatedFrom??null,input.updatedTo??null,input.language??null,input.includeArchived===true]));
   if(input.query.trim().length<2||!parsed.terms.length&&!parsed.phrases.length)return {results:[],nextCursor:null,workspace:{id:input.workspaceId,name:member.name}};
   const budget=()=>work.check();
   const values:unknown[]=[input.workspaceId,actor.id,input.spaceId??null];
@@ -73,10 +73,11 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
    `EXISTS(SELECT 1 FROM hs_workspace_search_terms t WHERE t.page_id=p.id AND t.search_vector @@ ${bind("'"+word.replace(/'/g,"''")+"':*")}::tsquery)`
   ).join(' AND ')||'true';
   // A single scoped permission closure avoids one document/ACL query per page.
+  const liveSpace=input.includeArchived?'':' AND NOT EXISTS (SELECT 1 FROM hs_spaces arch WHERE arch.id=p.space_id AND arch.archived_at IS NOT NULL)';
   const permitted=`WITH RECURSIVE permitted(id) AS (
    SELECT p.id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$2 AND m.active=true
-   WHERE p.workspace_id=$1 AND p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR p.owner_id=$2 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$2 OR (p.visibility='space' AND g.subject='space'))))
-   UNION SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.parent_id WHERE p.workspace_id=$1 AND p.deleted_at IS NULL
+   WHERE p.workspace_id=$1 AND p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR p.owner_id=$2 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$2 OR (p.visibility='space' AND g.subject='space'))))${liveSpace}
+   UNION SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.parent_id WHERE p.workspace_id=$1 AND p.deleted_at IS NULL${liveSpace}
   )`;
   // ASCII text has the same word/case semantics in JS and SQL. Unicode text
   // must be matched in JS before rank/pagination: POSIX classes and lowercase

@@ -74,6 +74,9 @@ export type SpaceHomeView = {
   spaceId: string;
   spaceName: string;
   canManage: boolean;
+  archived: boolean;
+  archivedAtIst: string | null;
+  canUnarchive: boolean;
   home: SpaceHomePageView | null;
   widgets: {
     pinned: SpaceHomePinView[];

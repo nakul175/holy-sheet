@@ -20,7 +20,7 @@ import { syncRecordReferenceLinks } from './search-jump';
 import { syncRecordBacklinks, validateNewRecordLinks } from './record-backlinks';
 import { ensureAuthorFollow } from './page-follow-store';
 
-type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
+type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole;space_archived_at:string|null};
 export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole;publicationFingerprint?:string};
 export class Repository {
   constructor(public db:Database) {}
@@ -43,7 +43,7 @@ export class Repository {
       SELECT id,parent_id,workspace_id,visibility,owner_id,ARRAY[id] AS path FROM hs_pages WHERE id=$1 AND deleted_at IS NULL
       UNION ALL SELECT p.id,p.parent_id,p.workspace_id,p.visibility,p.owner_id,a.path||p.id FROM hs_pages p JOIN ancestors a ON p.id=a.parent_id AND p.workspace_id=a.workspace_id
       WHERE p.deleted_at IS NULL AND NOT p.id=ANY(a.path)
-    ) SELECT p.*,w.name AS workspace_name,s.name AS space_name,parent.title AS parent_title,
+    ) SELECT p.*,w.name AS workspace_name,s.name AS space_name,parent.title AS parent_title,s.archived_at AS space_archived_at,
       CASE WHEN m.role='observer' THEN 'viewer' WHEN p.owner_id=$2 THEN 'owner' WHEN m.role IN ('owner','admin') THEN 'editor' WHEN m.role<>'observer' AND EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.role='editor') THEN 'editor'
       WHEN EXISTS(SELECT 1 FROM ancestors a JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE g.role='commenter') THEN 'commenter' ELSE 'viewer' END AS role
       FROM hs_pages p JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
@@ -51,6 +51,10 @@ export class Repository {
       LEFT JOIN hs_pages parent ON parent.id=p.parent_id AND parent.deleted_at IS NULL AND parent.workspace_id=p.workspace_id AND (parent.owner_id=$2 OR m.role IN ('owner','admin'))
       WHERE p.id=$1 AND p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.subject IS NOT NULL) OR ${spaceHomeMemberRead("$2")}) ${lock ? "FOR UPDATE OF p,m" : ""}`,[id,actor.id]);
     if(!rows.length) throw new DocumentError("Page is restricted or unavailable","not_found",404);
+    if(rows[0].space_archived_at){
+      if(edit) throw new DocumentError("This space is archived and read-only","read_only",403);
+      rows[0].role = "viewer";
+    }
     if(edit && !canEdit(rows[0].role)) throw new DocumentError("This page is read only","read_only",403);
     return rows[0];
   }
@@ -79,7 +83,7 @@ export class Repository {
     const pages=await Promise.all(rows.map(async row=>{try{return await this.get(row.id,actor);}catch(e){if(e instanceof DocumentError&&e.status===404)return null;throw e;}}));return pages.filter((p):p is DocumentPage=>p!==null);
   }
   async spaces(actor:Actor) {
-    const {rows}=await this.db.query<{id:string;workspaceId:string;name:string}>(`SELECT s.id,s.workspace_id AS "workspaceId",s.name FROM hs_spaces s JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$1 AND m.active=true ORDER BY s.name`,[actor.id]);return rows;
+    const {rows}=await this.db.query<{id:string;workspaceId:string;name:string}>(`SELECT s.id,s.workspace_id AS "workspaceId",s.name FROM hs_spaces s JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$1 AND m.active=true WHERE s.archived_at IS NULL AND (s.directory_visibility <> 'private' OR m.role IN ('owner','admin') OR EXISTS (SELECT 1 FROM hs_space_members sm WHERE sm.space_id=s.id AND sm.user_id=$1 AND sm.active=true)) ORDER BY s.name`,[actor.id]);return rows;
   }
   async createSpace(actor:Actor,name:string,workspaceId:string) {
     if(!name.trim() || name.length>80)throw new DocumentError("Space name must be between 1 and 80 characters");
@@ -103,6 +107,8 @@ export class Repository {
       const {rows}=await tx.query<{workspace_id:string;role:string}>("SELECT s.workspace_id,m.role FROM hs_spaces s JOIN hs_members m ON m.workspace_id=s.workspace_id AND m.user_id=$2 AND m.active=true WHERE s.id=$1 FOR UPDATE OF m",[spaceId,actor.id]);
       if(!rows.length)throw new DocumentError("Space unavailable","not_found",404);
       if(rows[0].role==='observer')throw new DocumentError("Observers cannot create pages","read_only",403);
+      const archived=await tx.query<{archived_at:string|null}>("SELECT archived_at FROM hs_spaces WHERE id=$1",[spaceId]);
+      if(archived.rows[0]?.archived_at)throw new DocumentError("This space is archived and read-only","read_only",403);
       if(parentId){const parent=await this.access(tx,parentId,actor,true,true);if(parent.space_id!==spaceId)throw new DocumentError("Subpages must use their parent's space");}
       const id=crypto.randomUUID(), actualTitle=title.trim()||"Untitled";
       if(actualTitle.length>240)throw new DocumentError("Title is too long");
