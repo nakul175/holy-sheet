@@ -26,7 +26,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const token = /^[A-Za-z0-9_-]{1,100}$/;
 const VIEW_SCAN_LIMIT = 200;
 
-export type MentionType = "chip" | "card" | "link";
+export type MentionType = "chip" | "card" | "link" | "comment";
 export type MentionSort = "edited" | "title";
 export type MentionOrder = "asc" | "desc";
 
@@ -92,9 +92,9 @@ export type ViewMentionList = {
 
 export type OpenMention = { href: string; pageId: string; blockId: string };
 
-const ICONS: Record<MentionType, string> = { chip: "▣", card: "▤", link: "↗" };
-const LABELS: Record<MentionType, string> = { chip: "Chip", card: "Card", link: "Link" };
-const TYPE_ORDER: MentionType[] = ["chip", "card", "link"];
+const ICONS: Record<MentionType, string> = { chip: "▣", card: "▤", link: "↗", comment: "✎" };
+const LABELS: Record<MentionType, string> = { chip: "Chip", card: "Card", link: "Link", comment: "Comment" };
+const TYPE_ORDER: MentionType[] = ["chip", "card", "link", "comment"];
 
 type AccessRow = { id: string; tenant_id: string; workspace_id: string; role: string };
 type PageRow = { id: string; title: string; space_id: string; space_name: string; parent_id: string | null; updated_at: string | Date; deleted_at: string | Date | null; workspace_id: string };
@@ -257,12 +257,12 @@ export async function syncRecordBacklinks(tx: Sql, pageId: string, document: Ric
       if (same.rows.length) kept.push(hit);
     }
   }
-  const before = await tx.query<{ record_id: string; block_id: string; ref_type: string }>("SELECT record_id, block_id, ref_type FROM hs_record_backlinks WHERE page_id=$1", [pageId]);
+  const before = await tx.query<{ record_id: string; block_id: string; ref_type: string }>("SELECT record_id, block_id, ref_type FROM hs_record_backlinks WHERE page_id=$1 AND ref_type <> 'comment'", [pageId]);
   const signature = (rows: { recordId: string; blockId: string; refType: string }[]) => rows.map(row => `${row.recordId}:${row.blockId}:${row.refType}`).sort().join("|");
   const nextKey = signature(kept);
   const prevKey = signature(before.rows.map(row => ({ recordId: row.record_id, blockId: row.block_id, refType: row.ref_type })));
   if (nextKey === prevKey) return;
-  await tx.query("DELETE FROM hs_record_backlinks WHERE page_id=$1", [pageId]);
+  await tx.query("DELETE FROM hs_record_backlinks WHERE page_id=$1 AND ref_type <> 'comment'", [pageId]);
   for (const hit of kept) {
     await tx.query(
       `INSERT INTO hs_record_backlinks(workspace_id,record_id,page_id,block_id,ref_type) VALUES($1,$2,$3,$4,$5)
@@ -393,6 +393,12 @@ export async function readRecordBacklinks(r: Repository, actor: Actor, recordId:
     if (query.section === "views") return viewMentions(tx, actor, access, ctx, recordId);
     if (query.openPageId) return openMention(tx, actor, access, ctx, recordId, query.openPageId, includeTrash, canIncludeTrash);
     const loaded = await mentionRows(tx, access.workspace_id, recordId);
+    const commentIds = [...new Set(loaded.rows.filter(row => row.ref_type === "comment").map(row => row.block_id))];
+    const commentThread = new Map<string, string>();
+    if (commentIds.length) {
+      const threads = await tx.query<{ id: string; thread_id: string }>("SELECT id::text AS id, thread_id::text AS thread_id FROM hs_comments WHERE id::text = ANY($1::text[])", [commentIds]);
+      for (const row of threads.rows) commentThread.set(row.id, row.thread_id);
+    }
     const grouped = new Map<string, { page: PageRow; refs: StoredRef[] }>();
     for (const row of loaded.rows) {
       const page = ctx.pages.get(row.page_id);
@@ -453,7 +459,7 @@ export async function readRecordBacklinks(r: Repository, actor: Actor, recordId:
       editedAt: item.editedAt,
       editedAtIst: formatIst(item.editedAt),
       blockId: item.blockId,
-      href: blockJumpHref(item.pageId, item.blockId),
+      href: item.referenceType === "comment" && commentThread.get(item.blockId) ? `/pages/${encodeURIComponent(item.pageId)}#discussion-${commentThread.get(item.blockId)}` : blockJumpHref(item.pageId, item.blockId),
       trashLabel: item.deleted ? "In trash" : null,
     }));
     const last = pageSlice.at(-1);

@@ -8,6 +8,7 @@ import type {Repository} from './repository';
 import type {Sql} from './database';
 import {commitSyncedPlacements,prelockSyncedPages,presentSyncedDocument} from './synced-blocks';
 import {commitSnippetPlacements,presentSnippetDocument} from './snippets';
+import {blockTexts,mapAnchorsThroughSteps,type Anchor} from './comment-anchors';
 
 type PageState={page_id:string;epoch:string;step_version:number;document_version:number;document:RichNode};
 type Session={id:string;page_id:string;epoch:string;actor_id:string;client_id:string;active:boolean;expires_at:string};
@@ -81,6 +82,7 @@ export async function submitCollaboration(r:Repository,actor:Actor,pageId:string
  if(stableStringify(protectedAtoms(state.document))!==stableStringify(protectedAtoms(next)))throw new DocumentError('Add or remove protected files and page links outside a collaboration session.','collaboration_protected_atom',422);
  if(after.size){const reused=await tx.query<{block_id:string}>('SELECT block_id FROM hs_collaboration_tombstones WHERE page_id=$1 AND block_id=ANY($2::text[])',[pageId,[...after.keys()]]);if(reused.rows.length)throw new DocumentError('A deleted block identity cannot be revived.','collaboration_resurrection',409);}
  const nextPageVersion=page.version+1,first=state.step_version+1,last=state.step_version+decoded.length;
+ const priorAnchors=decoded.length?(await tx.query<{id:string;anchors:Anchor[]|string}>('SELECT id,anchors FROM hs_threads WHERE page_id=$1 FOR UPDATE',[pageId])).rows:[];
  const synced=await commitSyncedPlacements(r,tx,actor,pageId,next,input.operationId);
  const snippets=await commitSnippetPlacements(r,tx,actor,pageId,synced.stored,input.operationId);
  await r.writeDocument(tx,pageId,snippets.stored,nextPageVersion,page.title,actor.id,synced.surface??'collaboration');
@@ -89,6 +91,13 @@ export async function submitCollaboration(r:Repository,actor:Actor,pageId:string
  for(let i=0;i<input.steps.length;i++)await tx.query('INSERT INTO hs_collaboration_steps(page_id,epoch,step_version,operation_id,actor_id,client_id,step) VALUES($1,$2,$3,$4,$5,$6,$7)',[pageId,state.epoch,first+i,input.operationId,actor.id,input.clientId,JSON.stringify(input.steps[i])]);
  for(const id of removed)await tx.query('INSERT INTO hs_collaboration_tombstones(page_id,block_id,removed_epoch,removed_step_version) VALUES($1,$2,$3,$4) ON CONFLICT(page_id,block_id) DO NOTHING',[pageId,id,state.epoch,last]);
  const presented=await presentSnippetDocument(r,tx,actor,pageId,await presentSyncedDocument(r,tx,actor,pageId,snippets.stored));
+ const storedTexts=blockTexts(snippets.stored);
+ for(const row of priorAnchors){
+  const current=Array.isArray(row.anchors)?row.anchors:typeof row.anchors==='string'?JSON.parse(row.anchors) as Anchor[]:[];
+  const mapped=mapAnchorsThroughSteps(current,state.document,decoded);
+  if(!mapped||!mapped.every(anchor=>anchor.status!=='attached'||storedTexts.get(anchor.blockId)?.slice(anchor.start,anchor.end)===anchor.quote))continue;
+  await tx.query('UPDATE hs_threads SET anchors=$2 WHERE id=$1',[row.id,JSON.stringify(mapped)]);
+ }
  await tx.query('UPDATE hs_collaboration_pages SET step_version=$2,document_version=$3,document=$4,updated_at=clock_timestamp() WHERE page_id=$1',[pageId,last,nextPageVersion,JSON.stringify(presented)]);
  await tx.query('INSERT INTO hs_audit(id,actor_id,action,page_id,after_value,correlation_id) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),actor.id,'collaboration.batch',pageId,JSON.stringify({epoch:state.epoch,firstStepVersion:first,lastStepVersion:last,pageVersion:nextPageVersion,stepCount:decoded.length}),input.operationId]);
  return {epoch:state.epoch,stepVersion:last,pageVersion:nextPageVersion,replayed:false,steps:await stepsAfter(tx,pageId,state.epoch,input.baseStepVersion)};

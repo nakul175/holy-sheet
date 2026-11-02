@@ -8,8 +8,8 @@ export type MentionItem = {
   spaceId: string;
   spaceName: string;
   breadcrumb: string;
-  referenceType: "chip" | "card" | "link";
-  referenceTypes: ("chip" | "card" | "link")[];
+  referenceType: "chip" | "card" | "link" | "comment";
+  referenceTypes: ("chip" | "card" | "link" | "comment")[];
   referenceLabel: string;
   icon: string;
   snippet: string;

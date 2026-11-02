@@ -3,11 +3,11 @@ import { api,localPreview,readJson } from '../../../../../../lib/auth';
 import { DocumentError } from '../../../../../../lib/document';
 import { repository } from '../../../../../../lib/repository';
 import { discussions,changeDiscussion } from '../../../../../../lib/discussions';
-const operationId=z.string().uuid(),body=z.string().refine(s=>[...s].length<=10000),mentionIds=z.array(z.string().min(1).max(200)).max(50),expectedVersion=z.number().int().positive();
+const operationId=z.string().uuid(),body=z.string().refine(s=>[...s].length<=10000),mentionIds=z.array(z.string().min(1).max(200)).max(50),recordMentionIds=z.array(z.string().uuid()).max(20).optional(),expectedVersion=z.number().int().positive();
 const input=z.discriminatedUnion('kind',[
-  z.object({kind:z.literal('create'),operationId,body,mentionIds,baseVersion:expectedVersion,anchors:z.array(z.object({blockId:z.string().min(1).max(100),start:z.number().int().nonnegative(),end:z.number().int().positive()}).strict()).max(100)}).strict(),
-  z.object({kind:z.literal('reply'),operationId,body,mentionIds,threadId:z.string().uuid()}).strict(),
-  z.object({kind:z.literal('edit'),operationId,body,mentionIds,commentId:z.string().uuid(),expectedVersion}).strict(),
+  z.object({kind:z.literal('create'),operationId,body,mentionIds,recordMentionIds,baseVersion:expectedVersion,anchors:z.array(z.object({blockId:z.string().min(1).max(100),start:z.number().int().nonnegative(),end:z.number().int().positive()}).strict()).max(100)}).strict(),
+  z.object({kind:z.literal('reply'),operationId,body,mentionIds,recordMentionIds,threadId:z.string().uuid()}).strict(),
+  z.object({kind:z.literal('edit'),operationId,body,mentionIds,recordMentionIds,commentId:z.string().uuid(),expectedVersion}).strict(),
   z.object({kind:z.literal('delete'),operationId,commentId:z.string().uuid(),expectedVersion}).strict(),
   z.object({kind:z.literal('restore'),operationId,commentId:z.string().uuid(),expectedVersion}).strict(),
   z.object({kind:z.literal('resolve'),operationId,threadId:z.string().uuid(),expectedVersion}).strict(),
