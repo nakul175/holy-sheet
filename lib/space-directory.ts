@@ -417,6 +417,7 @@ type JobRow = {
   status: MigrationJob["status"];
   request_hash: string;
   page_ids: unknown;
+  tree_version: number;
   cursor_index: number;
   halt_reason: string | null;
 };
@@ -454,9 +455,9 @@ export async function startSpaceMigration(r: Repository, actor: Actor, workspace
     if (preview.gains.length && input.confirmAccess !== true) throw confirmAccess();
     const jobId = randomUUID();
     await tx.query(
-      `INSERT INTO hs_space_migration_jobs(id, workspace_id, operation_id, actor_id, root_page_id, source_space_id, target_space_id, parent_id, status, request_hash, preview, page_ids)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,'running',$9,$10::jsonb,$11::jsonb)`,
-      [jobId, workspaceId, input.operationId, actor.id, input.rootPageId, built.sourceSpaceId, input.targetSpaceId, input.parentId ?? null, requestHash, JSON.stringify({ pageCount: preview.pageCount, brokenReferences: preview.brokenReferences, gains: preview.gains.map(person => person.userId), loses: preview.loses.map(person => person.userId) }), JSON.stringify(built.pageIds)],
+      `INSERT INTO hs_space_migration_jobs(id, workspace_id, operation_id, actor_id, root_page_id, source_space_id, target_space_id, parent_id, status, request_hash, preview, page_ids, tree_version)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,'running',$9,$10::jsonb,$11::jsonb,$12)`,
+      [jobId, workspaceId, input.operationId, actor.id, input.rootPageId, built.sourceSpaceId, input.targetSpaceId, input.parentId ?? null, requestHash, JSON.stringify({ pageCount: preview.pageCount, brokenReferences: preview.brokenReferences, gains: preview.gains.map(person => person.userId), loses: preview.loses.map(person => person.userId) }), JSON.stringify(built.pageIds), preview.treeVersion],
     );
     await audit(tx, actor.id, "space.migration.start", input.operationId, { jobId, workspaceId, rootPageId: input.rootPageId, targetSpaceId: input.targetSpaceId, pageIds: built.pageIds });
     const job = await tx.query<JobRow>("SELECT * FROM hs_space_migration_jobs WHERE id = $1", [jobId]);
@@ -485,6 +486,7 @@ export async function stepSpaceMigration(r: Repository, actor: Actor, workspaceI
     const found = await tx.query<JobRow>("SELECT * FROM hs_space_migration_jobs WHERE id = $1 AND workspace_id = $2 FOR UPDATE", [input.jobId, workspaceId]);
     const job = found.rows[0];
     if (!job) throw hidden();
+    if (job.actor_id !== actor.id) throw hidden();
     const prior = await tx.query<{ actor_id: string; request_hash: string; result: MigrationJob }>(
       "SELECT actor_id, request_hash, result FROM hs_space_migration_steps WHERE job_id = $1 AND operation_id = $2",
       [job.id, input.operationId],
@@ -502,6 +504,17 @@ export async function stepSpaceMigration(r: Repository, actor: Actor, workspaceI
       await tx.query("UPDATE hs_space_migration_jobs SET status = 'running', halt_reason = NULL, updated_at = clock_timestamp() WHERE id = $1", [job.id]);
       job.status = "running";
       job.halt_reason = null;
+    }
+    const currentTree = await tx.query<{ tree_version: number }>("SELECT tree_version FROM hs_workspaces WHERE id = $1", [workspaceId]);
+    if (currentTree.rows[0]?.tree_version !== job.tree_version + job.cursor_index) {
+      return haltJob(tx, job, actor, input.operationId, requestHash, "tree_changed");
+    }
+    const spaces = await tx.query<{ id: string; archived_at: string | null }>(
+      "SELECT id, archived_at FROM hs_spaces WHERE workspace_id = $1 AND id = ANY($2::text[]) FOR UPDATE",
+      [workspaceId, [job.source_space_id, job.target_space_id]],
+    );
+    if (spaces.rows.length !== new Set([job.source_space_id, job.target_space_id]).size || spaces.rows.some(space => space.archived_at)) {
+      return haltJob(tx, job, actor, input.operationId, requestHash, "space_archived");
     }
     const ids = asIds(job.page_ids);
     if (job.cursor_index >= ids.length) {
