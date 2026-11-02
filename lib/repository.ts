@@ -18,6 +18,7 @@ import { provisionSpaceHome } from './space-home';
 import { spaceHomeMemberRead } from './space-home-shared';
 import { syncRecordReferenceLinks } from './search-jump';
 import { syncRecordBacklinks, validateNewRecordLinks } from './record-backlinks';
+import { ensureAuthorFollow } from './page-follow-store';
 
 type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
 export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole;publicationFingerprint?:string};
@@ -107,6 +108,7 @@ export class Repository {
       if(actualTitle.length>240)throw new DocumentError("Title is too long");
       await tx.query("INSERT INTO hs_pages(id,workspace_id,space_id,parent_id,owner_id,title) VALUES($1,$2,$3,$4,$5,$6)",[id,rows[0].workspace_id,spaceId,parentId??null,actor.id,actualTitle]);
       await this.writeDocument(tx,id,fromLegacy([]),1,actualTitle,actor.id,'api');
+      await ensureAuthorFollow(tx,actor.id,id);
       if(operationId)await tx.query('INSERT INTO hs_page_creations(actor_id,operation_id,page_id,request_hash) VALUES($1,$2,$3,$4)',[actor.id,operationId,id,requestHash]);
       return this.get(id,actor,tx);
     });
@@ -176,6 +178,7 @@ export class Repository {
         'UPDATE hs_collaboration_pages SET document_version=$2,updated_at=clock_timestamp() WHERE page_id=$1 AND document_version=$3 AND document=$4::jsonb',
         [id,version,p.version,JSON.stringify(current.document)]);
       await tx.query("INSERT INTO hs_operations(page_id,operation_id,actor_id,request_hash,version) VALUES($1,$2,$3,$4,$5)",[id,input.operationId,actor.id,hash,version]);
+      await ensureAuthorFollow(tx,actor.id,id);
       return {page:await this.get(id,actor,tx),acknowledgedOperationId:input.operationId,committedVersion:version,replayed:false,merged};
     });
   }
