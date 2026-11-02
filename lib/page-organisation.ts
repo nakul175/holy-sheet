@@ -64,6 +64,8 @@ export async function movePageTree(r:Repository,actor:Actor,pageId:string,input:
   if(p.expandsAccess&&!input.confirmExpanded)throw new DocumentError('Review and explicitly confirm the expanded inherited access','access_confirmation_required',422);
   const ordered=result.siblings.map(n=>n.id);ordered.splice(input.index,0,pageId);
   await tx.query('UPDATE hs_pages SET space_id=$2,acl_version=acl_version+1 WHERE id=ANY($1::text[])',[[...result.ids],input.spaceId]);
+  const published=await import('./published-pages');
+  await published.retargetPublishedPages(tx,actor,[...result.ids],input.spaceId,input.operationId);
   await tx.query('UPDATE hs_pages SET parent_id=$2 WHERE id=$1',[pageId,input.parentId]);
   for(const [position,id] of ordered.entries())await tx.query('UPDATE hs_pages SET position=$2 WHERE id=$1',[id,position]);
   await tx.query('UPDATE hs_workspaces SET tree_version=tree_version+1 WHERE id=$1',[s.workspaceId]);
