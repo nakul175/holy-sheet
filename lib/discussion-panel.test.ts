@@ -63,6 +63,23 @@ it("uses a bottom sheet on a narrow viewport and shows detached quotes", async (
   expect(view.host.textContent).toContain("orchid");
 });
 
+it("mounts discussions when localStorage throws and keyboard navigation still runs", async () => {
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const previous = Object.getOwnPropertyDescriptor(window, "localStorage");
+  Object.defineProperty(window, "localStorage", { configurable: true, get() { throw new DOMException("Denied", "SecurityError"); } });
+  try {
+    const view = await mount([thread("11111111-1111-4111-8111-111111111111")]);
+    expect(view.host.querySelector("h2")?.textContent).toBe("Discussions");
+    expect(view.host.querySelector("textarea")).toBeTruthy();
+    view.host.querySelector("aside")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    expect(view.onActive).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111");
+    expect(errors.mock.calls.some(call => String(call.join(" ")).includes("SecurityError") || String(call.join(" ")).includes("Denied"))).toBe(false);
+  } finally {
+    errors.mockRestore();
+    if (previous) Object.defineProperty(window, "localStorage", previous);
+  }
+});
+
 it("keeps a revoked post draft encrypted for the same actor only", async () => {
   const { ApiError } = await import("../components/editor/use-document-session");
   const view = await mount([], "actor-a", false, () => {

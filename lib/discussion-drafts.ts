@@ -7,18 +7,25 @@ export type DraftStore = {
   keys(): string[];
 };
 
+const unavailable: DraftStore = { getItem: () => null, setItem: () => {}, removeItem: () => {}, keys: () => [] };
+
+/** Storage access never throws. A denied getter or quota error keeps drafts in memory. */
 export function browserDraftStore(): DraftStore {
+  let storage: Storage;
+  try { storage = globalThis.localStorage; } catch { return unavailable; }
   return {
-    getItem: key => localStorage.getItem(key),
-    setItem: (key, value) => localStorage.setItem(key, value),
-    removeItem: key => localStorage.removeItem(key),
+    getItem: key => { try { return storage.getItem(key); } catch { return null; } },
+    setItem: (key, value) => { try { storage.setItem(key, value); } catch { /* session only */ } },
+    removeItem: key => { try { storage.removeItem(key); } catch { /* session only */ } },
     keys: () => {
-      const keys: string[] = [];
-      for (let index = 0; index < localStorage.length; index++) {
-        const key = localStorage.key(index);
-        if (key) keys.push(key);
-      }
-      return keys;
+      try {
+        const keys: string[] = [];
+        for (let index = 0; index < storage.length; index++) {
+          const key = storage.key(index);
+          if (key) keys.push(key);
+        }
+        return keys;
+      } catch { return []; }
     },
   };
 }
@@ -46,29 +53,33 @@ function text(value: ArrayBuffer) {
 /** Drop drafts sealed for anyone other than the signed-in actor. Other storage keys stay. */
 export function purgeForeignDiscussionDrafts(actorId: string, store: DraftStore = browserDraftStore()) {
   if (!actorId) return;
-  for (const key of store.keys()) {
-    if (!key.startsWith(PREFIX)) continue;
-    try {
-      const parsed = JSON.parse(store.getItem(key) || "") as { actorId?: string };
-      if (!parsed || parsed.actorId !== actorId) store.removeItem(key);
-    } catch {
-      store.removeItem(key);
+  try {
+    for (const key of store.keys()) {
+      if (!key.startsWith(PREFIX)) continue;
+      try {
+        const parsed = JSON.parse(store.getItem(key) || "") as { actorId?: string };
+        if (!parsed || parsed.actorId !== actorId) store.removeItem(key);
+      } catch {
+        try { store.removeItem(key); } catch { /* session only */ }
+      }
     }
-  }
+  } catch { /* session only */ }
 }
 
 export async function saveDiscussionDraft<T>(pageId: string, actorId: string, draft: T, store: DraftStore = browserDraftStore()) {
   if (!actorId || !pageId) return;
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await aesKey(actorId), new TextEncoder().encode(JSON.stringify(draft)));
-  store.setItem(pageKey(pageId), JSON.stringify({ v: 1, actorId, iv: text(iv.buffer), cipher: text(cipher) }));
+  try {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await aesKey(actorId), new TextEncoder().encode(JSON.stringify(draft)));
+    store.setItem(pageKey(pageId), JSON.stringify({ v: 1, actorId, iv: text(iv.buffer), cipher: text(cipher) }));
+  } catch { /* session only */ }
 }
 
 export async function loadDiscussionDraft<T>(pageId: string, actorId: string, store: DraftStore = browserDraftStore()): Promise<T | null> {
   if (!actorId || !pageId) return null;
-  const raw = store.getItem(pageKey(pageId));
-  if (!raw) return null;
   try {
+    const raw = store.getItem(pageKey(pageId));
+    if (!raw) return null;
     const parsed = JSON.parse(raw) as { v?: number; actorId?: string; iv?: string; cipher?: string };
     if (parsed.v !== 1 || parsed.actorId !== actorId || !parsed.iv || !parsed.cipher) {
       if (parsed.actorId !== actorId) store.removeItem(pageKey(pageId));
@@ -77,7 +88,7 @@ export async function loadDiscussionDraft<T>(pageId: string, actorId: string, st
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes(parsed.iv) }, await aesKey(actorId), bytes(parsed.cipher));
     return JSON.parse(new TextDecoder().decode(plain)) as T;
   } catch {
-    store.removeItem(pageKey(pageId));
+    try { store.removeItem(pageKey(pageId)); } catch { /* session only */ }
     return null;
   }
 }

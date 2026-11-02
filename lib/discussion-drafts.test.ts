@@ -12,6 +12,28 @@ function memory(): DraftStore & { raw: Map<string, string> } {
   };
 }
 
+it("degrades to session-only when storage throws", async () => {
+  const denied: DraftStore = {
+    getItem() { throw new DOMException("Denied", "SecurityError"); },
+    setItem() { throw new DOMException("Quota", "QuotaExceededError"); },
+    removeItem() { throw new DOMException("Denied", "SecurityError"); },
+    keys() { throw new DOMException("Denied", "SecurityError"); },
+  };
+  expect(() => purgeForeignDiscussionDrafts("actor-a", denied)).not.toThrow();
+  await expect(saveDiscussionDraft("page-1", "actor-a", { body: "SECRET_DRAFT" }, denied)).resolves.toBeUndefined();
+  await expect(loadDiscussionDraft("page-1", "actor-a", denied)).resolves.toBeNull();
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, get() { throw new DOMException("Denied", "SecurityError"); } });
+  try {
+    expect(() => purgeForeignDiscussionDrafts("actor-a")).not.toThrow();
+    await expect(saveDiscussionDraft("page-1", "actor-a", { body: "SECRET_DRAFT" })).resolves.toBeUndefined();
+    await expect(loadDiscussionDraft("page-1", "actor-a")).resolves.toBeNull();
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+});
+
 it("encrypts a discussion draft for one actor and purges it when the actor changes", async () => {
   const store = memory();
   store.setItem("unrelated", "keep");
