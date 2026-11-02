@@ -313,6 +313,21 @@ it("uses the follower timezone and still prints edit times in IST", async () => 
   expect(body).toContain("IST");
 });
 
+it("keeps follow audit rows when retention purge deletes the page", async () => {
+  const page = await r.create(owner, "Purge follow target", ops);
+  await follow(owner, page.id);
+  const before = await db.query<{ id: string; action: string }>("SELECT id, action FROM hs_audit WHERE page_id=$1 AND action LIKE 'page-follow.%' ORDER BY action, id", [page.id]);
+  expect(before.rows.map(row => row.action)).toEqual(expect.arrayContaining(["page-follow.auto", "page-follow.follow"]));
+  await db.query("DELETE FROM hs_blocks WHERE page_id=$1", [page.id]);
+  await db.query("DELETE FROM hs_revisions WHERE page_id=$1", [page.id]);
+  await db.query("DELETE FROM hs_pages WHERE id=$1", [page.id]);
+  const after = await db.query<{ id: string; action: string; page_id: string | null }>("SELECT id, action, page_id FROM hs_audit WHERE id = ANY($1::uuid[]) ORDER BY action, id", [before.rows.map(row => row.id)]);
+  expect(after.rows.map(row => row.action)).toEqual(before.rows.map(row => row.action));
+  expect(after.rows.every(row => row.page_id === null)).toBe(true);
+  await expect(db.query("UPDATE hs_audit SET action='page-follow.tamper' WHERE id=$1", [before.rows[0].id])).rejects.toThrow(/append-only/i);
+  await expect(db.query("DELETE FROM hs_audit WHERE id=$1", [before.rows[0].id])).rejects.toThrow(/append-only/i);
+});
+
 it("rejects a cross-tenant follow with the same not-found shape as a missing page", async () => {
   const page = await makePage("SECRET_CROSS_TITLE");
   const missingId = crypto.randomUUID();
