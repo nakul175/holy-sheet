@@ -102,19 +102,41 @@ export function PublishForm({ pageId, state, onClose, onPublished }: { pageId: s
   </Dialog>;
 }
 
+function readyDraft(value: Partial<DraftPublication> | null | undefined): DraftPublication | null {
+  if (!value || (typeof value.canPublish !== "boolean" && !Array.isArray(value.versions))) return null;
+  return {
+    canPublish: false,
+    suggestedSlug: "",
+    slug: null,
+    spaceSlug: null,
+    stablePath: null,
+    canonicalPath: "",
+    live: false,
+    unpublished: false,
+    unpublishReason: null,
+    versionNo: null,
+    banner: null,
+    unpublishedChanges: false,
+    ...value,
+    versions: value.versions ?? [],
+    diff: value.diff ?? { changed: false, lines: [] },
+  };
+}
+
 export function PublishedPageHost({ pageId, role, open, onOpenChange }: { pageId: string; role: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const [state, setState] = useState<DraftPublication | null>(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
-  const load = () => enqueuePageRead(() => requestJson<DraftPublication>(`/api/v1/pages/${encodeURIComponent(pageId)}/stable-url`).then(setState).catch(() => setState(null)));
+  const load = () => enqueuePageRead(() => requestJson<DraftPublication>(`/api/v1/pages/${encodeURIComponent(pageId)}/stable-url`).then(value => setState(readyDraft(value))).catch(() => setState(null)));
   useEffect(() => { load(); }, [pageId]);
   if (!state) return null;
+  const versions = state.versions ?? [];
   return <div className={styles.stack} data-published-page="">
     {state.banner && <PublishedBanner banner={state.banner} />}
-    {state.unpublishedChanges && <UnpublishedChanges lines={state.diff.lines} />}
+    {state.unpublishedChanges && <UnpublishedChanges lines={state.diff?.lines ?? []} />}
     {state.unpublished && <UnpublishedNotice />}
     {state.stablePath && <CopyLink path={state.stablePath} />}
-    {!!state.versions.length && <button type="button" aria-expanded={versionsOpen} onClick={() => setVersionsOpen(value => !value)}>Versions</button>}
-    {versionsOpen && <VersionList versions={state.versions} />}
+    {!!versions.length && <button type="button" aria-expanded={versionsOpen} onClick={() => setVersionsOpen(value => !value)}>Versions</button>}
+    {versionsOpen && <VersionList versions={versions} />}
     {open && role === "owner" && state.canPublish && <PublishForm pageId={pageId} state={state} onClose={() => onOpenChange(false)} onPublished={load} />}
   </div>;
 }

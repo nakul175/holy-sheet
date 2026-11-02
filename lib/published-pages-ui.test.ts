@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import axe from "axe-core";
-import { NotLatestBanner, PublishForm, PublishedBanner, PublishedNotFound, StablePublishedPage, StablePublishedView, UnpublishedChanges, VersionList, copyStableLink } from "../components/published-page";
+import { NotLatestBanner, PublishForm, PublishedBanner, PublishedNotFound, PublishedPageHost, StablePublishedPage, StablePublishedView, UnpublishedChanges, VersionList, copyStableLink } from "../components/published-page";
 import type { DraftPublication, PublishedResolution } from "./published-pages";
 
 const mocks = vi.hoisted(() => {
@@ -88,6 +88,16 @@ it("shows unpublished changes and the publish dialog", async () => {
   expect(dialog).toBeTruthy();
   const audit = await axe.run(dialog as HTMLElement, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
   expect(audit.violations.map(item => item.id)).toEqual([]);
+});
+
+it("ignores a navigation payload that has no publication versions", async () => {
+  let resolveRequest: (value: unknown) => void = () => undefined;
+  mocks.request.mockReturnValue(new Promise(resolve => { resolveRequest = resolve; }));
+  const host = await render(createElement(PublishedPageHost, { pageId: "p-100", role: "owner", open: false, onOpenChange: () => undefined }));
+  expect(mocks.request).toHaveBeenCalled();
+  await act(async () => { resolveRequest({ pages: [], spaces: [] }); });
+  expect(host.querySelector("[data-published-page]")).toBeNull();
+  expect(host.textContent ?? "").not.toContain("Versions");
 });
 
 it("uses one not-found page with no slug and clears published text after access is revoked", async () => {
