@@ -146,7 +146,7 @@ export default function RecordBacklinks({ workspaceId, tenantId, recordId, onNav
         {(list?.items ?? []).map(item => (
           <li key={item.pageId}>
             <a className={styles.item} href={item.href} onClick={event => void openItem(event, item.pageId)}>
-              {item.referenceTypes.map(type => <span key={type} aria-hidden="true">{type === "chip" ? "▣" : type === "card" ? "▤" : "↗"} {type === "chip" ? "Chip" : type === "card" ? "Card" : "Link"}</span>)}
+              {item.referenceTypes.map(type => <span key={type} aria-hidden="true">{type === "chip" ? "▣" : type === "card" ? "▤" : type === "comment" ? "✎" : "↗"} {type === "chip" ? "Chip" : type === "card" ? "Card" : type === "comment" ? "Comment" : "Link"}</span>)}
               <strong>{item.title}</strong>
               <span>{item.spaceName}</span>
               <span>{item.breadcrumb}</span>

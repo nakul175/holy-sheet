@@ -233,9 +233,11 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
  .page-footer { margin-top:28px; font-size:10px; }
  .page-tools-menu { right:0; min-width:210px; }
  .discussion-panel { top:64px; }
+ .discussion-panel.discussion-sheet { top:auto; right:0; bottom:0; left:0; height:auto; max-height:min(85vh,720px); }
  .embedded-shell { padding-top:0; }
  .embedded-shell .doc-header { top:0; }
  .embedded-shell .discussion-panel { top:0; }
+ .embedded-shell .discussion-panel.discussion-sheet { top:auto; }
  .embedded-shell .persistent-format { top:0; }
 }
 @media(max-width:520px) { .editor-toolbox-body { display:block; } .editor-toolbox-body section+section { border-left:0; border-top:1px solid var(--line); } }

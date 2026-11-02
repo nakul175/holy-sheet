@@ -5,6 +5,11 @@ import { DocumentError } from './document';
 import type {Anchor} from './comment-anchors';
 import {threadVisible} from './discussion-visibility';
 
+/** Mention mail names the event and the page link. It never carries comment text, quotes, or the page title. */
+export function mentionEmail(pageId:string,threadId:string){
+  const href=`/pages/${encodeURIComponent(pageId)}#discussion-${threadId}`;
+  return {subject:'You were mentioned on a page',text:`You were mentioned on a page\n${href}`,href};
+}
 /** Durable event delivery is separate from the saved comment transaction. No schedule is installed. */
 export async function drainNotifications(r:Repository){
   return r.db.transaction(async tx=>{
@@ -13,7 +18,9 @@ export async function drainNotifications(r:Repository){
       for(const recipient of new Set(event.recipients)){
         if(recipient===event.actor_id)continue;
         try{await r.access(tx,event.page_id,{id:recipient},false,true);}catch(e){if(e instanceof DocumentError&&e.status===404)continue;throw e;}
-        await tx.query('INSERT INTO hs_notifications(id,event_id,recipient_id,page_id,thread_id,comment_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(event_id,recipient_id) DO NOTHING',[randomUUID(),event.id,recipient,event.page_id,event.thread_id,event.comment_id]);
+        const notificationId=randomUUID();
+        const inserted=await tx.query<{id:string}>('INSERT INTO hs_notifications(id,event_id,recipient_id,page_id,thread_id,comment_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(event_id,recipient_id) DO NOTHING RETURNING id',[notificationId,event.id,recipient,event.page_id,event.thread_id,event.comment_id]);
+        if(inserted.rows.length){const mail=mentionEmail(event.page_id,event.thread_id);await tx.query('INSERT INTO hs_discussion_email_outbox(id,notification_id,recipient_id,page_id,subject,body) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(notification_id) DO NOTHING',[randomUUID(),inserted.rows[0].id,recipient,event.page_id,mail.subject,mail.text]);}
       }
       await tx.query('UPDATE hs_notification_events SET delivered_at=clock_timestamp() WHERE id=$1',[event.id]);
     }
