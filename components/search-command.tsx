@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { requestJson, ApiError } from "./editor/use-document-session";
 import type { RichNode } from "../lib/document";
+import RecordBacklinks from "./record-backlinks";
 import type { SearchResult } from "../lib/types";
 import {
   SEARCH_JUMP_UNAVAILABLE,
@@ -34,7 +35,7 @@ export function SearchCommandResults({ workspaceId, pageId, editing, query, resu
   const [removed, setRemoved] = useState<string[]>([]);
   const [toast, setToast] = useState("");
   const [notice, setNotice] = useState("");
-  const [peek, setPeek] = useState<{ title: string; href: string } | null>(null);
+  const [peek, setPeek] = useState<{ title: string; href: string; recordId?: string; tenantId?: string } | null>(null);
   const [acting, setActing] = useState(false);
   const intent = useRef<{ key: string; operationId: string } | null>(null);
   const shown = results.filter(result => !removed.includes(result.id));
@@ -153,7 +154,7 @@ export function SearchCommandResults({ workspaceId, pageId, editing, query, resu
       </div>}
     </div>)}
     {!jump && !error && query.trim().length >= 2 && !shown.length && palette.creates.map(action => <button type="button" key={`${action.kind}:${action.spaceId ?? action.collection}`} disabled={acting} onClick={() => void create(action)}>{action.label}</button>)}
-    {peek && <aside className="hs-search-peek" aria-label="Record preview"><h2>{peek.title}</h2><a href={peek.href}>Open record</a><button type="button" onClick={() => setPeek(null)}>Close preview</button></aside>}
+    {peek && <aside className="hs-search-peek" aria-label="Record preview"><h2>{peek.title}</h2><a href={peek.href}>Open record</a>{peek.recordId && peek.tenantId && <RecordBacklinks workspaceId={workspaceId} tenantId={peek.tenantId} recordId={peek.recordId} onNavigate={onJump} />}<button type="button" onClick={() => setPeek(null)}>Close preview</button></aside>}
     {notice && <p role="alert">{notice}</p>}
     <p className="hs-search-toast" role="status">{toast}</p>
     <p className="hs-search-shortcuts">{SEARCH_SHORTCUT_HINT}</p>
