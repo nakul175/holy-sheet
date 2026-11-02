@@ -10,8 +10,8 @@ export async function personalNavigation(r:Repository,actor:Actor,workspaceId?:s
  const version=await r.db.query<{version:number}>('SELECT version FROM hs_navigation_state WHERE user_id=$1',[actor.id]);
  const read=async(table:'hs_favourites'|'hs_recents',order:string)=>{const {rows}=await r.db.query<NavigationEntry>(`WITH RECURSIVE reachable AS (
   SELECT p.id,p.workspace_id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
-  WHERE p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
-  UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN reachable a ON c.parent_id=a.id AND c.workspace_id=a.workspace_id WHERE c.deleted_at IS NULL
+  WHERE p.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM hs_working_copies wc WHERE wc.copy_page_id = p.id AND wc.owner_id <> $1) AND (m.role IN ('owner','admin') OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))))
+  UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN reachable a ON c.parent_id=a.id AND c.workspace_id=a.workspace_id WHERE c.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM hs_working_copies wc WHERE wc.copy_page_id = c.id AND wc.owner_id <> $1)
  ), permitted AS (SELECT DISTINCT id,workspace_id FROM reachable) SELECT p.id,p.title,p.workspace_id AS "workspaceId",w.name AS "workspaceName",p.space_id AS "spaceId",s.name AS "spaceName",ARRAY[]::text[] AS "ancestorTitles"
  FROM ${table} n JOIN permitted a ON a.id=n.page_id JOIN hs_pages p ON p.id=n.page_id JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
  WHERE n.user_id=$1 AND p.deleted_at IS NULL AND ($2::text IS NULL OR p.workspace_id=$2) ORDER BY ${order}`,[actor.id,workspaceId??null]);

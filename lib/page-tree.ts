@@ -17,6 +17,7 @@ import {
 import type { Repository } from "./repository";
 import { SPACE_HOME_TEMPLATE_ID } from "./space-home-shared";
 import { canEdit, type PageRole } from "./types";
+import { isWorkingCopyPage } from "./working-copy-access";
 
 export type { PageTreeMovePreview, PageTreeMoveResult, PageTreeNode, PageTreeSlice };
 export { PAGE_TREE_CREATE_DENIED, PAGE_TREE_UNAVAILABLE };
@@ -44,6 +45,7 @@ type Context = {
   grants: Map<string, Grant[]>;
   homes: Set<string>;
   spaceRoles: Map<string, string>;
+  privateCopies?: Set<string>;
 };
 
 const hash = (value: unknown) => createHash("sha256").update(stableStringify(value)).digest("hex");
@@ -77,6 +79,7 @@ function grantMatches(page: Row, grant: Grant, actorId: string) {
 /** HOLY-4 effective read. A space-home reader does not inherit that exception onto child pages. */
 export function pageReadable(ctx: Context, actorId: string, page: Row) {
   if (page.deleted_at) return false;
+  if (ctx.privateCopies?.has(page.id)) return false;
   if (ctx.memberRole === "owner" || ctx.memberRole === "admin") return true;
   for (const node of ancestors(ctx.pages, page.id)) {
     if (node.owner_id === actorId) return true;
@@ -157,6 +160,7 @@ async function readContext(tx: Sql, actor: Actor, workspaceId: string, lock = fa
      WHERE s.workspace_id = $1 AND s.home_page_id IS NOT NULL`,
     [workspaceId, SPACE_HOME_TEMPLATE_ID, actor.id],
   );
+  const copies = await tx.query<{ copy_page_id: string }>("SELECT copy_page_id FROM hs_working_copies WHERE workspace_id=$1 AND owner_id<>$2", [workspaceId, actor.id]);
   const spaces = await tx.query<{ space_id: string; role: string }>(
     `SELECT space_id, role FROM hs_space_members WHERE user_id = $1 AND active = true`,
     [actor.id],
@@ -171,6 +175,7 @@ async function readContext(tx: Sql, actor: Actor, workspaceId: string, lock = fa
     grants: byPage,
     homes: new Set(homes.rows.map(row => row.home_page_id)),
     spaceRoles: new Map(spaces.rows.map(row => [row.space_id, row.role])),
+    privateCopies: new Set(copies.rows.map(row => row.copy_page_id)),
   };
 }
 
@@ -292,6 +297,7 @@ async function reviewMove(r: Repository, tx: Sql, actor: Actor, workspaceId: str
     throw error;
   }
   if (source.workspace_id !== workspaceId) throw unavailable();
+  if (await isWorkingCopyPage(tx, intent.pageId) || (intent.parentId && await isWorkingCopyPage(tx, intent.parentId))) throw new DocumentError("Working copies stay private and cannot be moved into the shared tree.", "working_copy_private", 422);
   await assertDestination(r, tx, actor, workspaceId, intent.spaceId, intent.parentId);
   const ctx = await readContext(tx, actor, workspaceId);
   const pages = [...ctx.pages.values()];

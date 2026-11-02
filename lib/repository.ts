@@ -20,6 +20,7 @@ import { spaceHomeMemberRead } from './space-home-shared';
 import { syncRecordReferenceLinks } from './search-jump';
 import { syncRecordBacklinks, validateNewRecordLinks } from './record-backlinks';
 import { ensureAuthorFollow } from './page-follow-store';
+import { isWorkingCopyPage, workingCopyVisibleSql } from './working-copy-access';
 
 type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole;space_archived_at:string|null};
 export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole;publicationFingerprint?:string};
@@ -50,7 +51,7 @@ export class Repository {
       FROM hs_pages p JOIN hs_workspaces w ON w.id=p.workspace_id JOIN hs_spaces s ON s.id=p.space_id
       JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$2 AND m.active=true
       LEFT JOIN hs_pages parent ON parent.id=p.parent_id AND parent.deleted_at IS NULL AND parent.workspace_id=p.workspace_id AND (parent.owner_id=$2 OR m.role IN ('owner','admin'))
-      WHERE p.id=$1 AND p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.subject IS NOT NULL) OR ${spaceHomeMemberRead("$2")}) ${lock ? "FOR UPDATE OF p,m" : ""}`,[id,actor.id]);
+      WHERE p.id=$1 AND p.deleted_at IS NULL AND ${workingCopyVisibleSql("p", "$2")} AND (m.role IN ('owner','admin') OR EXISTS(SELECT 1 FROM ancestors a LEFT JOIN hs_grants g ON g.page_id=a.id AND (g.subject=$2 OR (a.visibility='space' AND g.subject='space')) WHERE a.owner_id=$2 OR g.subject IS NOT NULL) OR ${spaceHomeMemberRead("$2")}) ${lock ? "FOR UPDATE OF p,m" : ""}`,[id,actor.id]);
     if(!rows.length) throw new DocumentError("Page is restricted or unavailable","not_found",404);
     if(rows[0].space_archived_at){
       if(edit) throw new DocumentError("This space is archived and read-only","read_only",403);
@@ -78,8 +79,8 @@ export class Repository {
   async list(actor:Actor) {
     const {rows}=await this.db.query<{id:string}>(`WITH RECURSIVE permitted AS (
       SELECT p.id,p.workspace_id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$1 AND m.active=true
-      WHERE p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))) OR ${spaceHomeMemberRead("$1")})
-      UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN permitted p ON c.parent_id=p.id AND c.workspace_id=p.workspace_id WHERE c.deleted_at IS NULL
+      WHERE p.deleted_at IS NULL AND ${workingCopyVisibleSql("p", "$1")} AND (m.role IN ('owner','admin') OR p.owner_id=$1 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$1 OR (p.visibility='space' AND g.subject='space'))) OR ${spaceHomeMemberRead("$1")})
+      UNION SELECT c.id,c.workspace_id FROM hs_pages c JOIN permitted p ON c.parent_id=p.id AND c.workspace_id=p.workspace_id WHERE c.deleted_at IS NULL AND ${workingCopyVisibleSql("c", "$1")}
     ) SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.id ORDER BY p.position,p.updated_at DESC,p.id`,[actor.id]);
     const pages=await Promise.all(rows.map(async row=>{try{return await this.get(row.id,actor);}catch(e){if(e instanceof DocumentError&&e.status===404)return null;throw e;}}));return pages.filter((p):p is DocumentPage=>p!==null);
   }
@@ -110,7 +111,7 @@ export class Repository {
       if(rows[0].role==='observer')throw new DocumentError("Observers cannot create pages","read_only",403);
       const archived=await tx.query<{archived_at:string|null}>("SELECT archived_at FROM hs_spaces WHERE id=$1",[spaceId]);
       if(archived.rows[0]?.archived_at)throw new DocumentError("This space is archived and read-only","read_only",403);
-      if(parentId){const parent=await this.access(tx,parentId,actor,true,true);if(parent.space_id!==spaceId)throw new DocumentError("Subpages must use their parent's space");}
+      if(parentId){const parent=await this.access(tx,parentId,actor,true,true);if(parent.space_id!==spaceId)throw new DocumentError("Subpages must use their parent's space");if(await isWorkingCopyPage(tx,parentId))throw new DocumentError("Working copies cannot contain subpages.","working_copy_private",422);}
       const id=crypto.randomUUID(), actualTitle=title.trim()||"Untitled";
       if(actualTitle.length>240)throw new DocumentError("Title is too long");
       await tx.query("INSERT INTO hs_pages(id,workspace_id,space_id,parent_id,owner_id,title) VALUES($1,$2,$3,$4,$5,$6)",[id,rows[0].workspace_id,spaceId,parentId??null,actor.id,actualTitle]);

@@ -10,6 +10,7 @@ import type {SearchKind,SearchResult} from './types';
 import {unifiedSearchHits} from './unified-search';
 import {EXPIRED_BANNER,decorateReviewSearch} from './page-review';
 import {searchHitPageId} from './page-review-copy';
+import {workingCopyVisibleSql} from './working-copy-access';
 
 export {createSearchWork,type SearchWork} from './search-work';
 import {createSearchWork} from './search-work';
@@ -76,8 +77,8 @@ export async function workspaceSearch(r:Repository,actor:Actor,input:WorkspaceSe
   const liveSpace=input.includeArchived?'':' AND NOT EXISTS (SELECT 1 FROM hs_spaces arch WHERE arch.id=p.space_id AND arch.archived_at IS NOT NULL)';
   const permitted=`WITH RECURSIVE permitted(id) AS (
    SELECT p.id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$2 AND m.active=true
-   WHERE p.workspace_id=$1 AND p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR p.owner_id=$2 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$2 OR (p.visibility='space' AND g.subject='space'))))${liveSpace}
-   UNION SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.parent_id WHERE p.workspace_id=$1 AND p.deleted_at IS NULL${liveSpace}
+   WHERE p.workspace_id=$1 AND p.deleted_at IS NULL AND ${workingCopyVisibleSql("p", "$2")} AND (m.role IN ('owner','admin') OR p.owner_id=$2 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$2 OR (p.visibility='space' AND g.subject='space'))))${liveSpace}
+   UNION SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.parent_id WHERE p.workspace_id=$1 AND p.deleted_at IS NULL AND ${workingCopyVisibleSql("p", "$2")}${liveSpace}
   )`;
   // ASCII text has the same word/case semantics in JS and SQL. Unicode text
   // must be matched in JS before rank/pagination: POSIX classes and lowercase

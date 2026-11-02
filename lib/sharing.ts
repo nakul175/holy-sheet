@@ -3,6 +3,7 @@ import type { Actor } from './auth';
 import type { Repository } from './repository';
 import type { Sql } from './database';
 import { DocumentError,stableStringify } from './document';
+import { isWorkingCopyPage } from './working-copy-access';
 
 type Role='editor'|'commenter'|'viewer';
 export type SharingState={version:number;members:{id:string;name:string}[];direct:{id:string;name:string;role:Role;active:boolean}[];inherited:{sourceId:string;sourceTitle:string;sourceReadable:boolean;recipientId:string;recipientName:string;role:Role}[]};
@@ -28,6 +29,7 @@ export async function changeSharing(r:Repository,actor:Actor,pageId:string,input
   const hash=createHash('sha256').update(stableStringify(input)).digest('hex');
   return r.db.transaction(async tx=>{
     const page=await r.access(tx,pageId,actor,false,true);
+    if(await isWorkingCopyPage(tx,pageId))throw new DocumentError('Working copies stay private. Sharing does not grant access to a copy.','working_copy_private',403);
     if(page.role!=='owner')throw new DocumentError('Only the page owner can manage sharing','owner_required',403);
     const existing=await tx.query<{actor_id:string;request_hash:string;applied_version:number}>('SELECT * FROM hs_share_operations WHERE page_id=$1 AND operation_id=$2',[pageId,input.operationId]);
     if(existing.rows.length){const op=existing.rows[0];if(op.actor_id!==actor.id||op.request_hash!==hash)throw new DocumentError('Operation ID was reused with a different sharing change','operation_mismatch',409);return {state:await sharingState(r,actor,pageId,tx),appliedVersion:op.applied_version,replayed:true,effectiveRole:await recipientRole(r,tx,pageId,input.recipientId)};}

@@ -83,8 +83,8 @@ async function headingHits(tx: Sql, actorId: string, workspaceId: string, pageQu
   const pages = await tx.query<{ id: string; title: string }>(
     `WITH RECURSIVE permitted(id) AS (
       SELECT p.id FROM hs_pages p JOIN hs_members m ON m.workspace_id=p.workspace_id AND m.user_id=$2 AND m.active=true
-      WHERE p.workspace_id=$1 AND p.deleted_at IS NULL AND (m.role IN ('owner','admin') OR p.owner_id=$2 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$2 OR (p.visibility='space' AND g.subject='space'))))
-      UNION SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.parent_id WHERE p.workspace_id=$1 AND p.deleted_at IS NULL
+      WHERE p.workspace_id=$1 AND p.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM hs_working_copies wc WHERE wc.copy_page_id = p.id AND wc.owner_id <> $2) AND (m.role IN ('owner','admin') OR p.owner_id=$2 OR EXISTS(SELECT 1 FROM hs_grants g WHERE g.page_id=p.id AND (g.subject=$2 OR (p.visibility='space' AND g.subject='space'))))
+      UNION SELECT p.id FROM hs_pages p JOIN permitted a ON a.id=p.parent_id WHERE p.workspace_id=$1 AND p.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM hs_working_copies wc WHERE wc.copy_page_id = p.id AND wc.owner_id <> $2)
     ) SELECT p.id, p.title FROM hs_pages p JOIN permitted a ON a.id=p.id
       WHERE NOT EXISTS(SELECT 1 FROM hs_document_workflows w WHERE w.page_id=p.id) AND ($3::text IS NULL OR p.id=$3)
       ORDER BY p.updated_at DESC, p.id LIMIT 2000`,
