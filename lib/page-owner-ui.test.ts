@@ -42,6 +42,16 @@ it("shows an owner chip and changes the owner without rendering page content", a
   } finally { await view.unmount(); }
 });
 
+it("shows an ownerless state when the owner payload is missing", async () => {
+  fetchMock.mockImplementation(async () => response({ pages: [], spaces: [] }));
+  const view = await render(createElement(PageOwner, { pageId: "page-1", workspaceId: "ws one" }));
+  try {
+    await act(async () => { await Promise.resolve(); });
+    expect(view.host.querySelector("[aria-label='No active owner']")?.textContent).toBe("No active owner");
+    expect(view.host.textContent).not.toContain("Change owner");
+  } finally { await view.unmount(); }
+});
+
 it("flags pages the recipient cannot edit and keeps trash separate", async () => {
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     const href = String(url);

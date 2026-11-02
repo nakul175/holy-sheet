@@ -117,7 +117,7 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .page-owner { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 18px; }
 .page-owner-chip { display:inline-flex; align-items:center; gap:8px; margin:0; font-size:14px; letter-spacing:0; color:var(--ink); }
 .page-owner-avatar { display:grid; place-items:center; width:28px; height:28px; border-radius:999px; background:#fff7e7; color:#73500f; font-size:13px; font-weight:650; }
-.page-owner button,.page-owner a { min-height:36px; }
+.page-owner button,.page-owner a { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; min-width:44px; min-height:44px; padding:8px 12px; }
 .page-handover-page { max-width:880px; margin:0 auto; padding:32px 20px 64px; }
 .page-handover-page table { width:100%; border-collapse:collapse; margin:8px 0 16px; }
 .page-handover-page th,.page-handover-page td { text-align:left; padding:8px; border-bottom:1px solid var(--line); vertical-align:middle; }
