@@ -48,6 +48,7 @@ import { revealFindMatch,updateFindQuery } from './find-navigation';
 import { DiscussionAnchors,discussionKey } from './discussion-anchors';
 import { applyRemoteDocument } from './history-boundary';
 import { openSectionsForNavigation,restoreTemporarySections,markSectionInteraction,installSectionPreferences,type TemporarySection } from './section-navigation';
+import { insertSearchNode } from './search-insert';
 import type { ThreadView } from '../../lib/discussion-types';
 import type { AnchorInput } from '../../lib/comment-anchors';
 import { tablePosition,tablePositionKey,tablePositionText } from './table-position';
@@ -200,6 +201,7 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
   useEffect(()=>{if(editor)updateFindQuery(editor,{query:findQuery,matchCase,wholeWords},preferenceKey,temporaryOpen.current,findOpen);setMatchIndex(0);},[editor,findQuery,matchCase,wholeWords,findOpen,preferenceKey]);
   useEffect(()=>{setMatchIndex(i=>Math.min(i,Math.max(0,(state?.find?.matches.length??0)-1)));},[state?.find?.matches.length]);
   useEffect(()=>{if(editor)return installSectionPreferences(editor.view.dom,preferenceKey);},[editor,preferenceKey]);
+  useEffect(()=>{const onInsert=(event:Event)=>{const detail=(event as CustomEvent<{pageId?:string;node?:RichNode}>).detail;if(!editable||!editor||detail?.pageId!==pageId||!detail.node)return;insertSearchNode(editor,detail.node);};window.addEventListener('hs-search-insert',onInsert);return()=>window.removeEventListener('hs-search-insert',onInsert);},[editable,editor,pageId]);
   useEffect(()=>{const outside=(event:MouseEvent)=>{if(discussionOpen.current.some(e=>e.element.contains(event.target as Node)))return;discussionOpen.current=restoreTemporarySections(discussionOpen.current);};window.document.addEventListener("click",outside);return()=>window.document.removeEventListener("click",outside);},[]);
   const filtered=catalogue.filter(c=>(mediaEnabled||!['image','file'].includes(c.type))&&(c.name+" "+c.description).toLowerCase().includes(query.toLowerCase()));
   function closeInsert(){if(slash.current&&query)editor?.chain().focus().insertContent('/'+query).run();else if(slash.current)editor?.chain().focus().insertContent('/').run();slash.current=false;setInsertOpen(false);}
