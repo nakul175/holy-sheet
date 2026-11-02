@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS hs_space_migration_jobs (
   request_hash text NOT NULL,
   preview jsonb NOT NULL,
   page_ids jsonb NOT NULL,
+  tree_version integer NOT NULL,
   cursor_index integer NOT NULL DEFAULT 0,
   halt_reason text,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),

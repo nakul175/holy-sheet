@@ -222,6 +222,35 @@ it("halts a running migration when admin authority is removed and can resume lat
   expect(resumed.movedPageIds).toEqual([root.id, child.id]);
 });
 
+it("binds a migration to its initiating admin and halts after concurrent tree changes", async () => {
+  const sourceParent = await r.create(owner, "Concurrent source", sourceSpace);
+  const root = await r.create(owner, "Concurrent root", sourceSpace, sourceParent.id);
+  await r.create(owner, "Concurrent child", sourceSpace, root.id);
+  const destination = await r.create(owner, "Concurrent destination", openSpace);
+  const preview = await previewSpaceMigration(r, admin, ws, { rootPageId: root.id, targetSpaceId: openSpace, parentId: destination.id });
+  const started = await startSpaceMigration(r, admin, ws, { rootPageId: root.id, targetSpaceId: openSpace, parentId: destination.id, operationId: crypto.randomUUID(), previewDigest: preview.digest, confirmAccess: true });
+  await expect(stepSpaceMigration(r, owner, ws, { jobId: started.jobId, operationId: crypto.randomUUID() })).rejects.toMatchObject({ code: "not_found", status: 404 });
+  await db.query("UPDATE hs_workspaces SET tree_version = tree_version + 1 WHERE id = $1", [ws]);
+  const halted = await stepSpaceMigration(r, admin, ws, { jobId: started.jobId, operationId: crypto.randomUUID() });
+  expect(halted.status).toBe("halted");
+  expect(halted.haltReason).toBe("tree_changed");
+  expect(halted.movedPageIds).toEqual([]);
+});
+
+it("halts before moving pages when a migration space is archived", async () => {
+  const sourceParent = await r.create(owner, "Archive source", sourceSpace);
+  const root = await r.create(owner, "Archive root", sourceSpace, sourceParent.id);
+  const destination = await r.create(owner, "Archive destination", openSpace);
+  const preview = await previewSpaceMigration(r, admin, ws, { rootPageId: root.id, targetSpaceId: openSpace, parentId: destination.id });
+  const started = await startSpaceMigration(r, admin, ws, { rootPageId: root.id, targetSpaceId: openSpace, parentId: destination.id, operationId: crypto.randomUUID(), previewDigest: preview.digest, confirmAccess: true });
+  await archiveSpace(r, admin, ws, openSpace, crypto.randomUUID(), true);
+  const halted = await stepSpaceMigration(r, admin, ws, { jobId: started.jobId, operationId: crypto.randomUUID() });
+  expect(halted.status).toBe("halted");
+  expect(halted.haltReason).toBe("space_archived");
+  expect(halted.movedPageIds).toEqual([]);
+  await archiveSpace(r, admin, ws, openSpace, crypto.randomUUID(), false);
+});
+
 it("rejects a cross-tenant destination with the same response as an unknown space", async () => {
   const root = await r.create(owner, "Cross root", sourceSpace);
   const foreign = await fail(() => previewSpaceMigration(r, admin, ws, { rootPageId: root.id, targetSpaceId: boltSpace }));

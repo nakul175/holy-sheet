@@ -80,6 +80,7 @@ export default function SpaceDirectory({ workspaceId, includeArchivedInitially =
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "start", rootPageId: preview.rootPageId, targetSpaceId: preview.targetSpaceId, parentId: preview.parentId, operationId: crypto.randomUUID(), previewDigest: preview.digest, confirmAccess: confirm || preview.gains.length === 0 }),
       });
+      setJob(current);
       let guard = 0;
       while (current.status === "running" && guard < 1000) {
         guard += 1;
@@ -88,9 +89,39 @@ export default function SpaceDirectory({ workspaceId, includeArchivedInitially =
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "step", jobId: current.jobId, operationId: crypto.randomUUID() }),
         });
+        setJob(current);
       }
-      setJob(current);
       setNotice(current.status === "completed" ? "Page tree moved. Old addresses redirect." : "Migration paused.");
+    } catch (reason) {
+      setError(reason instanceof ApiError ? reason.message : SPACE_UNAVAILABLE);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resumeMove() {
+    if (!job || job.status !== "halted") return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      let current = await requestJson<MigrationJob>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/spaces/migrations`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "resume", jobId: job.jobId, operationId: crypto.randomUUID() }),
+      });
+      setJob(current);
+      let guard = 0;
+      while (current.status === "running" && guard < 1000) {
+        guard += 1;
+        current = await requestJson<MigrationJob>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/spaces/migrations`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "step", jobId: current.jobId, operationId: crypto.randomUUID() }),
+        });
+        setJob(current);
+      }
+      setNotice(current.status === "completed" ? "Page tree moved. Old addresses redirect." : "Migration paused again.");
     } catch (reason) {
       setError(reason instanceof ApiError ? reason.message : SPACE_UNAVAILABLE);
     } finally {
@@ -140,7 +171,10 @@ export default function SpaceDirectory({ workspaceId, includeArchivedInitially =
         {!!preview.gains.length && <label><input type="checkbox" checked={confirm} onChange={event => setConfirm(event.target.checked)} /> I reviewed who gains access</label>}
         <button type="button" disabled={busy || (preview.gains.length > 0 && !confirm)} onClick={() => void runMove()}>Move pages</button>
       </div>}
-      {job && <p role="status">{job.status === "completed" ? `Moved ${job.movedPageIds.length} pages.` : job.status === "halted" ? `Stopped after ${job.movedPageIds.length} of ${job.pageCount} pages. ${job.remainingPageIds.length} pages were not moved.` : `Moving pages. ${job.movedPageIds.length} of ${job.pageCount} moved.`} {job.atIst}</p>}
+      {job && <div>
+        <p role="status">{job.status === "completed" ? `Moved ${job.movedPageIds.length} pages.` : job.status === "halted" ? `Stopped after ${job.movedPageIds.length} of ${job.pageCount} pages. ${job.remainingPageIds.length} pages were not moved.` : `Moving pages. ${job.movedPageIds.length} of ${job.pageCount} moved.`} {job.atIst}</p>
+        {job.status === "halted" && <button type="button" disabled={busy} onClick={() => void resumeMove()}>Resume migration</button>}
+      </div>}
     </section>}
   </main>;
 }
