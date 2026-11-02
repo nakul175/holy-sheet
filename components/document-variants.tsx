@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "./editor/dialog";
 import { ApiError, requestJson } from "./editor/use-document-session";
+import { enqueuePageRead, pageReadDepth } from "../lib/page-read-queue";
 import { languageChoices } from "../lib/document-variant-copy";
 import type { VariantView } from "../lib/document-variants";
 
@@ -53,10 +54,10 @@ export function VariantHost({ pageId, workspaceId, placement, onOpen }: { pageId
   };
   useEffect(() => {
     let alive = true;
-    const refresh = () => { void requestJson<VariantView>(`/api/v1/pages/${encodeURIComponent(pageId)}/variants`).then(data => { if (alive) setView(data); }).catch((reason: unknown) => { if (!alive) return; if (reason instanceof ApiError && reason.status === 404) setView(null); }); };
-    refresh();
-    const timer = window.setInterval(refresh, 4000);
-    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+    const refresh = () => enqueuePageRead(() => requestJson<VariantView>(`/api/v1/pages/${encodeURIComponent(pageId)}/variants`).then(data => { if (alive) setView(data); }).catch((reason: unknown) => { if (!alive) return; if (reason instanceof ApiError && reason.status === 404) setView(null); }));
+    void refresh();
+    const timer = window.setInterval(() => { if (document.visibilityState === "hidden" || pageReadDepth() > 0) return; void refresh(); }, 4000);
+    const onVisible = () => { if (document.visibilityState === "visible" && pageReadDepth() === 0) void refresh(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => { alive = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
   }, [pageId]);
