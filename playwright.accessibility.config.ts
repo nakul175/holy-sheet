@@ -1,5 +1,5 @@
 import {defineConfig} from '@playwright/test';
-// A dropped dev-server socket (ECONNRESET) retries the whole test, including axe. A WCAG violation still fails that attempt.
+// A dropped dev-server socket (ECONNRESET) retries the GET or navigation, then the whole test. A WCAG violation still fails that attempt.
 export default defineConfig({
   testDir:'./tests/acceptance',testMatch:['document-publishing.spec.ts','editor-accessibility.spec.ts','editor-unchanged-open.spec.ts','personal-navigation-backlinks.spec.ts','document-import.spec.ts','page-export.spec.ts','connected-search-picker.spec.ts','record-layout.spec.ts','workspace-operations.spec.ts','shortcut-help.spec.ts','page-outline.spec.ts','reading-appearance.spec.ts','personal-focus-mode.spec.ts','code-position.spec.ts','table-plain-text.spec.ts','unchecked-navigation.spec.ts','checklist-progress.spec.ts','heading-links.spec.ts'],workers:1,retries:2,
   timeout:120000,expect:{timeout:20000},reporter:'list',outputDir:'test-results/accessibility',
