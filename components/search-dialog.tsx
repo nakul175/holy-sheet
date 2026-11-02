@@ -16,12 +16,12 @@ function Highlight({text,query}:{text:string;query:string}){
  return <>{text.split(pattern).map((part,i)=>i%2?<mark key={i}>{part}</mark>:part)}</>;
 }
 export function SearchExperience({spaces,workspaceId,workspaceName,onOpen,onOpenPage,onClose,resultsId,commandBar=false,editing=false,pageId,onOpenTab,onJump,onCreated}:{spaces:Space[];workspaceId:string;workspaceName:string;onOpen:(result:SearchResult)=>void;onOpenPage?:()=>void;onClose?:()=>void;resultsId?:string;commandBar?:boolean;editing?:boolean;pageId?:string;onOpenTab?:(result:SearchResult)=>void;onJump?:(href:string)=>void;onCreated?:(href:string)=>void}){
- const [query,setQuery]=useState(''),[spaceId,setSpaceId]=useState(''),[language,setLanguage]=useState(''),[kinds,setKinds]=useState<SearchKind[]>([...searchKinds]),[collection,setCollection]=useState(''),[owner,setOwner]=useState(''),[from,setFrom]=useState(''),[to,setTo]=useState(''),[results,setResults]=useState<SearchResult[]>([]),[selected,setSelected]=useState(0),[cursor,setCursor]=useState<string|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0);
+ const [query,setQuery]=useState(''),[spaceId,setSpaceId]=useState(''),[language,setLanguage]=useState(''),[kinds,setKinds]=useState<SearchKind[]>([...searchKinds]),[collection,setCollection]=useState(''),[owner,setOwner]=useState(''),[from,setFrom]=useState(''),[to,setTo]=useState(''),[includeArchived,setIncludeArchived]=useState(false),[results,setResults]=useState<SearchResult[]>([]),[selected,setSelected]=useState(0),[cursor,setCursor]=useState<string|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0);
  const generation=useRef(0),request=useRef<AbortController|null>(null),buttons=useRef<(HTMLButtonElement|null)[]>([]),input=useRef<HTMLInputElement>(null),generatedId=useId(),listId=resultsId??generatedId,commandRef=useRef<((action:SearchActionId,result:SearchResult)=>void)|null>(null);
  const chosen=searchKinds.filter(kind=>kinds.includes(kind));
  const fetchResults=async(next:string|null,version:number)=>{
   request.current?.abort();const abort=new AbortController();request.current=abort;setBusy(true);setError('');
-  try{const p=new URLSearchParams({q:query,workspaceId,type:chosen.join(',')});if(spaceId)p.set('spaceId',spaceId);if(language)p.set('language',language);if(collection.trim())p.set('collection',collection.trim());if(owner.trim())p.set('owner',owner.trim());if(from)p.set('from',from);if(to)p.set('to',to);if(next)p.set('cursor',next);
+  try{const p=new URLSearchParams({q:query,workspaceId,type:chosen.join(',')});if(spaceId)p.set('spaceId',spaceId);if(language)p.set('language',language);if(collection.trim())p.set('collection',collection.trim());if(owner.trim())p.set('owner',owner.trim());if(from)p.set('from',from);if(to)p.set('to',to);if(includeArchived)p.set('archived','1');if(next)p.set('cursor',next);
    const data=await requestJson<Response>('/api/search?'+p,{signal:abort.signal});
    if(version!==generation.current||abort.signal.aborted)return;
    setResults(old=>next?[...old,...data.results.filter(item=>!old.some(existing=>existing.id===item.id))]:data.results);setCursor(data.nextCursor);
@@ -38,7 +38,7 @@ export function SearchExperience({spaces,workspaceId,workspaceName,onOpen,onOpen
   return()=>{clearTimeout(timer);request.current?.abort();};
  // Filters and query own the request generation; pagination is explicit.
  // eslint-disable-next-line react-hooks/exhaustive-deps
- },[query,spaceId,language,workspaceId,retry,collection,owner,from,to,kinds.join(',')]);
+ },[query,spaceId,language,workspaceId,retry,collection,owner,from,to,includeArchived,kinds.join(',')]);
  const move=(index:number)=>{const next=Math.max(0,Math.min(results.length-1,index));setSelected(next);buttons.current[next]?.focus();};
  const open=(result:SearchResult)=>onOpen(result);
  return <>
@@ -53,6 +53,7 @@ export function SearchExperience({spaces,workspaceId,workspaceName,onOpen,onOpen
    <label>Owner<input aria-label="Filter by owner" maxLength={200} value={owner} onChange={e=>setOwner(e.target.value)} placeholder="Any owner"/></label>
    <label>Updated from<input aria-label="Updated from" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label>
    <label>Updated to<input aria-label="Updated to" type="date" value={to} onChange={e=>setTo(e.target.value)}/></label>
+   <label><input type="checkbox" checked={includeArchived} onChange={e=>setIncludeArchived(e.target.checked)}/> Include archived</label>
   </div>
   <p className="hs-search-help">All words must match. Use quotes for an exact phrase. Forbidden matches are omitted.</p>
   <div id={listId} className="results hs-search-results" role="listbox" aria-label="Search results" aria-busy={busy}>

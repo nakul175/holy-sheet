@@ -49,6 +49,7 @@ type Scope = {
   home_page_id: string | null;
   workspace_role: string;
   space_role: string | null;
+  archived_at: string | null;
 };
 
 type Readable = { id: string; space_id: string; workspace_id: string };
@@ -77,7 +78,7 @@ function admitted(scope: Scope) {
 }
 
 async function scope(tx: Sql, workspaceId: string, spaceId: string, actor: Actor, lock: boolean) {
-  const rows = await tx.query<Scope>(`SELECT s.id, s.name, s.workspace_id, s.home_page_id, m.role AS workspace_role, sm.role AS space_role
+  const rows = await tx.query<Scope>(`SELECT s.id, s.name, s.workspace_id, s.home_page_id, s.archived_at, m.role AS workspace_role, sm.role AS space_role
     FROM hs_spaces s
     JOIN hs_workspaces w ON w.id = s.workspace_id
     JOIN hs_members m ON m.workspace_id = w.id AND m.user_id = $3 AND m.active = true
@@ -254,7 +255,10 @@ async function loadView(r: Repository, tx: Sql, actor: Actor, found: Scope, repl
     workspaceId: found.workspace_id,
     spaceId: found.id,
     spaceName: found.name,
-    canManage: manageable(found),
+    canManage: manageable(found) && !found.archived_at,
+    archived: Boolean(found.archived_at),
+    archivedAtIst: found.archived_at ? formatIst(found.archived_at) : null,
+    canUnarchive: (found.workspace_role === "owner" || found.workspace_role === "admin") && Boolean(found.archived_at),
     home,
     widgets: { pinned, recent, recordViews, owners },
     pinCandidates,
@@ -281,6 +285,7 @@ export async function changeSpaceHome(r: Repository, actor: Actor, workspaceId: 
   const requestHash = hash(command);
   return r.db.transaction(async tx => {
     const found = await requireSpace(tx, workspaceId, spaceId, actor, true);
+    if (found.archived_at) throw new DocumentError("This space is archived and read-only", "read_only", 403);
     if (!manageable(found)) throw notAllowed();
     const prior = await tx.query<{ actor_id: string; request_hash: string }>("SELECT actor_id, request_hash FROM hs_space_home_operations WHERE space_id = $1 AND operation_id = $2", [found.id, command.operationId]);
     if (prior.rows.length) {

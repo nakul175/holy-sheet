@@ -12,6 +12,7 @@ import {
   type SpaceHomePinView,
   type SpaceHomeView,
 } from "../lib/space-home-shared";
+import { SPACE_ARCHIVED_BANNER } from "../lib/space-directory-shared";
 
 type PinsProps = {
   pins: SpaceHomePinView[];
@@ -68,6 +69,7 @@ export function SpaceHomePins({ pins, canManage, busy, onReorder, onUnpin, onSet
 
 export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: string; spaceId: string }) {
   const [home, setHome] = useState<SpaceHomeView | null>(null);
+  const [reload, setReload] = useState(0);
   const [unavailable, setUnavailable] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -102,7 +104,7 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("holy-sheet:logout", logout);
     };
-  }, [endpoint]);
+  }, [endpoint, reload]);
   async function send(body: Record<string, unknown>) {
     setBusy(true);
     setError("");
@@ -123,11 +125,12 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
   }
   return <main className="space-home-page">
     <a className="skip-link" href="#space-home">Skip to space home</a>
-    <p><a href="/">Holy Sheet</a> / <span>Space</span></p>
+    <p><a href="/">Holy Sheet</a> / <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces`}>Spaces</a> / <span>Space</span></p>
     {unavailable && <p role="alert">{unavailable}</p>}
     {!home && !unavailable && <p role="status">Opening space home…</p>}
     {home && <div id="space-home">
       <h1>{home.spaceName}</h1>
+      {home.archived && <p className="space-archive-banner" role="status">{SPACE_ARCHIVED_BANNER}{home.archivedAtIst ? ` Archived ${home.archivedAtIst}.` : ""} {home.canUnarchive && <button type="button" disabled={busy} onClick={() => void requestJson(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/spaces/directory`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "unarchive", spaceId, operationId: crypto.randomUUID() }) }).then(() => setReload(value => value + 1)).catch(reason => setError(reason instanceof ApiError ? reason.message : "This space is archived and read-only"))}>Unarchive</button>}</p>}
       {error && <p role="alert">{error}</p>}
       <section className="space-home-overview" aria-labelledby="space-home-overview-heading">
         <h2 id="space-home-overview-heading">Overview</h2>
