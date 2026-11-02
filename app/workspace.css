@@ -94,6 +94,8 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .save.error,.save.offline,.save.conflict { color:#8b4b17; }
 .page-command-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:10px 24px; background:#f4f5f8; }
 .page-personal-actions,.page-primary-actions { display:flex; align-items:center; gap:6px; min-width:0; }
+.page-follow-actions { display:flex; align-items:center; gap:6px; }
+.page-follow-actions .page-tools summary[aria-pressed=true] { background:#fff7e7; color:#73500f; }
 .page-command-bar button,.page-tools summary { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:44px; border:1px solid transparent; border-radius:8px; padding:8px 11px; color:#535b6c; background:transparent; font-size:12px; cursor:pointer; }
 .page-command-bar button:hover,.page-tools summary:hover { background:#e9ebf2; }
 .page-command-bar button:disabled { opacity:.55; cursor:default; }

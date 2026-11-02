@@ -4,6 +4,7 @@ import type { Actor } from './auth';
 import { DocumentError } from './document';
 import type {Anchor} from './comment-anchors';
 import {threadVisible} from './discussion-visibility';
+import {presentFollowNotification} from './page-follows';
 
 /** Mention mail names the event and the page link. It never carries comment text, quotes, or the page title. */
 export function mentionEmail(pageId:string,threadId:string){
@@ -37,6 +38,11 @@ export async function inbox(r:Repository,actor:Actor){
   }
   const ack=await r.db.query<{id:string;page_id:string;kind:string;summary:string|null;created_at:string;read_at:string|null}>("SELECT id,page_id,kind,summary,created_at,read_at FROM hs_notifications WHERE recipient_id=$1 AND kind<>'discussion' ORDER BY created_at DESC,id",[actor.id]);
   for(const n of ack.rows){
+    if(n.kind==='page-digest'||n.kind==='page-publish'){
+      const view=await presentFollowNotification(r,actor,n.page_id,n.summary);
+      notifications.push({id:n.id,pageId:n.page_id,pageTitle:view.pageTitle,threadId:'',commentId:'',body:view.body,authorName:'Holy Sheet',createdAt:new Date(n.created_at).toISOString(),readAt:n.read_at?new Date(n.read_at).toISOString():null,kind:n.kind});
+      continue;
+    }
     let pageTitle='Page is restricted or unavailable',body:string|null=null;
     try{const page=await r.get(n.page_id,actor);pageTitle=page.title;body=n.summary;}
     catch(e){if(!(e instanceof DocumentError&&e.status===404))throw e;}
@@ -48,6 +54,12 @@ export async function inbox(r:Repository,actor:Actor){
 export async function readNotification(r:Repository,actor:Actor,id:string){
   const kind=await r.db.query<{kind:string|null;page_id:string}>('SELECT kind,page_id FROM hs_notifications WHERE id=$1 AND recipient_id=$2',[id,actor.id]);
   if(!kind.rows.length)throw new DocumentError('Notification unavailable','not_found',404);
+  if(kind.rows[0].kind==='page-digest'||kind.rows[0].kind==='page-publish'){
+    const view=await presentFollowNotification(r,actor,kind.rows[0].page_id,null);
+    if(!view.readable&&!view.removed)throw new DocumentError('Notification unavailable','not_found',404);
+    await r.db.query('UPDATE hs_notifications SET read_at=COALESCE(read_at,clock_timestamp()) WHERE id=$1 AND recipient_id=$2',[id,actor.id]);
+    return {id,read:true,pageId:kind.rows[0].page_id};
+  }
   if(kind.rows[0].kind&&kind.rows[0].kind!=='discussion'){
     try{await r.get(kind.rows[0].page_id,actor);}catch(e){if(e instanceof DocumentError&&e.status===404)throw new DocumentError('Notification unavailable','not_found',404);throw e;}
     await r.db.query('UPDATE hs_notifications SET read_at=COALESCE(read_at,clock_timestamp()) WHERE id=$1 AND recipient_id=$2',[id,actor.id]);

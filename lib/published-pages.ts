@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { Actor } from "./auth";
 import type { Sql } from "./database";
 import { DocumentError, documentBlocks, plainText, stableStringify, validateDocument, type RichNode } from "./document";
+import { ensureAuthorFollow } from "./page-follow-store";
+import { notifyPublishedFollowers } from "./page-follows";
 import type { Repository } from "./repository";
 import { resolveRecordPageRefs, type ResolveRecordInput } from "./record-page-ref-store";
 import { previewTrashRestore, restoreTrashBatch } from "./trash";
@@ -384,6 +386,8 @@ export async function changePublishedPage(r: Repository, actor: Actor, pageId: s
       const version = await insertVersion(tx, pageId, 1, revision.rows[0].version, actor.id, command.note, freeze, stamp);
       await writeSlug(tx, space.workspace_id, space.id, space.slug, pageId, slug, null);
       await tx.query("INSERT INTO hs_page_publication_state(page_id,live) VALUES($1,true)", [pageId]);
+      await ensureAuthorFollow(tx, actor.id, pageId);
+      await notifyPublishedFollowers(tx, r, { pageId, actorId: actor.id, note: command.note, versionId: version.id, publishedAt: stamp });
       return finish(tx, actor, pageId, command.operationId, requestHash, "published-page.publish", { pageId, versionNo: version.versionNo, revisionId: version.revisionId, slug, spaceId: space.id, freeze: command.freezeValues });
     }
     if (!state.rows.length) throw conflict();
@@ -391,6 +395,8 @@ export async function changePublishedPage(r: Repository, actor: Actor, pageId: s
     if (!previous) throw conflict();
     const version = await insertVersion(tx, pageId, count + 1, revision.rows[0].version, actor.id, command.note, freeze, stamp);
     await tx.query("UPDATE hs_page_publication_state SET live=true, unpublished_at=NULL, unpublish_reason=NULL, updated_at=clock_timestamp() WHERE page_id=$1", [pageId]);
+    await ensureAuthorFollow(tx, actor.id, pageId);
+    await notifyPublishedFollowers(tx, r, { pageId, actorId: actor.id, note: command.note, versionId: version.id, publishedAt: stamp });
     return finish(tx, actor, pageId, command.operationId, requestHash, "published-page.republish", { pageId, versionNo: version.versionNo, revisionId: version.revisionId, slug: previous.slug, spaceId: space.id, freeze: command.freezeValues });
   });
 }
