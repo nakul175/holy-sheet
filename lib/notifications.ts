@@ -5,6 +5,7 @@ import { DocumentError } from './document';
 import type {Anchor} from './comment-anchors';
 import {threadVisible} from './discussion-visibility';
 import {presentFollowNotification} from './page-follows';
+import { formatIst } from './ist-label';
 
 /** Mention mail names the event and the page link. It never carries comment text, quotes, or the page title. */
 export function mentionEmail(pageId:string,threadId:string){
@@ -31,13 +32,19 @@ export async function drainNotifications(r:Repository){
 export async function inbox(r:Repository,actor:Actor){
   try{await drainNotifications(r);}catch{ /* Saved events remain pending for a later request. */ }
   const result=await r.db.query<{id:string;page_id:string;thread_id:string;comment_id:string;created_at:string;read_at:string|null;body:string|null;author_name:string;anchors:Anchor[];publication_anchors:Anchor[]|null;anchor_publication_id:string|null}>(`SELECT n.*,t.anchors,b.anchors AS publication_anchors,b.publication_id AS anchor_publication_id,CASE WHEN c.deleted_at IS NULL THEN c.body ELSE NULL END AS body,u.name AS author_name FROM hs_notifications n JOIN hs_comments c ON c.id=n.comment_id JOIN hs_threads t ON t.id=n.thread_id LEFT JOIN hs_document_workflows w ON w.page_id=n.page_id LEFT JOIN hs_publication_thread_anchors b ON b.thread_id=t.id AND b.publication_id=w.publication_id JOIN hs_users u ON u.id=c.author_id WHERE n.recipient_id=$1 ORDER BY n.created_at DESC,n.id`,[actor.id]);
-  const notifications:{id:string;pageId:string;pageTitle:string;threadId:string;commentId:string;body:string|null;authorName:string;createdAt:string;readAt:string|null;kind?:string}[]=[];
+  const notifications:{id:string;pageId:string;pageTitle:string;threadId:string;commentId:string;body:string|null;authorName:string;createdAt:string;readAt:string|null;kind?:string;href?:string;atIst?:string}[]=[];
   for(const n of result.rows){
     try{const page=await r.get(n.page_id,actor);if(!threadVisible(page,n))continue;notifications.push({id:n.id,pageId:n.page_id,pageTitle:page.title,threadId:n.thread_id,commentId:n.comment_id,body:n.body,authorName:n.author_name,createdAt:new Date(n.created_at).toISOString(),readAt:n.read_at?new Date(n.read_at).toISOString():null});}
     catch(e){if(!(e instanceof DocumentError&&e.status===404))throw e;}
   }
   const ack=await r.db.query<{id:string;page_id:string;kind:string;summary:string|null;created_at:string;read_at:string|null}>("SELECT id,page_id,kind,summary,created_at,read_at FROM hs_notifications WHERE recipient_id=$1 AND kind<>'discussion' ORDER BY created_at DESC,id",[actor.id]);
   for(const n of ack.rows){
+    if(n.kind==='page-handover'){
+      const place=await r.db.query<{workspace_id:string}>('SELECT workspace_id FROM hs_pages WHERE id=$1',[n.page_id]);
+      const workspaceId=place.rows[0]?.workspace_id;
+      notifications.push({id:n.id,pageId:n.page_id,pageTitle:'Page handover',threadId:'',commentId:'',body:n.summary,authorName:'Holy Sheet',createdAt:new Date(n.created_at).toISOString(),readAt:n.read_at?new Date(n.read_at).toISOString():null,kind:n.kind,href:workspaceId?`/workspaces/${encodeURIComponent(workspaceId)}/handover`:undefined,atIst:formatIst(n.created_at)});
+      continue;
+    }
     if(n.kind==='page-digest'||n.kind==='page-publish'){
       const view=await presentFollowNotification(r,actor,n.page_id,n.summary);
       notifications.push({id:n.id,pageId:n.page_id,pageTitle:view.pageTitle,threadId:'',commentId:'',body:view.body,authorName:'Holy Sheet',createdAt:new Date(n.created_at).toISOString(),readAt:n.read_at?new Date(n.read_at).toISOString():null,kind:n.kind});
@@ -54,6 +61,11 @@ export async function inbox(r:Repository,actor:Actor){
 export async function readNotification(r:Repository,actor:Actor,id:string){
   const kind=await r.db.query<{kind:string|null;page_id:string}>('SELECT kind,page_id FROM hs_notifications WHERE id=$1 AND recipient_id=$2',[id,actor.id]);
   if(!kind.rows.length)throw new DocumentError('Notification unavailable','not_found',404);
+  if(kind.rows[0].kind==='page-handover'){
+    const place=await r.db.query<{workspace_id:string}>('SELECT workspace_id FROM hs_pages WHERE id=$1',[kind.rows[0].page_id]);
+    await r.db.query('UPDATE hs_notifications SET read_at=COALESCE(read_at,clock_timestamp()) WHERE id=$1 AND recipient_id=$2',[id,actor.id]);
+    return {id,read:true,pageId:kind.rows[0].page_id,href:place.rows[0]?`/workspaces/${encodeURIComponent(place.rows[0].workspace_id)}/handover`:undefined};
+  }
   if(kind.rows[0].kind==='page-digest'||kind.rows[0].kind==='page-publish'){
     const view=await presentFollowNotification(r,actor,kind.rows[0].page_id,null);
     if(!view.readable&&!view.removed)throw new DocumentError('Notification unavailable','not_found',404);

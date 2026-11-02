@@ -3,6 +3,7 @@ import type { Actor } from './auth';
 import type { Sql } from './database';
 import type { Repository } from './repository';
 import { DocumentError,stableStringify } from './document';
+import { handoverPrompt, notifyPageOwnersLeft } from './page-owners';
 
 export type WorkspaceRole='owner'|'admin'|'member'|'observer';
 export type MemberState={id:string;name:string;role:WorkspaceRole;active:boolean};
@@ -33,8 +34,9 @@ async function preview(tx:Sql,id:string,actor:Actor,input:MemberChange,lock=fals
   const others=await tx.query("SELECT user_id FROM hs_members WHERE workspace_id=$1 AND role IN ('owner','admin') AND active=true AND user_id!=$2",[id,input.subjectId]);
   if(!others.rows.length)throw new DocumentError('Keep at least one active workspace administrator','last_admin',409);
  }
- if(!after.active){const owned=await tx.query('SELECT id FROM hs_pages WHERE workspace_id=$1 AND owner_id=$2 LIMIT 1',[id,input.subjectId]);if(owned.rows.length)throw new DocumentError('Transfer page ownership before deactivating this member','ownership_transfer_required',409);}
- const elevated=['owner','admin'].includes(after.role),wasElevated=['owner','admin'].includes(before.role),data={version:w.version,before,after,contentAccess:elevated?'all-workspace-content' as const:'page-grants' as const,preservesPageGrants:true as const,warning:elevated&&after.active?'Owners and administrators can read and edit every active page in this workspace, including private pages.':after.role==='observer'?'Observers remain read-only wherever they have an effective grant.':!after.active?'Workspace access will stop. Content, attribution and existing grants are preserved.':wasElevated?'Workspace-wide content access ends. Direct and inherited page grants still apply.':null};
+ const ownedCount=!after.active?Number((await tx.query<{count:string}>('SELECT count(*)::text AS count FROM hs_pages WHERE workspace_id=$1 AND owner_id=$2',[id,input.subjectId])).rows[0]?.count??0):0;
+ const inactiveWarning=!after.active?`Workspace access will stop. Content, attribution and existing grants are preserved.${ownedCount?` ${handoverPrompt(before.name,ownedCount)}`:''}`:null;
+ const elevated=['owner','admin'].includes(after.role),wasElevated=['owner','admin'].includes(before.role),data={version:w.version,before,after,contentAccess:elevated?'all-workspace-content' as const:'page-grants' as const,preservesPageGrants:true as const,warning:!after.active?inactiveWarning:elevated?'Owners and administrators can read and edit every active page in this workspace, including private pages.':after.role==='observer'?'Observers remain read-only wherever they have an effective grant.':wasElevated?'Workspace-wide content access ends. Direct and inherited page grants still apply.':null};
  return {...data,digest:hash(data)};
 }
 export async function previewMemberChange(r:Repository,actor:Actor,id:string,input:MemberChange){return r.db.transaction(tx=>preview(tx,id,actor,input,true));}
@@ -51,6 +53,7 @@ export async function changeWorkspaceMember(r:Repository,actor:Actor,id:string,i
    await tx.query('UPDATE hs_members SET role=$3,active=$4 WHERE workspace_id=$1 AND user_id=$2',[id,input.subjectId,input.role,input.active]);
    await tx.query('UPDATE hs_workspaces SET access_version=access_version+1 WHERE id=$1',[id]);
    await tx.query('INSERT INTO hs_workspace_audit(id,workspace_id,actor_id,subject_id,action,before_value,after_value,correlation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[randomUUID(),id,actor.id,input.subjectId,'membership.change',JSON.stringify(p.before),JSON.stringify(p.after),input.operationId]);
+   if(!input.active)await notifyPageOwnersLeft(tx,{workspaceId:id,actorId:actor.id,subjectId:input.subjectId,subjectName:p.before.name,operationId:input.operationId});
   }
   const version=w.version+(changed?1:0);
   await tx.query('INSERT INTO hs_workspace_operations(workspace_id,operation_id,actor_id,request_hash,applied_version) VALUES($1,$2,$3,$4,$5)',[id,input.operationId,actor.id,requestHash,version]);
