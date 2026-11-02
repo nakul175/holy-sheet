@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test, expect} from './acceptance-fixtures';
 import axe from 'axe-core';
 const origin='http://127.0.0.1:53300';
 test('HOLY-63 keyboard and narrow-screen submission preserves an uncertain operation for exact retry',async({page,request})=>{

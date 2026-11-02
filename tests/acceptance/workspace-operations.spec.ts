@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test, expect} from './acceptance-fixtures';
 const origin='http://127.0.0.1:53300';
 for(const width of [1280,390])test(`move, Trash and recovery preserve a synthetic page tree at ${width}px`,async({page,request})=>{
  await page.setViewportSize({width,height:900});

@@ -1,4 +1,5 @@
-import {test,expect,type APIRequestContext,type Page} from '@playwright/test';
+import {type APIRequestContext, type Page} from '@playwright/test';
+import {test, expect} from './acceptance-fixtures';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 const origin='http://127.0.0.1:53300';
 

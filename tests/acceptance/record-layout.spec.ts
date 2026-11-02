@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';import AxeBuilder from '@axe-core/playwright';
+import {test, expect} from './acceptance-fixtures';import AxeBuilder from '@axe-core/playwright';
 for(const width of [1100,390])test(`record layout keeps unsaved values and keyboard navigation at ${width}px`,async({page})=>{
  await page.setViewportSize({width,height:1000});await page.goto('/qualification/record-layout');await expect(page.getByRole('heading',{name:'A record, clearly arranged.'})).toBeVisible();
  const overview=page.getByRole('tab',{name:'Overview',exact:true}),notes=page.getByRole('tab',{name:'Notes',exact:true});await overview.focus();await overview.press('ArrowRight');await expect(notes).toBeFocused();await expect(notes).toHaveAttribute('aria-selected','true');await page.getByRole('textbox',{name:'Notes',exact:true}).fill('Synthetic unsaved draft');

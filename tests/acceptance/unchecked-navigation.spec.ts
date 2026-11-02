@@ -1,4 +1,5 @@
-import {test,expect,type Page,type APIRequestContext} from '@playwright/test';
+import {type Page, type APIRequestContext} from '@playwright/test';
+import {test, expect} from './acceptance-fixtures';
 import type {Editor,JSONContent} from '@tiptap/core';
 import axe from 'axe-core';
 import {writeFile} from 'node:fs/promises';
