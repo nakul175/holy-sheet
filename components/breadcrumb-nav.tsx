@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useState } from "react";
 import { requestJson } from "./editor/use-document-session";
+import { enqueuePageRead, pageReadDepth } from "../lib/page-read-queue";
 import {
   BREADCRUMB_MOBILE_QUERY,
   BREADCRUMB_REFRESH_MS,
@@ -66,14 +67,11 @@ export default function BreadcrumbNav({ workspaceId, pageId, onOpenPage, onOpenH
   const collapseId = useId();
   useEffect(() => {
     let live = true;
-    let inflight = false;
     const params = new URLSearchParams();
     if (expandedSibling) { params.set("siblingsOf", expandedSibling); params.set("all", "1"); }
     const query = params.toString();
     const url = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/pages/${encodeURIComponent(pageId)}/ancestry${query ? `?${query}` : ""}`;
-    const load = async () => {
-      if (inflight || document.visibilityState === "hidden") return;
-      inflight = true;
+    const load = () => enqueuePageRead(async () => {
       try {
         const next = await requestJson<BreadcrumbView>(url);
         if (!live) return;
@@ -83,11 +81,11 @@ export default function BreadcrumbNav({ workspaceId, pageId, onOpenPage, onOpenH
         if (!live) return;
         setView(null);
         setFailed(error instanceof Error && error.message ? error.message : BREADCRUMB_UNAVAILABLE);
-      } finally { inflight = false; }
-    };
+      }
+    });
     void load();
-    const timer = setInterval(() => { void load(); }, BREADCRUMB_REFRESH_MS);
-    const onVisible = () => { if (document.visibilityState === "visible") void load(); };
+    const timer = setInterval(() => { if (document.visibilityState === "hidden" || pageReadDepth() > 0) return; void load(); }, BREADCRUMB_REFRESH_MS);
+    const onVisible = () => { if (document.visibilityState === "visible" && pageReadDepth() === 0) void load(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => { live = false; clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
   }, [workspaceId, pageId, expandedSibling]);

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { Dialog } from "./editor/dialog";
 import { ApiError, requestJson } from "./editor/use-document-session";
+import { enqueuePageRead, pageReadDepth } from "../lib/page-read-queue";
 import {
   dropPlacement,
   PAGE_TREE_CREATE_DENIED,
@@ -28,15 +29,7 @@ type Draft = { id: string; kind: "create" | "rename"; value: string; operationId
 type Flat = { kind: "node"; node: PageTreeNode; depth: number } | { kind: "skeleton"; key: string; depth: number };
 
 const post = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-let treeQueue: Promise<void> = Promise.resolve();
-let treeQueued = 0;
-function enqueueTreeRequest<T>(run: () => Promise<T>): Promise<T> {
-  treeQueued += 1;
-  const result = treeQueue.then(run, run);
-  treeQueue = result.finally(() => { treeQueued -= 1; }).then(() => undefined, () => undefined);
-  return result;
-}
-const requestTree = <T,>(url: string, init?: RequestInit) => enqueueTreeRequest(() => requestJson<T>(url, init));
+const requestTree = <T,>(url: string, init?: RequestInit) => enqueuePageRead(() => requestJson<T>(url, init));
 
 export default function PageTree({ workspaceId, spaceId, spaceName, activeId, onOpen }: { workspaceId: string; spaceId: string; spaceName: string; activeId?: string; onOpen: (id: string) => void }) {
   const hintId = useId();
@@ -88,7 +81,7 @@ export default function PageTree({ workspaceId, spaceId, spaceName, activeId, on
     let live = true;
     setReady(false);
     void load(null).then(() => { if (live) setReady(true); }).catch(error => { if (live) { setReady(true); setNotice(error instanceof Error ? error.message : PAGE_TREE_UNAVAILABLE); } });
-    const interval = setInterval(() => { if (document.visibilityState === "hidden" || treeQueued > 0) return; void reloadAll().catch(() => undefined); }, PAGE_TREE_REFRESH_MS);
+    const interval = setInterval(() => { if (document.visibilityState === "hidden" || pageReadDepth() > 0) return; void reloadAll().catch(() => undefined); }, PAGE_TREE_REFRESH_MS);
     return () => { live = false; mounted.current = false; clearInterval(interval); };
   }, [load, reloadAll]);
 

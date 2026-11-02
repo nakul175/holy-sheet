@@ -2,6 +2,7 @@ import {createHash,randomUUID,randomBytes} from 'node:crypto';
 import type {Actor} from './auth';import type {Sql} from './database';import type {Repository} from './repository';import type {PageRole} from './types';
 import {DocumentError,stableStringify} from './document';
 import {pageSubtree,hierarchyRole,type HierarchyNode,type HierarchyMember,type HierarchyGrant,type LocationIntent} from './page-organisation';
+import {noteRecordBacklinkPages} from './record-backlinks';
 type Node=HierarchyNode&{deletion_batch_id:string|null};
 type Batch={id:string;workspace_id:string;root_id:string;deleted_by:string;deleted_at:string;expires_at:string;page_count:number;restored_at:string|null};
 export type TrashEntry={id:string;rootId:string;title:string;deletedBy:string;deletedAt:string;expiresAt:string;pageCount:number;spaceId:string;parentId:string|null};
@@ -37,6 +38,7 @@ export async function deletePageTree(r:Repository,actor:Actor,workspaceId:string
   const review=await deletionReview(tx,actor,workspaceId,id);if(w.tree_version!==input.expectedTreeVersion||review.preview.digest!==input.previewDigest)throw new DocumentError('The page tree or access changed. Review deletion again.','trash_conflict',409);
   const batchId=randomUUID(),created=await tx.query<{deleted_at:string;expires_at:string}>(`WITH moment AS (SELECT clock_timestamp() AS at) INSERT INTO hs_deletion_batches(id,workspace_id,root_id,deleted_by,deleted_at,expires_at,page_count) SELECT $1,$2,$3,$4,moment.at,moment.at+interval '30 days',$5 FROM moment RETURNING deleted_at,expires_at`,[batchId,workspaceId,id,actor.id,review.active.length]);
   await tx.query('UPDATE hs_pages SET deleted_at=$2,deletion_batch_id=$3,acl_version=acl_version+1 WHERE id=ANY($1::text[])',[review.active.map(p=>p.id),created.rows[0].deleted_at,batchId]);
+  await noteRecordBacklinkPages(tx,actor,review.active.map(p=>p.id),input.operationId,'record-backlink.trash');
   await tx.query('UPDATE hs_workspaces SET tree_version=tree_version+1 WHERE id=$1',[workspaceId]);
   const ack={batchId,rootId:id,pageCount:review.active.length,expiresAt:iso(created.rows[0].expires_at)};
   await remember(tx,actor,workspaceId,id,'delete',input.operationId,requestHash,ack);
@@ -78,7 +80,7 @@ export async function restoreTrashBatch(r:Repository,actor:Actor,workspaceId:str
   if(!input.reviewed)throw new DocumentError('Review destination, current access and file warnings before recovery','review_required',422);
   const rview=await restoreReview(r,tx,actor,workspaceId,batchId,input);if(rview.w.tree_version!==input.expectedTreeVersion||rview.preview.digest!==input.previewDigest)throw new DocumentError('The batch, destination or current access changed. Review recovery again.','trash_conflict',409);
   const claim=await tx.query('UPDATE hs_deletion_batches SET restored_at=clock_timestamp(),restored_by=$2 WHERE id=$1 AND restored_at IS NULL AND expires_at>clock_timestamp() RETURNING id',[batchId,actor.id]);if(!claim.rows.length)throw new DocumentError('The 30-day recovery window expired','trash_expired',409);
-  await tx.query('UPDATE hs_pages SET deleted_at=NULL,deletion_batch_id=NULL,space_id=$2,acl_version=acl_version+1 WHERE id=ANY($1::text[])',[[...rview.ids],input.spaceId]);await tx.query('UPDATE hs_pages SET parent_id=$2 WHERE id=$1',[p.id,input.parentId]);await tx.query('UPDATE hs_workspaces SET tree_version=tree_version+1 WHERE id=$1',[workspaceId]);
+  await tx.query('UPDATE hs_pages SET deleted_at=NULL,deletion_batch_id=NULL,space_id=$2,acl_version=acl_version+1 WHERE id=ANY($1::text[])',[[...rview.ids],input.spaceId]);await tx.query('UPDATE hs_pages SET parent_id=$2 WHERE id=$1',[p.id,input.parentId]);await noteRecordBacklinkPages(tx,actor,[...rview.ids],input.operationId,'record-backlink.restore');await tx.query('UPDATE hs_workspaces SET tree_version=tree_version+1 WHERE id=$1',[workspaceId]);
   const ack={rootId:p.id,batchId,pageCount:rview.ids.size};await remember(tx,actor,workspaceId,p.id,'restore',input.operationId,requestHash,ack);await tx.query('INSERT INTO hs_audit(id,actor_id,action,page_id,after_value,correlation_id) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),actor.id,'page.restore',p.id,JSON.stringify({batchId,pageCount:rview.ids.size,spaceId:input.spaceId,parentId:input.parentId}),input.operationId]);return {...ack,replayed:false,stateNow:'available'};
  });
 }

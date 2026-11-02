@@ -250,7 +250,7 @@ export async function insertSearchReference(r: Repository, actor: Actor, pageId:
     const document = validateDocument({ type: "doc", content: [...(current.document.content ?? []), node] });
     if (request.stage) return { ok: true as const, replayed: false, staged: true as const, node, pageId, workspaceId: editable.workspace_id };
     const version = editable.version + 1;
-    await r.writeDocument(tx, pageId, document, version, current.title, actor.id, "api");
+    await r.writeDocument(tx, pageId, document, version, current.title, actor.id, "api", undefined, request.operationId);
     await tx.query("UPDATE hs_pages SET version=$2, updated_at=clock_timestamp() WHERE id=$1", [pageId, version]);
     const links = request.recordId ? await syncRecordReferenceLinks(tx, actor, editable.workspace_id, pageId, document, request.operationId) : [];
     const stored: JumpResult = { pageId, blockId, version, linkId: links.find(item => item.recordId === request.recordId)?.linkId ?? null, recordId: request.recordId, targetPageId: request.targetPageId, display: request.recordId ? request.display : null, collection };
@@ -288,7 +288,7 @@ export async function peekSearchRecord(r: Repository, actor: Actor, workspaceId:
     if (!tenant || !collection) throw unavailable();
     const name = await tx.query<{ name: string }>("SELECT name FROM hs_data_records WHERE id=$1 AND tenant_id=$2 AND state='active'", [recordId, tenant.tenant_id]);
     if (!name.rows.length) throw unavailable();
-    return { title: name.rows[0].name, href: recordPageHref(workspaceId, tenant.tenant_id, collection, recordId), collection };
+    return { title: name.rows[0].name, href: recordPageHref(workspaceId, tenant.tenant_id, collection, recordId), collection, recordId, tenantId: tenant.tenant_id };
   });
 }
 

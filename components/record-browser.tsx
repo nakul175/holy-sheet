@@ -15,6 +15,7 @@ import RecordHistory from "./record-history";
 import RecordImport from "./record-import";
 import RecordLayout, { type LayoutField, type LayoutSnapshot } from "./record-layout";
 import { RecordDocuments } from "./document-associations";
+import RecordBacklinks from "./record-backlinks";
 
 type Summary = {
   id: string;
@@ -2255,6 +2256,7 @@ export default function RecordBrowser({ workspaceId, tenantId, initialCollection
                 </section>
               )}
               <RecordDocuments workspaceId={workspaceId} tenantId={tenantId} recordId={selected.id} />
+              <RecordBacklinks workspaceId={workspaceId} tenantId={tenantId} recordId={selected.id} />
               <h3>Linked documents</h3>
               {selected.documents.length ? (
                 <ul>

@@ -17,6 +17,7 @@ import {commitSnippetPlacements,presentSnippetDocument} from './snippets';
 import { provisionSpaceHome } from './space-home';
 import { spaceHomeMemberRead } from './space-home-shared';
 import { syncRecordReferenceLinks } from './search-jump';
+import { syncRecordBacklinks, validateNewRecordLinks } from './record-backlinks';
 
 type StoredPage = {id:string;workspace_id:string;space_id:string;parent_id:string|null;owner_id:string;title:string;visibility:"private"|"space";version:number;acl_version:number;schema_version:number;position:number;updated_at:string;workspace_name:string;space_name:string;parent_title:string|null;role:PageRole};
 export type DocumentPage = Page & {document:RichNode;schemaVersion:number;role:PageRole;publicationFingerprint?:string};
@@ -110,7 +111,7 @@ export class Repository {
       return this.get(id,actor,tx);
     });
   }
-  async writeDocument(tx:Sql,id:string,document:RichNode,version:number,title:string,actorId?:string,surface='api',restoredFrom?:number) {
+  async writeDocument(tx:Sql,id:string,document:RichNode,version:number,title:string,actorId?:string,surface='api',restoredFrom?:number,operationId?:string) {
     document=stripSyncedContent(document);
     const rows=documentBlocks(document);
     const previous=await tx.query<{id:string;version:number;node:RichNode;parent_id:string|null}>("SELECT id,version,node,parent_id FROM hs_blocks WHERE page_id=$1",[id]);
@@ -124,6 +125,7 @@ export class Repository {
     await tx.query('INSERT INTO hs_revisions(page_id,version,title,document,actor_id,source_surface,schema_version,restored_from,content_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',[id,version,title,JSON.stringify(document),actorId??null,surface,schemaVersion,restoredFrom??null,revisionDigest(title,document)]);
     const mediaIds=new Set<string>();function media(n:RichNode){if((n.type==='image'||n.type==='file')&&typeof n.attrs?.attachmentId==='string')mediaIds.add(n.attrs.attachmentId);n.content?.forEach(media);}media(document);
     for(const mediaId of mediaIds)await tx.query('INSERT INTO hs_revision_media(page_id,version,media_id) SELECT $1,$2,id FROM hs_media WHERE id=$3 AND page_id=$1 ON CONFLICT DO NOTHING',[id,version,mediaId]);
+    await syncRecordBacklinks(tx,id,document,actorId,operationId);
   }
   async save(id:string,actor:Actor,input:{operationId:string;baseVersion:number;title:string;document:unknown}) {
     const document=validateDocument(input.document), title=input.title.trim()||"Untitled";
@@ -156,6 +158,7 @@ export class Repository {
       next=snippets.stored;
       await validateNewPageReferences(this,tx,actor,p.workspace_id,next,stripSyncedContent(activeDocument.document));
       await validateRecordPageReferences(tx,actor,p.workspace_id,next,stripSyncedContent(activeDocument.document));
+      await validateNewRecordLinks(tx,actor,p.workspace_id,next,stripSyncedContent(activeDocument.document));
       const current=await this.get(id,actor,tx,undefined,false);
       if(stableStringify(next)!==stableStringify(current.document))await syncRecordReferenceLinks(tx,actor,p.workspace_id,id,next,input.operationId);
       if(!synced.contentChanged&&!snippets.changed&&nextTitle===p.title&&stableStringify(next)===stableStringify(current.document)){
@@ -163,7 +166,7 @@ export class Repository {
         return {page:await this.get(id,actor,tx),acknowledgedOperationId:input.operationId,committedVersion:p.version,replayed:false,merged};
       }
       const version=p.version+1;
-      await this.writeDocument(tx,id,next,version,nextTitle,actor.id,synced.surface??'api');
+      await this.writeDocument(tx,id,next,version,nextTitle,actor.id,synced.surface??'api',undefined,input.operationId);
       await tx.query("UPDATE hs_media m SET deleted_at=CASE WHEN EXISTS(SELECT 1 FROM hs_blocks b WHERE b.page_id=$1 AND b.type IN ('image','file') AND b.node->'attrs'->>'attachmentId'=m.id::text) THEN NULL ELSE COALESCE(m.deleted_at,now()) END WHERE m.page_id=$1 AND m.state='ready'",[id]);
       await tx.query("UPDATE hs_pages SET title=$2,version=$3,updated_at=clock_timestamp() WHERE id=$1",[id,nextTitle,version]);
       // A title-only revision does not invalidate already-authorized body step sessions.
