@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import SpaceHome, { SpaceHomePins } from "../components/space-home";
-import { SPACE_HOME_REFRESH_MS, SPACE_HOME_UNAVAILABLE, type SpaceHomePinView, type SpaceHomeView } from "../lib/space-home-shared";
+import { SPACE_HOME_PAGE_UNAVAILABLE, SPACE_HOME_REFRESH_MS, SPACE_HOME_UNAVAILABLE, type SpaceHomePinView, type SpaceHomeView } from "../lib/space-home-shared";
 
 const fetchMock = vi.fn();
 afterEach(() => {
@@ -59,7 +59,7 @@ it("clears the landing after access is revoked on the next refresh", async () =>
     archived: false,
     archivedAtIst: null,
     canUnarchive: false,
-    home: { pageId: "p-100", title: "P-100", summary: "Overview", headings: ["Start here"], templateName: "Space home", role: "viewer", updatedAtIst: "01 Nov 2026, 10:00 IST" },
+    home: null,
     widgets: {
       pinned: pins(["pin-1"]),
       recent: [{ pageId: "recent-1", title: "Recent page", editorName: "U-ED", updatedAtIst: "01 Nov 2026, 10:05 IST" }],
@@ -78,8 +78,9 @@ it("clears the landing after access is revoked on the next refresh", async () =>
   const view = await render(createElement(SpaceHome, { workspaceId: "ws-a", spaceId: "sp-ops" }));
   await act(async () => { await Promise.resolve(); });
   expect(view.host.textContent).toContain("Ops home");
-  expect(view.host.textContent).toContain("P-100");
   expect(view.host.querySelector(".space-home-widgets")).toBeTruthy();
+  expect(view.host.textContent).toContain("Shared knowledge, working notes, and decisions");
+  expect(view.host.textContent).not.toContain(SPACE_HOME_PAGE_UNAVAILABLE);
   await act(async () => { await vi.advanceTimersByTimeAsync(SPACE_HOME_REFRESH_MS); });
   expect(view.host.textContent).not.toContain("Ops home");
   expect(view.host.textContent).not.toContain("P-100");
