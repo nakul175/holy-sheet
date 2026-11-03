@@ -96,6 +96,7 @@ it("replays the acknowledgement migration and keeps evidence append-only for the
   const sql = await readFile("db/099_published_acknowledgements.sql", "utf8");
   expect(sql).toContain("REVOKE ALL ON TABLE hs_ack_records FROM hs_app");
   expect(sql).toContain("GRANT SELECT, INSERT ON TABLE hs_ack_records TO hs_app");
+  expect(sql).toContain("GRANT TRIGGER ON TABLE hs_ack_records TO hs_app");
   expect(sql).not.toContain("GRANT UPDATE");
   expect(sql).not.toContain("GRANT DELETE");
   const replay = statements(sql);
