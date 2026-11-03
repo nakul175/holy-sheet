@@ -1,0 +1,15 @@
+{
+  "synthetic": true,
+  "stagingOnly": true,
+  "tenant": "Synthetic Clinic",
+  "portal": "Synthetic partner portal",
+  "screen": "Clinic",
+  "collection": "organisations",
+  "sharing": "off",
+  "accessGranted": false,
+  "invitationSent": false,
+  "credentialsStored": false,
+  "liveActivation": false,
+  "edge": "no-store",
+  "note": "Fixture data is synthetic. It does not grant access, send an invitation, configure identity, or start a schedule."
+}
