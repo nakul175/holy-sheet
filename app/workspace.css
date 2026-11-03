@@ -134,6 +134,12 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .dependency-impact-dialog { display:grid; gap:1rem; min-width:0; max-width:100%; }
 .dependency-impact-dialog input,.dependency-impact-dialog select,.dependency-impact-dialog textarea,.dependency-impact-dialog button,.dependency-impact-dialog pre { max-width:100%; min-width:0; }
 .dependency-impact-dialog .actions { display:flex; flex-wrap:wrap; gap:.75rem; }
+.attachment-text-dialog { display:grid; gap:1rem; min-width:0; max-width:100%; }
+.attachment-text-dialog input,.attachment-text-dialog select,.attachment-text-dialog textarea,.attachment-text-dialog button,.attachment-text-dialog pre,.attachment-text-dialog ul { max-width:100%; min-width:0; }
+.attachment-text-dialog .actions { display:flex; flex-wrap:wrap; gap:.75rem; }
+.attachment-text-dialog p,.attachment-text-dialog pre,.attachment-text-dialog li { overflow-wrap:anywhere; }
+.attachment-text-dialog pre { white-space:pre-wrap; }
+.attachment-text-dialog ul { margin:0; padding-left:1.2rem; }
 .dependency-impact-dialog p,.dependency-impact-dialog pre { overflow-wrap:anywhere; }
 .dependency-impact-dialog pre { white-space:pre-wrap; }
 .page-io-actions button:hover { background:#f0f1f7; color:var(--navy); }

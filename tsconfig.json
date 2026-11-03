@@ -30,6 +30,7 @@
   },
   "include": [
     "next-env.d.ts",
+    "lib/jpeg-js.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
