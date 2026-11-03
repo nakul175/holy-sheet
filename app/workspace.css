@@ -185,6 +185,19 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .knowledge-verification-dialog fieldset { border:0; margin:0; padding:0; display:grid; gap:.5rem; }
 .knowledge-verification-dialog pre { white-space:pre-wrap; }
 .knowledge-verification-dialog ul { margin:0; padding-left:1.2rem; }
+.quick-capture-dialog { display:grid; gap:1rem; min-width:0; max-width:100%; }
+.quick-capture-dialog input,.quick-capture-dialog select,.quick-capture-dialog textarea,.quick-capture-dialog button,.quick-capture-dialog pre,.quick-capture-dialog ul,.quick-capture-dialog fieldset { max-width:100%; min-width:0; }
+.quick-capture-dialog .actions { display:flex; flex-wrap:wrap; gap:.75rem; }
+.quick-capture-dialog p,.quick-capture-dialog pre,.quick-capture-dialog li { overflow-wrap:anywhere; }
+.quick-capture-dialog label { display:flex; align-items:center; gap:.5rem; min-height:44px; }
+.quick-capture-dialog label > span { flex: 0 0 9.5rem; white-space:nowrap; }
+.quick-capture-dialog label > input,.quick-capture-dialog label > select,.quick-capture-dialog label > textarea { flex: 1 1 auto; }
+.quick-capture-dialog fieldset { border:0; margin:0; padding:0; display:grid; gap:.5rem; }
+.quick-capture-dialog pre { white-space:pre-wrap; }
+.quick-capture-dialog ul { margin:0; padding-left:1.2rem; }
+@media (max-width:360px) {
+  .quick-capture-dialog label { flex-direction:column; align-items:stretch; }
+}
 .attachment-text-dialog p,.attachment-text-dialog pre,.attachment-text-dialog li { overflow-wrap:anywhere; }
 .attachment-text-dialog pre { white-space:pre-wrap; }
 .attachment-text-dialog ul { margin:0; padding-left:1.2rem; }
