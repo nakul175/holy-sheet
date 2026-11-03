@@ -1,0 +1,17 @@
+{
+  "synthetic": true,
+  "stagingOnly": true,
+  "tenant": "Synthetic Clinic",
+  "connector": "Synthetic records connector",
+  "type": "records",
+  "source": "clinic-source",
+  "direction": "read-write",
+  "sharing": "off",
+  "accessGranted": false,
+  "credentialsStored": false,
+  "liveActivation": false,
+  "connectionAuthorised": false,
+  "secretVisible": false,
+  "edge": "no-store",
+  "note": "Fixture data is synthetic. It does not grant access, store a secret, open a live connection, or start a schedule."
+}

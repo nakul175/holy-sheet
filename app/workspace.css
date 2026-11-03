@@ -224,6 +224,19 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 @media (max-width:360px) {
   .intake-form-dialog label { flex-direction:column; align-items:stretch; }
 }
+.connector-dialog { display:grid; gap:1rem; min-width:0; max-width:100%; }
+.connector-dialog input,.connector-dialog select,.connector-dialog textarea,.connector-dialog button,.connector-dialog pre,.connector-dialog ul,.connector-dialog fieldset { max-width:100%; min-width:0; }
+.connector-dialog .actions { display:flex; flex-wrap:wrap; gap:.75rem; }
+.connector-dialog p,.connector-dialog pre,.connector-dialog li { overflow-wrap:anywhere; }
+.connector-dialog label { display:flex; align-items:center; gap:.5rem; min-height:44px; }
+.connector-dialog label > span { flex: 0 0 9.5rem; white-space:nowrap; }
+.connector-dialog label > input,.connector-dialog label > select,.connector-dialog label > textarea { flex: 1 1 auto; }
+.connector-dialog fieldset { border:0; margin:0; padding:0; display:grid; gap:.5rem; }
+.connector-dialog pre { white-space:pre-wrap; }
+.connector-dialog ul { margin:0; padding-left:1.2rem; }
+@media (max-width:360px) {
+  .connector-dialog label { flex-direction:column; align-items:stretch; }
+}
 .attachment-text-dialog p,.attachment-text-dialog pre,.attachment-text-dialog li { overflow-wrap:anywhere; }
 .attachment-text-dialog pre { white-space:pre-wrap; }
 .attachment-text-dialog ul { margin:0; padding-left:1.2rem; }
