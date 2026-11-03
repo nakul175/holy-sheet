@@ -167,6 +167,14 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .action-button-dialog fieldset { border:0; margin:0; padding:0; display:grid; gap:.5rem; }
 .action-button-dialog pre { white-space:pre-wrap; }
 .action-button-dialog ul { margin:0; padding-left:1.2rem; }
+.role-interface-dialog { display:grid; gap:1rem; min-width:0; max-width:100%; }
+.role-interface-dialog input,.role-interface-dialog select,.role-interface-dialog textarea,.role-interface-dialog button,.role-interface-dialog pre,.role-interface-dialog ul,.role-interface-dialog fieldset { max-width:100%; min-width:0; }
+.role-interface-dialog .actions { display:flex; flex-wrap:wrap; gap:.75rem; }
+.role-interface-dialog p,.role-interface-dialog pre,.role-interface-dialog li,.role-interface-dialog label { overflow-wrap:anywhere; }
+.role-interface-dialog label { display:flex; align-items:center; gap:.5rem; min-height:44px; }
+.role-interface-dialog fieldset { border:0; margin:0; padding:0; display:grid; gap:.5rem; }
+.role-interface-dialog pre { white-space:pre-wrap; }
+.role-interface-dialog ul { margin:0; padding-left:1.2rem; }
 .attachment-text-dialog p,.attachment-text-dialog pre,.attachment-text-dialog li { overflow-wrap:anywhere; }
 .attachment-text-dialog pre { white-space:pre-wrap; }
 .attachment-text-dialog ul { margin:0; padding-left:1.2rem; }
