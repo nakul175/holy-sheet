@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>After: Document chrome · Holy Sheet</title><link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">H</span> Holy Sheet</div><div class="environment">Workspace</div>
+      <a class="nav-link" href="index.html"><span class="nav-icon">⌂</span> Home</a><a class="nav-link active" href="03-document-chrome.html"><span class="nav-icon">▤</span> Q4 launch plan</a><a class="nav-link" href="01-space-overview.html"><span class="nav-icon">◇</span> General overview</a>
+      <div class="sidebar-foot">Changes save automatically.</div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><div class="search">Search pages, records, and files</div><div class="profile"><span class="avatar">N</span> Nakul Jain</div></header>
+      <section class="content" style="width:min(1320px,calc(100% - 54px))">
+        <nav class="crumbs"><a href="index.html">Holy Sheet</a> / <a href="01-space-overview.html">General</a> / Q4 launch plan</nav>
+        <div class="doc-layout">
+          <article class="card document">
+            <header class="doc-header">
+              <div><div class="eyebrow">Document</div><div class="profile"><span class="avatar">N</span><span>Owner <strong>Nakul Jain</strong></span></div></div>
+              <div class="doc-actions"><button class="button primary" data-toast="Share panel opened">Share</button><div class="menu-wrap"><button class="button icon" id="more" aria-haspopup="menu" aria-expanded="false" aria-label="More document actions">•••</button><div class="menu" id="menu" role="menu" hidden>
+                <div class="menu-group"><div class="menu-label">Content</div><button class="menu-item" data-toast="Import opened">Import a document</button><button class="menu-item" data-toast="Export opened">Export page</button><button class="menu-item" data-toast="Working copy opened">Create working copy</button></div>
+                <div class="menu-group"><div class="menu-label">Governance</div><button class="menu-item" data-toast="Ownership opened">Change owner</button><button class="menu-item" data-toast="Review settings opened">Review settings</button><button class="menu-item" data-toast="Language variants opened">Language variants</button></div>
+                <div class="menu-group"><div class="menu-label">Integrations</div><button class="menu-item" data-toast="Document bundles opened">Document bundles</button><button class="menu-item" data-toast="Dependency impact opened">Dependency impact</button><button class="menu-item" data-toast="SHO task flow opened">Create SHO task</button></div>
+              </div></div>
+            </header>
+            <h1 class="doc-title">Q4 launch plan</h1>
+            <div class="body-copy"><p>This page brings the launch milestones, decisions, and owners together in one place.</p><h2>Launch readiness</h2><p>The rollout is ready when customer communication, support coverage, and the production checklist are complete.</p><div class="card card-pad" style="margin-top:36px"><h3>Decision log</h3><p class="subtle">Keep final decisions close to the work so the team can move without hunting through tools.</p></div></div>
+          </article>
+          <aside class="card toolbox"><h2>Toolbox</h2><div class="eyebrow" style="margin-top:22px">Text</div><div class="toolbox-grid"><div class="tool"><strong>B</strong></div><div class="tool"><em>I</em></div><div class="tool"><u>U</u></div></div><div class="eyebrow" style="margin-top:26px">Insert</div><div class="toolbox-grid"><div class="tool">H1<br>Heading</div><div class="tool">☷<br>List</div><div class="tool">☑<br>Checklist</div><div class="tool">▦<br>Table</div><div class="tool">▧<br>Image</div><div class="tool">＋<br>Subpage</div></div></aside>
+        </div>
+        <p class="mock-note">After state: the document header exposes only Share and •••; secondary actions are grouped by intent.</p>
+      </section>
+    </main>
+  </div>
+  <div class="toast" hidden></div>
+  <script>
+    const more=document.querySelector('#more'),menu=document.querySelector('#menu'),toast=document.querySelector('.toast');
+    more.addEventListener('click',()=>{menu.hidden=!menu.hidden;more.setAttribute('aria-expanded',String(!menu.hidden))});
+    document.addEventListener('click',e=>{if(!e.target.closest('.menu-wrap')){menu.hidden=true;more.setAttribute('aria-expanded','false')}});
+    document.querySelectorAll('[data-toast]').forEach(b=>b.addEventListener('click',()=>{toast.textContent=b.dataset.toast;toast.hidden=false;menu.hidden=true;more.setAttribute('aria-expanded','false');clearTimeout(window.tt);window.tt=setTimeout(()=>toast.hidden=true,1800)}));
+  </script>
+</body>
+</html>
