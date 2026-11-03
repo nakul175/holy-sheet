@@ -159,6 +159,14 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .workflow-dialog label { display:flex; align-items:center; gap:.5rem; min-height:44px; }
 .workflow-dialog fieldset { border:0; margin:0; padding:0; display:grid; gap:.5rem; }
 .workflow-dialog pre { white-space:pre-wrap; }
+.action-button-dialog { display:grid; gap:1rem; min-width:0; max-width:100%; }
+.action-button-dialog input,.action-button-dialog select,.action-button-dialog textarea,.action-button-dialog button,.action-button-dialog pre,.action-button-dialog ul,.action-button-dialog fieldset { max-width:100%; min-width:0; }
+.action-button-dialog .actions { display:flex; flex-wrap:wrap; gap:.75rem; }
+.action-button-dialog p,.action-button-dialog pre,.action-button-dialog li,.action-button-dialog label { overflow-wrap:anywhere; }
+.action-button-dialog label { display:flex; align-items:center; gap:.5rem; min-height:44px; }
+.action-button-dialog fieldset { border:0; margin:0; padding:0; display:grid; gap:.5rem; }
+.action-button-dialog pre { white-space:pre-wrap; }
+.action-button-dialog ul { margin:0; padding-left:1.2rem; }
 .attachment-text-dialog p,.attachment-text-dialog pre,.attachment-text-dialog li { overflow-wrap:anywhere; }
 .attachment-text-dialog pre { white-space:pre-wrap; }
 .attachment-text-dialog ul { margin:0; padding-left:1.2rem; }
