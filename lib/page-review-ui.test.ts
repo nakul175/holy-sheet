@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { expect, it } from "vitest";
 import { PageReviewChrome } from "../components/page-review";
-import { SpaceReviewTable } from "../components/space-reviews";
+import { isEmptyReviewDashboard, SpaceReviewTable } from "../components/space-reviews";
 import { EXPIRED_BANNER, OWNER_NEEDED } from "./page-review-copy";
 import type { PageReviewView, SpaceReviewDashboard } from "./page-review";
 
@@ -66,4 +66,10 @@ it("lists review rows with owner needed and the expired status", async () => {
   expect(rendered.host.textContent).toContain(OWNER_NEEDED);
   expect(rendered.host.textContent).toContain("expired");
   await rendered.unmount();
+});
+
+it("recognises the empty-first state only before any review exists", () => {
+  const dashboard: SpaceReviewDashboard = { workspaceId: "ws-a", spaceId: "space-product", spaceName: "Product", filter: "open", canManagePolicy: true, hideExpiredFromReaders: false, counts: { due: 0, overdue: 0, expired: 0, scheduled: 0 }, rows: [] };
+  expect(isEmptyReviewDashboard(dashboard)).toBe(true);
+  expect(isEmptyReviewDashboard({ ...dashboard, counts: { ...dashboard.counts, scheduled: 1 } })).toBe(false);
 });

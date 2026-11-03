@@ -6,7 +6,6 @@ import UiIcon from "./ui-icon";
 import {
   dropPin,
   movePin,
-  SPACE_HOME_PAGE_UNAVAILABLE,
   SPACE_HOME_REFRESH_MS,
   SPACE_HOME_UNAVAILABLE,
   type SpaceHomePinView,
@@ -130,6 +129,7 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
     {!home && !unavailable && <p role="status">Opening space home…</p>}
     {home && <div id="space-home">
       <h1>{home.spaceName}</h1>
+      <p className="space-home-purpose">Shared knowledge, working notes, and decisions for everyone in this space.</p>
       {home.archived && <p className="space-archive-banner" role="status">{SPACE_ARCHIVED_BANNER}{home.archivedAtIst ? ` Archived ${home.archivedAtIst}.` : ""} {home.canUnarchive && <button type="button" disabled={busy} onClick={() => void requestJson(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/spaces/directory`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "unarchive", spaceId, operationId: crypto.randomUUID() }) }).then(() => setReload(value => value + 1)).catch(reason => setError(reason instanceof ApiError ? reason.message : "This space is archived and read-only"))}>Unarchive</button>}</p>}
       {error && <p role="alert">{error}</p>}
       <section className="space-home-overview" aria-labelledby="space-home-overview-heading">
@@ -141,7 +141,7 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
           {home.home.headings.map(heading => <p key={heading}>{heading}</p>)}
           <p className="space-home-meta">Updated {home.home.updatedAtIst}</p>
           <a href={`/pages/${encodeURIComponent(home.home.pageId)}`}>Open {home.home.title}</a>
-        </> : <p>{SPACE_HOME_PAGE_UNAVAILABLE}</p>}
+        </> : null}
       </section>
       <div className="space-home-widgets">
         <section aria-labelledby="space-home-pinned-heading">

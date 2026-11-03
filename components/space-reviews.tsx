@@ -21,6 +21,10 @@ export function SpaceReviewTable({ dashboard }: { dashboard: SpaceReviewDashboar
   </div>;
 }
 
+export function isEmptyReviewDashboard(dashboard: SpaceReviewDashboard) {
+  return Object.values(dashboard.counts).every(count => count === 0);
+}
+
 export default function SpaceReviews({ workspaceId, spaceId }: { workspaceId: string; spaceId: string }) {
   const [filter, setFilter] = useState("open");
   const [dashboard, setDashboard] = useState<SpaceReviewDashboard | null>(null);
@@ -52,17 +56,25 @@ export default function SpaceReviews({ workspaceId, spaceId }: { workspaceId: st
     }
   }
   const csv = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(spaceId)}/reviews?export=csv&filter=${encodeURIComponent(filter)}`;
+  const empty = dashboard ? isEmptyReviewDashboard(dashboard) : false;
   return <main className="space-reviews-page"><a className="skip-link" href="#space-reviews">Skip to reviews</a><p><a href="/">Holy Sheet</a> / <span>Space</span> / Reviews</p><h1>Reviews</h1>
     {error && <p role="alert">{error}</p>}
     {!dashboard && !error && <p role="status">Opening reviews…</p>}
     {dashboard && <div id="space-reviews">
       <p>{dashboard.spaceName}</p>
-      <div className="review-toolbar">
+      {empty ? <section className="reviews-empty" aria-labelledby="reviews-empty-title">
+        <span className="reviews-empty-icon" aria-hidden="true">✓</span>
+        <h2 id="reviews-empty-title">No page reviews yet</h2>
+        <p>Set a review date on a page that needs a regular owner check. When reviews become due, they’ll appear here with the right context and next action.</p>
+        <a className="reviews-empty-cta" href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(spaceId)}`}>Choose a page to review</a>
+        <small>You can add a review from a page’s ••• menu.</small>
+      </section> : <><div className="review-toolbar">
         <label>Filter <select aria-label="Review filter" value={filter} onChange={event => setFilter(event.target.value)}>{reviewFilters.map(item => <option key={item} value={item}>{item === "open" ? "Due, overdue, and expired" : item[0].toUpperCase() + item.slice(1)}</option>)}</select></label>
         <a href={csv} download="page-reviews.csv">Export CSV</a>
       </div>
       {dashboard.canManagePolicy && <label className="review-policy"><input type="checkbox" checked={dashboard.hideExpiredFromReaders} disabled={busy} onChange={event => void togglePolicy(event.target.checked)} /> Hide expired from search for readers</label>}
       <SpaceReviewTable dashboard={dashboard} />
+      </>}
     </div>}
   </main>;
 }
