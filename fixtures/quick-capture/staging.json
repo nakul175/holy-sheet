@@ -1,0 +1,13 @@
+{
+  "synthetic": true,
+  "stagingOnly": true,
+  "tenant": "Synthetic Clinic",
+  "space": "My pages",
+  "intake": "Synthetic organisation intake",
+  "capture": "Synthetic clinic hours",
+  "sourceTitle": "Synthetic public page",
+  "sourceAccess": "not-opened",
+  "visibility": "private",
+  "externalShare": false,
+  "note": "Fixture data is synthetic. It does not grant access, open an external page, or start a schedule."
+}
