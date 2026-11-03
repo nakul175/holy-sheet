@@ -1,0 +1,17 @@
+{
+  "synthetic": true,
+  "stagingOnly": true,
+  "tenant": "Synthetic Clinic",
+  "form": "Synthetic clinic intake",
+  "collection": "organisations",
+  "queue": "clinic-intake",
+  "queuePrivate": true,
+  "audience": "public",
+  "anonymous": false,
+  "sharing": "off",
+  "activated": false,
+  "accessGranted": false,
+  "liveActivation": false,
+  "edge": "no-store",
+  "note": "Fixture data is synthetic. It does not activate a form, grant access, or commit a central record."
+}
