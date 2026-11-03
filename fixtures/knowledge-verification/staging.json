@@ -1,0 +1,12 @@
+{
+  "synthetic": true,
+  "stagingOnly": true,
+  "tenant": "Synthetic Clinic",
+  "pageTitle": "Synthetic clinic handbook",
+  "recordName": "Synthetic North Clinic",
+  "owner": "Synthetic Steward",
+  "basis": "source-reviewed",
+  "expiryDays": 90,
+  "titleOnlyPolicy": "preserve",
+  "note": "Fixture data is synthetic. It does not grant access and it is not a live publication."
+}

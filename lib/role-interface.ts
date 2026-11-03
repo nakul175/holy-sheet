@@ -3,6 +3,7 @@ import { isDeprecatedAction, isDeprecatedLink, peekActionButton } from "./action
 import type { Actor } from "./auth";
 import type { Sql } from "./database";
 import { DocumentError } from "./document";
+import { decorateKnowledgeVerification } from "./knowledge-verification";
 import { formatIst } from "./ist-label";
 import type { Repository } from "./repository";
 import { recordHash, recordInputValues, recordName, standardRecordFields, type RecordField } from "./shared-record-types";
@@ -89,8 +90,8 @@ export type InterfaceSubmission = {
 };
 export type RenderedComponent = {
   id: string; kind: string; status: "ready" | "broken"; reason: string | null; browse: false;
-  records?: { id: string; name: string; version: number; values: Record<string, unknown> }[];
-  record?: { id: string; name: string; version: number; values: Record<string, unknown>; approval: "pending" | null } | null;
+  records?: { id: string; name: string; version: number; values: Record<string, unknown>; verification?: { status: string; label: string; owner: string; basis: string; expiresAt: string; revision: number; titleOnlyPolicy: "preserve"; statement: string } | null }[];
+  record?: { id: string; name: string; version: number; values: Record<string, unknown>; approval: "pending" | null; verification?: { status: string; label: string; owner: string; basis: string; expiresAt: string; revision: number; titleOnlyPolicy: "preserve"; statement: string } | null } | null;
   fields?: { key: string; writable: boolean }[];
   groups?: { value: string; visible: number }[];
   button?: { id: string; label: string; enabled: boolean; reason: string | null };
@@ -619,6 +620,7 @@ export async function renderRoleInterface(r: Repository, actor: Actor, workspace
       }
       rendered.push({ id: screen.id, name: screen.name, components });
     }
+    await decorateKnowledgeVerification(tx, here.tenantId, here.workspaceId, actor, rendered);
     return {
       id: row.id, name: row.name, status: row.status, version: num(row.version), sharing: "private" as const, browse: false as const,
       assignment: roleInterfaceAssignment, authority: roleInterfaceAuthority, screens: rendered,
