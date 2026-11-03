@@ -127,6 +127,15 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .title:focus-visible { outline:2px solid var(--navy); outline-offset:6px; border-radius:3px; }
 .page-io-actions { display:flex; justify-content:flex-end; gap:4px; margin:-18px 0 16px; }
 .page-io-actions button { min-height:44px; padding:8px 10px; border:0; border-radius:8px; background:transparent; color:#596174; font-size:11px; }
+@media (max-width:360px) {
+ .page-io-actions { gap:2px; max-width:100%; }
+ .page-io-actions button { padding-inline:8px; }
+}
+.dependency-impact-dialog { display:grid; gap:1rem; min-width:0; max-width:100%; }
+.dependency-impact-dialog input,.dependency-impact-dialog select,.dependency-impact-dialog textarea,.dependency-impact-dialog button,.dependency-impact-dialog pre { max-width:100%; min-width:0; }
+.dependency-impact-dialog .actions { display:flex; flex-wrap:wrap; gap:.75rem; }
+.dependency-impact-dialog p,.dependency-impact-dialog pre { overflow-wrap:anywhere; }
+.dependency-impact-dialog pre { white-space:pre-wrap; }
 .page-io-actions button:hover { background:#f0f1f7; color:var(--navy); }
 .rich-editor[data-editable=true] { padding-bottom:56px; }
 .editor-actions { position:absolute; right:0; bottom:0; margin:0; padding:6px 0 0; border:0; background:transparent; color:#687084; gap:2px; }
