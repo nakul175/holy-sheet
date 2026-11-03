@@ -84,14 +84,16 @@ async function audit(tx: Sql, actor: Actor, action: string, operationId: string,
   );
 }
 
-async function prior(tx: Sql, actorId: string, operationId: string, requestHash: string) {
+export type ClassificationResult<T extends object> = (T & { replayed: true }) | (T & { replayed: false });
+
+async function prior<T extends object>(tx: Sql, actorId: string, operationId: string, requestHash: string): Promise<(T & { replayed: true }) | null> {
   const row = await tx.query<{ request_hash: string; result: unknown }>("SELECT request_hash, result FROM hs_classification_operations WHERE actor_id=$1 AND operation_id=$2", [actorId, operationId]);
   if (!row.rows[0]) return null;
   if (row.rows[0].request_hash !== requestHash) throw mismatch();
-  return { ...asRecord(row.rows[0].result), replayed: true };
+  return { ...(asRecord(row.rows[0].result) as T), replayed: true };
 }
 
-async function remember(tx: Sql, actorId: string, operationId: string, requestHash: string, result: Record<string, unknown>) {
+async function remember(tx: Sql, actorId: string, operationId: string, requestHash: string, result: object) {
   await tx.query("INSERT INTO hs_classification_operations(actor_id,operation_id,request_hash,result) VALUES($1,$2,$3,$4)", [actorId, operationId, requestHash, JSON.stringify(result)]);
 }
 
@@ -328,11 +330,11 @@ async function normaliseSave(tx: Sql, here: Scope, tags: TagRow[], tagId: string
   return { label, handling, scope, parentId, cleared };
 }
 
-export async function createClassificationTag(r: Repository, actor: Actor, workspaceId: string, input: SaveInput & { code: string }) {
+export async function createClassificationTag(r: Repository, actor: Actor, workspaceId: string, input: SaveInput & { code: string }): Promise<ClassificationResult<TagView>> {
   const requestHash = recordHash({ kind: "create", workspaceId, code: input.code, label: input.label, parentId: input.parentId, documents: input.documents, collections: input.collections, handling: input.handling, clearedUserIds: input.clearedUserIds });
   return r.db.transaction(async tx => {
     const here = await scopeOf(tx, workspaceId, actor);
-    const replay = await prior(tx, actor.id, input.operationId, requestHash);
+    const replay = await prior<TagView>(tx, actor.id, input.operationId, requestHash);
     if (replay) return replay;
     await hold(tx, here.tenantId);
     await requireManager(tx, here, actor);
@@ -358,11 +360,11 @@ export async function createClassificationTag(r: Repository, actor: Actor, works
   });
 }
 
-export async function saveClassificationTag(r: Repository, actor: Actor, workspaceId: string, tagId: string, input: SaveInput) {
+export async function saveClassificationTag(r: Repository, actor: Actor, workspaceId: string, tagId: string, input: SaveInput): Promise<ClassificationResult<TagView>> {
   const requestHash = recordHash({ kind: "save", workspaceId, tagId, ...input, operationId: undefined });
   return r.db.transaction(async tx => {
     const here = await scopeOf(tx, workspaceId, actor);
-    const replay = await prior(tx, actor.id, input.operationId, requestHash);
+    const replay = await prior<TagView>(tx, actor.id, input.operationId, requestHash);
     if (replay) return replay;
     await hold(tx, here.tenantId);
     await requireManager(tx, here, actor);
@@ -389,11 +391,11 @@ export async function saveClassificationTag(r: Repository, actor: Actor, workspa
   });
 }
 
-export async function stashClassificationTag(r: Repository, actor: Actor, workspaceId: string, tagId: string, input: SaveInput) {
+export async function stashClassificationTag(r: Repository, actor: Actor, workspaceId: string, tagId: string, input: SaveInput): Promise<ClassificationResult<{ id: string; version: number; recoverableDraft: TagDraftView }>> {
   const requestHash = recordHash({ kind: "stash", workspaceId, tagId, ...input, operationId: undefined });
-  return r.db.transaction(async tx => {
+  return r.db.transaction(async (tx): Promise<ClassificationResult<{ id: string; version: number; recoverableDraft: TagDraftView }>> => {
     const here = await scopeOf(tx, workspaceId, actor);
-    const replay = await prior(tx, actor.id, input.operationId, requestHash);
+    const replay = await prior<{ id: string; version: number; recoverableDraft: TagDraftView }>(tx, actor.id, input.operationId, requestHash);
     if (replay) return replay;
     await hold(tx, here.tenantId);
     await requireManager(tx, here, actor);
@@ -408,34 +410,34 @@ export async function stashClassificationTag(r: Repository, actor: Actor, worksp
       [tagId, actor.id, input.expectedVersion, draft.label, draft.parentId, draft.scope.documents, JSON.stringify(draft.scope.collections), draft.handling, JSON.stringify(draft.cleared), input.operationId],
     );
     await audit(tx, actor, "classification.stash", input.operationId, tagId, { workspaceId, code: row.code, baseVersion: input.expectedVersion });
-    const result = { id: tagId, version: num(row.version), recoverableDraft: { ...draft, collections: draft.scope.collections, clearedUserIds: draft.cleared, baseVersion: input.expectedVersion }, replayed: false };
+    const result = { id: tagId, version: num(row.version), recoverableDraft: { label: draft.label, parentId: draft.parentId, documents: draft.scope.documents, collections: draft.scope.collections, handling: draft.handling, clearedUserIds: draft.cleared, baseVersion: input.expectedVersion }, replayed: false as const };
     await remember(tx, actor.id, input.operationId, requestHash, result);
     return result;
   });
 }
 
-export async function discardClassificationDraft(r: Repository, actor: Actor, workspaceId: string, tagId: string, operationId: string) {
+export async function discardClassificationDraft(r: Repository, actor: Actor, workspaceId: string, tagId: string, operationId: string): Promise<ClassificationResult<{ id: string; discarded: true }>> {
   const requestHash = recordHash({ kind: "discard-draft", workspaceId, tagId });
-  return r.db.transaction(async tx => {
+  return r.db.transaction(async (tx): Promise<ClassificationResult<{ id: string; discarded: true }>> => {
     const here = await scopeOf(tx, workspaceId, actor);
-    const replay = await prior(tx, actor.id, operationId, requestHash);
+    const replay = await prior<{ id: string; discarded: true }>(tx, actor.id, operationId, requestHash);
     if (replay) return replay;
     await hold(tx, here.tenantId);
     await requireManager(tx, here, actor);
     const row = await loadTag(tx, here.tenantId, tagId);
     await tx.query("DELETE FROM hs_classification_drafts WHERE tag_id=$1 AND actor_id=$2", [tagId, actor.id]);
     await audit(tx, actor, "classification.discard-draft", operationId, tagId, { workspaceId, code: row.code });
-    const result = { id: tagId, discarded: true, replayed: false };
+    const result = { id: tagId, discarded: true as const, replayed: false as const };
     await remember(tx, actor.id, operationId, requestHash, result);
     return result;
   });
 }
 
-export async function deprecateClassificationTag(r: Repository, actor: Actor, workspaceId: string, tagId: string, input: { operationId: string; expectedVersion: number }) {
+export async function deprecateClassificationTag(r: Repository, actor: Actor, workspaceId: string, tagId: string, input: { operationId: string; expectedVersion: number }): Promise<ClassificationResult<TagView>> {
   const requestHash = recordHash({ kind: "deprecate", workspaceId, tagId, expectedVersion: input.expectedVersion });
   return r.db.transaction(async tx => {
     const here = await scopeOf(tx, workspaceId, actor);
-    const replay = await prior(tx, actor.id, input.operationId, requestHash);
+    const replay = await prior<TagView>(tx, actor.id, input.operationId, requestHash);
     if (replay) return replay;
     await hold(tx, here.tenantId);
     await requireManager(tx, here, actor);
@@ -522,11 +524,11 @@ async function bumpTargets(tx: Sql, tenantId: string, rows: { target_kind: strin
   }
 }
 
-export async function applyClassificationChange(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; previewId: string; expectedVersion: number }) {
+export async function applyClassificationChange(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; previewId: string; expectedVersion: number }): Promise<ClassificationResult<{ id: string; status: "merged" | "removed"; version: number; intoId: string | null; references: { kind: TargetKind; id: string; title: string }[] }>> {
   const requestHash = recordHash({ kind: "apply", workspaceId, previewId: input.previewId, expectedVersion: input.expectedVersion });
-  return r.db.transaction(async tx => {
+  return r.db.transaction(async (tx): Promise<ClassificationResult<{ id: string; status: "merged" | "removed"; version: number; intoId: string | null; references: { kind: TargetKind; id: string; title: string }[] }>> => {
     const here = await scopeOf(tx, workspaceId, actor);
-    const replay = await prior(tx, actor.id, input.operationId, requestHash);
+    const replay = await prior<{ id: string; status: "merged" | "removed"; version: number; intoId: string | null; references: { kind: TargetKind; id: string; title: string }[] }>(tx, actor.id, input.operationId, requestHash);
     if (replay) return replay;
     await hold(tx, here.tenantId);
     await requireManager(tx, here, actor);
@@ -567,7 +569,7 @@ export async function applyClassificationChange(r: Repository, actor: Actor, wor
     }
     await bumpTargets(tx, here.tenantId, stored);
     const version = num(row.version) + 1;
-    const status = review.action === "merge" ? "merged" : "removed";
+    const status: "merged" | "removed" = review.action === "merge" ? "merged" : "removed";
     await tx.query(
       "UPDATE hs_classification_tags SET status=$3, merged_into_id=$4, version=$5, updated_at=clock_timestamp() WHERE id=$1 AND tenant_id=$2",
       [row.id, here.tenantId, status, into?.id ?? null, version],
@@ -576,17 +578,17 @@ export async function applyClassificationChange(r: Repository, actor: Actor, wor
     await insertRevision(tx, saved, version, review.action, actor, input.operationId);
     await audit(tx, actor, `classification.${review.action}`, input.operationId, row.id, { workspaceId, code: row.code, intoId: into?.id ?? null, version });
     const visible = await visibleReferences(r, tx, actor, here, review.action === "merge" ? stored.map(item => ({ ...item, target_kind: item.target_kind })) : []);
-    const result = { id: row.id, status, version, intoId: into?.id ?? null, replayed: false, references: review.action === "merge" ? visible.slice(0, classificationLimits.references) : [] };
+    const result = { id: row.id, status, version, intoId: into?.id ?? null, replayed: false as const, references: review.action === "merge" ? visible.slice(0, classificationLimits.references) : [] };
     await remember(tx, actor.id, input.operationId, requestHash, result);
     return result;
   });
 }
 
-export async function assignClassification(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; targetKind: TargetKind; targetId: string; expectedVersion: number; tagIds: string[] }) {
+export async function assignClassification(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; targetKind: TargetKind; targetId: string; expectedVersion: number; tagIds: string[] }): Promise<ClassificationResult<AssignmentView>> {
   const requestHash = recordHash({ kind: "assign", workspaceId, targetKind: input.targetKind, targetId: input.targetId, expectedVersion: input.expectedVersion, tagIds: input.tagIds });
   return r.db.transaction(async tx => {
     const here = await scopeOf(tx, workspaceId, actor);
-    const replay = await prior(tx, actor.id, input.operationId, requestHash);
+    const replay = await prior<AssignmentView>(tx, actor.id, input.operationId, requestHash);
     if (replay) return replay;
     await hold(tx, here.tenantId);
     if (here.role === "observer") throw readOnly();
@@ -769,11 +771,11 @@ export async function classificationHistory(r: Repository, actor: Actor, workspa
   });
 }
 
-export async function downloadClassification(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; targetKind: TargetKind; targetId: string; expectedVersion: number }) {
+export async function downloadClassification(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; targetKind: TargetKind; targetId: string; expectedVersion: number }): Promise<ClassificationResult<{ filename: string; contentType: string; body: string; version: number }>> {
   const requestHash = recordHash({ kind: "download", workspaceId, targetKind: input.targetKind, targetId: input.targetId, expectedVersion: input.expectedVersion });
   return r.db.transaction(async tx => {
     const here = await scopeOf(tx, workspaceId, actor);
-    const replay = await prior(tx, actor.id, input.operationId, requestHash);
+    const replay = await prior<{ filename: string; contentType: string; body: string; version: number }>(tx, actor.id, input.operationId, requestHash);
     if (replay) return replay;
     await hold(tx, here.tenantId);
     const manager = await isManager(tx, here, actor);
@@ -802,11 +804,11 @@ export async function downloadClassification(r: Repository, actor: Actor, worksp
   });
 }
 
-export async function grantClassificationManager(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; userId: string }) {
+export async function grantClassificationManager(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; userId: string }): Promise<ClassificationResult<{ granted: true; userId: string }>> {
   const requestHash = recordHash({ kind: "grant-manager", workspaceId, userId: input.userId });
-  return r.db.transaction(async tx => {
+  return r.db.transaction(async (tx): Promise<ClassificationResult<{ granted: true; userId: string }>> => {
     const here = await scopeOf(tx, workspaceId, actor);
-    const replay = await prior(tx, actor.id, input.operationId, requestHash);
+    const replay = await prior<{ granted: true; userId: string }>(tx, actor.id, input.operationId, requestHash);
     if (replay) return replay;
     await hold(tx, here.tenantId);
     await requireManager(tx, here, actor, true);
@@ -818,33 +820,33 @@ export async function grantClassificationManager(r: Repository, actor: Actor, wo
       [workspaceId, input.userId, actor.id],
     );
     await audit(tx, actor, "classification.grant-manager", input.operationId, workspaceId, { workspaceId, userId: input.userId });
-    const result = { granted: true, userId: input.userId, replayed: false };
+    const result = { granted: true as const, userId: input.userId, replayed: false as const };
     await remember(tx, actor.id, input.operationId, requestHash, result);
     return result;
   });
 }
 
-export async function revokeClassificationManager(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; userId: string }) {
+export async function revokeClassificationManager(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; userId: string }): Promise<ClassificationResult<{ revoked: true; userId: string }>> {
   const requestHash = recordHash({ kind: "revoke-manager", workspaceId, userId: input.userId });
-  return r.db.transaction(async tx => {
+  return r.db.transaction(async (tx): Promise<ClassificationResult<{ revoked: true; userId: string }>> => {
     const here = await scopeOf(tx, workspaceId, actor);
-    const replay = await prior(tx, actor.id, input.operationId, requestHash);
+    const replay = await prior<{ revoked: true; userId: string }>(tx, actor.id, input.operationId, requestHash);
     if (replay) return replay;
     await hold(tx, here.tenantId);
     await requireManager(tx, here, actor, true);
     await tx.query("DELETE FROM hs_classification_managers WHERE workspace_id=$1 AND user_id=$2", [workspaceId, input.userId]);
     await audit(tx, actor, "classification.revoke-manager", input.operationId, workspaceId, { workspaceId, userId: input.userId });
-    const result = { revoked: true, userId: input.userId, replayed: false };
+    const result = { revoked: true as const, userId: input.userId, replayed: false as const };
     await remember(tx, actor.id, input.operationId, requestHash, result);
     return result;
   });
 }
 
-export async function saveClassificationFieldPolicy(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; scopeKey: string; sensitive: boolean; expectedVersion: number; access: { userId: string; canView: boolean; canAssign: boolean; canHistory: boolean }[] }) {
+export async function saveClassificationFieldPolicy(r: Repository, actor: Actor, workspaceId: string, input: { operationId: string; scopeKey: string; sensitive: boolean; expectedVersion: number; access: { userId: string; canView: boolean; canAssign: boolean; canHistory: boolean }[] }): Promise<ClassificationResult<{ scopeKey: string; sensitive: boolean; version: number }>> {
   const requestHash = recordHash({ kind: "field-policy", workspaceId, scopeKey: input.scopeKey, sensitive: input.sensitive, expectedVersion: input.expectedVersion, access: input.access });
   return r.db.transaction(async tx => {
     const here = await scopeOf(tx, workspaceId, actor);
-    const replay = await prior(tx, actor.id, input.operationId, requestHash);
+    const replay = await prior<{ scopeKey: string; sensitive: boolean; version: number }>(tx, actor.id, input.operationId, requestHash);
     if (replay) return replay;
     await hold(tx, here.tenantId);
     await requireManager(tx, here, actor, true);
