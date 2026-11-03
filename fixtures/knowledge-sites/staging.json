@@ -1,0 +1,16 @@
+{
+  "synthetic": true,
+  "stagingOnly": true,
+  "tenant": "Synthetic Clinic",
+  "site": "Synthetic help centre",
+  "sharing": "off",
+  "accessGranted": false,
+  "liveSite": false,
+  "domain": null,
+  "publicEnabled": false,
+  "audienceConfirmed": false,
+  "edge": "no-store",
+  "cacheBoundSeconds": 0,
+  "thirdPartyRetraction": false,
+  "note": "Fixture data is synthetic. It does not grant access, open a live public site, assign a domain, or start a schedule."
+}
