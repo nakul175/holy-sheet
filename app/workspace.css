@@ -211,6 +211,19 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 @media (max-width:360px) {
   .guest-portal-dialog label { flex-direction:column; align-items:stretch; }
 }
+.intake-form-dialog { display:grid; gap:1rem; min-width:0; max-width:100%; }
+.intake-form-dialog input,.intake-form-dialog select,.intake-form-dialog textarea,.intake-form-dialog button,.intake-form-dialog pre,.intake-form-dialog ul,.intake-form-dialog fieldset { max-width:100%; min-width:0; }
+.intake-form-dialog .actions { display:flex; flex-wrap:wrap; gap:.75rem; }
+.intake-form-dialog p,.intake-form-dialog pre,.intake-form-dialog li { overflow-wrap:anywhere; }
+.intake-form-dialog label { display:flex; align-items:center; gap:.5rem; min-height:44px; }
+.intake-form-dialog label > span { flex: 0 0 9.5rem; white-space:nowrap; }
+.intake-form-dialog label > input,.intake-form-dialog label > select,.intake-form-dialog label > textarea { flex: 1 1 auto; }
+.intake-form-dialog fieldset { border:0; margin:0; padding:0; display:grid; gap:.5rem; }
+.intake-form-dialog pre { white-space:pre-wrap; }
+.intake-form-dialog ul { margin:0; padding-left:1.2rem; }
+@media (max-width:360px) {
+  .intake-form-dialog label { flex-direction:column; align-items:stretch; }
+}
 .attachment-text-dialog p,.attachment-text-dialog pre,.attachment-text-dialog li { overflow-wrap:anywhere; }
 .attachment-text-dialog pre { white-space:pre-wrap; }
 .attachment-text-dialog ul { margin:0; padding-left:1.2rem; }
