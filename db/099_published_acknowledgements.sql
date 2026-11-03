@@ -97,12 +97,24 @@ BEGIN
   RAISE EXCEPTION 'Acknowledgement records are append-only';
 END;
 $$;
+
+-- CREATE OR REPLACE TRIGGER requires TRIGGER. Production replays this file as
+-- hs_app, and the revoke below removes that privilege after the first run.
+-- The table owner can grant it back for this statement. The revoke then leaves
+-- SELECT and INSERT only, so the privilege is not kept.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hs_app')
+     AND NOT has_table_privilege('hs_app', 'hs_ack_records', 'TRIGGER') THEN
+    GRANT TRIGGER ON TABLE hs_ack_records TO hs_app;
+  END IF;
+END $$;
 CREATE OR REPLACE TRIGGER hs_ack_records_append_only
   BEFORE UPDATE OR DELETE ON hs_ack_records
   FOR EACH ROW EXECUTE FUNCTION hs_ack_records_append_only();
 
--- Runtime role hs_app is created by the operator and must not own this table.
 -- Grants are skipped when the role is absent so local and test databases can replay this file.
+-- hs_app keeps SELECT and INSERT only. The trigger rejects UPDATE and DELETE for every role, including the owner.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hs_app') THEN

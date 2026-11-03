@@ -15,7 +15,7 @@ Acknowledgement extends HOLY-63 publications and HOLY-4 effective page access. I
 
 ## Migration
 
-`db/099_published_acknowledgements.sql` adds publication `version_number` and `bump`, audience groups, campaigns, assignments, append-only `hs_ack_records`, reminder dedupe, and the email outbox. It also allows acknowledgement rows in `hs_notifications` without a discussion thread. Re-running it is safe (`IF NOT EXISTS`, guarded constraints, replaceable functions and triggers).
+`db/099_published_acknowledgements.sql` adds publication `version_number` and `bump`, audience groups, campaigns, assignments, append-only `hs_ack_records`, reminder dedupe, and the email outbox. It also allows acknowledgement rows in `hs_notifications` without a discussion thread. Re-running it is safe (`IF NOT EXISTS`, guarded constraints, replaceable functions and triggers). Replacing the append-only trigger needs the `TRIGGER` privilege. When `hs_app` no longer has it, the file grants `TRIGGER` back for that statement only.
 
 Trash and restore pause and resume the open campaign through the existing `hs_pages.deleted_at` update. Evidence rows are kept.
 
@@ -23,9 +23,9 @@ Existing publication rows stay immutable, so they are not backfilled. Publicatio
 
 ## Database role
 
-Create `hs_app` out of band. Do not commit a password or put one in this repository. The migration role should own the tables. `hs_app` should not own `hs_ack_records` and should not be a superuser.
+Create `hs_app` out of band. Do not commit a password or put one in this repository. `hs_app` should not be a superuser. `createDatabase` replays this file as the `DATABASE_URL` role. When that role is `hs_app`, `hs_app` owns `hs_ack_records`. A separate table owner remains valid; ownership is not required for the grants below.
 
-When `hs_app` already exists, the migration revokes every privilege on `hs_ack_records` and grants only `SELECT` and `INSERT`. The append-only trigger rejects `UPDATE` and `DELETE` for every role, including the table owner. If `hs_app` does not exist, the grant block is skipped so local and test databases can still replay the file.
+When `hs_app` already exists, the migration revokes every privilege on `hs_ack_records` and grants only `SELECT` and `INSERT`. On a later replay as `hs_app`, that role lacks `TRIGGER`, so `CREATE OR REPLACE TRIGGER` would fail. If that privilege is missing, the same file grants `TRIGGER` to `hs_app`, replaces the trigger, then revokes every privilege and grants `SELECT` and `INSERT` again. `UPDATE`, `DELETE`, and `TRIGGER` are not retained. The append-only trigger rejects `UPDATE` and `DELETE` for every role, including the table owner. If `hs_app` does not exist, the grant block is skipped so local and test databases can still replay the file.
 
 ## Reminder schedule
 
