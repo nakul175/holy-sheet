@@ -145,6 +145,13 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .classification-dialog input[type=checkbox] { width:1.25rem; height:1.25rem; }
 .classification-dialog pre { white-space:pre-wrap; }
 .classification-dialog fieldset { border:0; margin:0; padding:0; display:grid; gap:.5rem; }
+.collection-hierarchy-dialog { display:grid; gap:1rem; min-width:0; max-width:100%; }
+.collection-hierarchy-dialog input,.collection-hierarchy-dialog select,.collection-hierarchy-dialog textarea,.collection-hierarchy-dialog button,.collection-hierarchy-dialog pre,.collection-hierarchy-dialog ul { max-width:100%; min-width:0; }
+.collection-hierarchy-dialog .actions { display:flex; flex-wrap:wrap; gap:.75rem; }
+.collection-hierarchy-dialog p,.collection-hierarchy-dialog pre,.collection-hierarchy-dialog li,.collection-hierarchy-dialog label { overflow-wrap:anywhere; }
+.collection-hierarchy-dialog label { display:flex; align-items:center; gap:.5rem; min-height:44px; }
+.collection-hierarchy-dialog input[type=checkbox] { width:1.25rem; height:1.25rem; }
+.collection-hierarchy-dialog pre { white-space:pre-wrap; }
 .attachment-text-dialog p,.attachment-text-dialog pre,.attachment-text-dialog li { overflow-wrap:anywhere; }
 .attachment-text-dialog pre { white-space:pre-wrap; }
 .attachment-text-dialog ul { margin:0; padding-left:1.2rem; }
