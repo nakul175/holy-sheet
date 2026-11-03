@@ -104,7 +104,7 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .page-primary-actions .share-primary { background:var(--navy); border-color:var(--navy); color:white; font-weight:600; padding-inline:16px; }
 .page-primary-actions .share-primary:hover { background:var(--navy-dark); }
 .page-primary-actions > :not(.share-primary):not(.page-tools) { display:none; }
-.page-personal-actions { display:none; }
+.page-personal-actions > button { display:none; }
 .page-primary-actions .share-primary { order:1; }
 .page-primary-actions .page-tools { order:2; }
 .page-tools { position:relative; }

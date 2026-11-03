@@ -6,13 +6,13 @@ const app = readFileSync(join(process.cwd(), "components/holy-sheet-app.tsx"), "
 const css = readFileSync(join(process.cwd(), "app/workspace.css"), "utf8");
 
 it("keeps only Share and the grouped document action menu in primary chrome", () => {
-  expect(app).toContain('aria-label="More document actions"');
+  expect(app).toContain('aria-label="Page options"');
   expect(app).toContain('<span className="menu-label">Content</span>');
   expect(app).toContain('<span className="menu-label">Governance</span>');
   expect(app).toContain('<span className="menu-label">Integrations</span>');
   expect(app.indexOf('className="share-primary"')).toBeLessThan(app.indexOf('className="page-tools"'));
   expect(css).toContain('.page-primary-actions > :not(.share-primary):not(.page-tools) { display:none; }');
-  expect(css).toContain('.page-personal-actions { display:none; }');
+  expect(css).toContain('.page-personal-actions > button { display:none; }');
   expect(css).toContain('.page-io-actions { display:none; }');
 });
 
