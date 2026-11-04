@@ -141,7 +141,16 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
           {home.home.headings.map(heading => <p key={heading}>{heading}</p>)}
           <p className="space-home-meta">Updated {home.home.updatedAtIst}</p>
           <a href={`/pages/${encodeURIComponent(home.home.pageId)}`}>Open {home.home.title}</a>
-        </> : null}
+        </> : <div className="space-home-overview-empty">
+          <p>No overview page has been set for this space.</p>
+          {home.canManage ? <>
+            {!!home.pinCandidates.length && <form onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "set-home", pageId: candidate }); }}>
+              <label>Choose an existing page <select aria-label="Choose an existing overview page" value={candidate} disabled={busy} onChange={event => setCandidate(event.target.value)}>{home.pinCandidates.map(item => <option key={item.pageId} value={item.pageId}>{item.title}</option>)}</select></label>
+              <button type="submit" disabled={busy || !candidate}>Set as overview</button>
+            </form>}
+            <p><a href="/workspaces">Create a page</a>, then return here to set it as the overview.</p>
+          </> : <p>Ask a space leader to create or choose an overview page.</p>}
+        </div>}
       </section>
       <div className="space-home-widgets">
         <section aria-labelledby="space-home-pinned-heading">

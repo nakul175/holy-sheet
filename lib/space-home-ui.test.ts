@@ -89,3 +89,62 @@ it("clears the landing after access is revoked on the next refresh", async () =>
   expect(view.host.querySelector(".space-home-widgets")).toBeNull();
   await view.unmount();
 });
+
+it("shows a neutral load, then a readable empty overview with one-write manager actions", async () => {
+  vi.stubGlobal("fetch", fetchMock);
+  let finish: (response: Response) => void = () => undefined;
+  fetchMock.mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve; }));
+  const payload: SpaceHomeView = {
+    workspaceId: "ws-a",
+    spaceId: "sp-ops",
+    spaceName: "Ops home",
+    canManage: true,
+    archived: false,
+    archivedAtIst: null,
+    canUnarchive: false,
+    home: null,
+    widgets: { pinned: [], recent: [], recordViews: [], owners: [] },
+    pinCandidates: [{ pageId: "page-1", title: "Operating guide" }],
+  };
+  const view = await render(createElement(SpaceHome, { workspaceId: "ws-a", spaceId: "sp-ops" }));
+  expect(view.host.textContent).toContain("Opening space home…");
+  expect(view.host.textContent).not.toContain(SPACE_HOME_PAGE_UNAVAILABLE);
+  await act(async () => finish(new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } })));
+  expect(view.host.textContent).toContain("No overview page has been set for this space.");
+  expect(view.host.querySelector("a[href='/workspaces']")?.textContent).toBe("Create a page");
+  const submit = Array.from(view.host.querySelectorAll("button")).find(button => button.textContent === "Set as overview")!;
+  fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ...payload, home: { pageId: "page-1", title: "Operating guide", summary: "", headings: [], templateName: null, role: "owner", updatedAtIst: "04 Nov 2026, 12:00 IST" } }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  await act(async () => submit.click());
+  const writes = fetchMock.mock.calls.filter(call => call[1]?.method === "POST");
+  expect(writes).toHaveLength(1);
+  expect(JSON.parse(String(writes[0][1]?.body))).toMatchObject({ action: "set-home", pageId: "page-1" });
+  expect(view.host.textContent).toContain("Open Operating guide");
+  await view.unmount();
+});
+
+it("does not offer overview mutations to a readable non-manager", async () => {
+  vi.stubGlobal("fetch", fetchMock);
+  fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+    workspaceId: "ws-a", spaceId: "sp-ops", spaceName: "Ops home", canManage: false,
+    archived: false, archivedAtIst: null, canUnarchive: false, home: null,
+    widgets: { pinned: [], recent: [], recordViews: [], owners: [] }, pinCandidates: [],
+  } satisfies SpaceHomeView), { status: 200, headers: { "Content-Type": "application/json" } }));
+  const view = await render(createElement(SpaceHome, { workspaceId: "ws-a", spaceId: "sp-ops" }));
+  await act(async () => { await Promise.resolve(); });
+  expect(view.host.textContent).toContain("Ask a space leader to create or choose an overview page.");
+  expect(view.host.textContent).not.toContain("Set as overview");
+  expect(view.host.querySelector("a[href='/workspaces']")).toBeNull();
+  expect(fetchMock.mock.calls.filter(call => call[1]?.method === "POST")).toHaveLength(0);
+  await view.unmount();
+});
+
+it("shows a true permission denial without rendering readable space content", async () => {
+  vi.stubGlobal("fetch", fetchMock);
+  fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: "You do not have access to this space", code: "not_allowed" }), { status: 403, headers: { "Content-Type": "application/json" } }));
+  const view = await render(createElement(SpaceHome, { workspaceId: "ws-a", spaceId: "sp-ops" }));
+  await act(async () => { await Promise.resolve(); });
+  expect(view.host.querySelector("[role='alert']")?.textContent).toBe("You do not have access to this space");
+  expect(view.host.textContent).not.toContain("No overview page has been set");
+  expect(view.host.querySelector(".space-home-widgets")).toBeNull();
+  await view.unmount();
+});
