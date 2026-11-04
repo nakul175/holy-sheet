@@ -180,9 +180,10 @@ the run and never paste it into BTF, Bug Off or an artifact.
 - `lib/space-directory-leak-oracle.test.ts` proves the executable live oracle
   performs exactly 20 interleaved requests per target, emits no URL/body/cookie,
   passes identical generic responses and fails a distinguishable foreign target.
-- On current main `0509f275f3d5e3e6f6c4a4adec86b863a8d572dc`, the focused
-  space-directory, home UI and workspace-search run passes 13 tests across
-  three files.
+- On PR #233 head, the focused space-directory, leak-oracle, home UI and
+  workspace-search run passes 17 tests across four files. The original 13
+  product tests also pass unchanged on current main
+  `0509f275f3d5e3e6f6c4a4adec86b863a8d572dc`.
 - The current-main full regression previously passed 2,199 tests in 372 files,
   with 59 tests / 5 files explicitly skipped by their existing opt-in gates.
 - A signed-in staging admin session renders the Spaces directory and migration
