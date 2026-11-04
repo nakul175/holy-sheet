@@ -6,6 +6,10 @@ export type OracleRequest = {
 
 export type OracleResult = {
   revision: string;
+  candidateSha: string;
+  environment: "staging";
+  executor: string;
+  executedAtIst: string;
   runsPerTarget: number;
   method: string;
   hidden: Record<string, unknown>;
@@ -30,5 +34,8 @@ export function runOracle(options: {
   cookie: string;
   fetchImpl?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   clock?: () => number;
+  now?: () => Date;
   runs?: number;
+  candidateSha: string;
+  executor: string;
 }): Promise<OracleResult>;

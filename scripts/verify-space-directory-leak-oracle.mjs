@@ -73,6 +73,20 @@ function stable(value) {
   return JSON.stringify(value);
 }
 
+function formatIst(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(value).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} IST`;
+}
+
 function uniform(samples, select) {
   return new Set(samples.map(sample => stable(select(sample)))).size === 1;
 }
@@ -83,9 +97,14 @@ export async function runOracle({
   cookie,
   fetchImpl = fetch,
   clock = () => performance.now(),
+  now = () => new Date(),
   runs = RUNS,
+  candidateSha,
+  executor,
 }) {
   if (!cookie || cookie.length > 8192 || /[\r\n]/.test(cookie)) throw new Error("A valid session cookie is required");
+  if (!/^[a-f0-9]{40}$/.test(candidateSha ?? "")) throw new Error("A full lowercase candidate SHA is required");
+  if (!executor || executor.length > 120 || /[\r\n]/.test(executor)) throw new Error("A valid executor label is required");
   if (hidden.method !== control.method || !["GET", "POST"].includes(hidden.method)) throw new Error("Both requests must use the same GET or POST method");
   if (new URL(hidden.url).origin !== new URL(control.url).origin) throw new Error("Both requests must use the same origin");
   if (runs !== RUNS) throw new Error(`N47 leak-oracle evidence requires exactly ${RUNS} runs per target`);
@@ -109,6 +128,10 @@ export async function runOracle({
   const controlMedianMs = median(samples.control.map(sample => sample.durationMs));
   return {
     revision: "HS-SF-N47-r1-20261104",
+    candidateSha,
+    environment: "staging",
+    executor,
+    executedAtIst: formatIst(now()),
     runsPerTarget: runs,
     method: hidden.method,
     hidden: {
@@ -156,7 +179,13 @@ async function main() {
   const hidden = requestFromEnv("HIDDEN");
   const control = requestFromEnv("CONTROL");
   if (hidden.method !== control.method || !["GET", "POST"].includes(hidden.method)) throw new Error("HS_N47_METHOD must be GET or POST");
-  const result = await runOracle({ hidden, control, cookie: process.env.HS_N47_COOKIE });
+  const result = await runOracle({
+    hidden,
+    control,
+    cookie: process.env.HS_N47_COOKIE,
+    candidateSha: process.env.HS_N47_CANDIDATE_SHA,
+    executor: process.env.HS_N47_EXECUTOR,
+  });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (!result.pass) process.exitCode = 1;
 }

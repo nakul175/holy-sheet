@@ -12,7 +12,10 @@ it("compares exactly twenty interleaved hidden and missing responses without ret
     hidden: { url: "https://staging.example.test/s/secret", method: "GET" },
     control: { url: "https://staging.example.test/s/missing", method: "GET" },
     cookie: "session=never-print-this",
+    candidateSha: "0509f275f3d5e3e6f6c4a4adec86b863a8d572dc",
+    executor: "Codex Eng5",
     clock: () => ++tick,
+    now: () => new Date("2026-11-04T05:30:00.000Z"),
     fetchImpl: async (url, init) => {
       const headers = new Headers(init?.headers);
       calls.push({ url: String(url), cookie: headers.get("cookie") });
@@ -23,7 +26,15 @@ it("compares exactly twenty interleaved hidden and missing responses without ret
   expect(calls.filter(call => call.url.endsWith("/secret"))).toHaveLength(20);
   expect(calls.filter(call => call.url.endsWith("/missing"))).toHaveLength(20);
   expect(calls.every(call => call.cookie === "session=never-print-this")).toBe(true);
-  expect(result).toMatchObject({ runsPerTarget: 20, pass: true, comparable: { hiddenStable: true, controlStable: true, status: true, headers: true, bodyShape: true, bodyDigest: true } });
+  expect(result).toMatchObject({
+    candidateSha: "0509f275f3d5e3e6f6c4a4adec86b863a8d572dc",
+    environment: "staging",
+    executor: "Codex Eng5",
+    executedAtIst: "2026-11-04 11:00:00 IST",
+    runsPerTarget: 20,
+    pass: true,
+    comparable: { hiddenStable: true, controlStable: true, status: true, headers: true, bodyShape: true, bodyDigest: true },
+  });
   expect(JSON.stringify(result)).not.toContain("secret");
   expect(JSON.stringify(result)).not.toContain("missing");
   expect(JSON.stringify(result)).not.toContain("never-print-this");
@@ -35,6 +46,8 @@ it("fails when a foreign target differs from the missing control", async () => {
     hidden: { url: "https://staging.example.test/api/migration/foreign", method: "POST", body: { targetSpaceId: "foreign" } },
     control: { url: "https://staging.example.test/api/migration/missing", method: "POST", body: { targetSpaceId: "missing" } },
     cookie: "session=opaque",
+    candidateSha: "0509f275f3d5e3e6f6c4a4adec86b863a8d572dc",
+    executor: "Codex Eng5",
     clock: () => ++tick,
     fetchImpl: async url => String(url).endsWith("/foreign") ? response('{"code":"forbidden"}', 403) : response('{"code":"not_found"}', 404),
   });
@@ -49,6 +62,8 @@ it("fails when either target changes shape between runs", async () => {
     hidden: { url: "https://staging.example.test/s/secret", method: "GET" },
     control: { url: "https://staging.example.test/s/missing", method: "GET" },
     cookie: "session=opaque",
+    candidateSha: "0509f275f3d5e3e6f6c4a4adec86b863a8d572dc",
+    executor: "Codex Eng5",
     clock: () => ++tick,
     fetchImpl: async url => {
       if (String(url).endsWith("/secret")) {

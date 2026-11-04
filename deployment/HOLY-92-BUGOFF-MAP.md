@@ -166,13 +166,17 @@ Run the verifier only with the adverse actor's own short-lived staging cookie.
 The CLI rejects every origin except `https://staging.holysheet.aplyd.org`,
 requires both requests to use the same GET or POST method and origin, and always
 runs exactly 20 interleaved samples per target. Provide `HS_N47_HIDDEN_URL`,
-`HS_N47_CONTROL_URL`, `HS_N47_COOKIE` and, for migration preview comparisons,
-`HS_N47_METHOD=POST`, `HS_N47_HIDDEN_BODY_JSON` and
+`HS_N47_CONTROL_URL`, `HS_N47_COOKIE`, the exact full
+`HS_N47_CANDIDATE_SHA`, and a non-secret `HS_N47_EXECUTOR` label. For migration
+preview comparisons, also provide `HS_N47_METHOD=POST`,
+`HS_N47_HIDDEN_BODY_JSON` and
 `HS_N47_CONTROL_BODY_JSON`. Redirect stdout to the Bug Off evidence artifact.
 The JSON report contains response status, safe header presence/values, structural
-body shape, body digest, stability and median timing; it never includes either
-URL, response body, request body or cookie. Delete the shell-local cookie after
-the run and never paste it into BTF, Bug Off or an artifact.
+body shape, body digest, stability and median timing, plus the candidate,
+staging environment, executor and server-independent IST execution time; it
+never includes either URL, response body, request body or cookie. Delete the
+shell-local cookie after the run and never paste it into BTF, Bug Off or an
+artifact.
 
 ## Local and CI evidence
 
