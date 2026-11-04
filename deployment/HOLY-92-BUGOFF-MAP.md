@@ -75,10 +75,11 @@ the isolated N47 fixture and therefore remain open.
 **Scenario:** U-VI cannot distinguish SP-SECRET from a non-existent space by
 directory data or `/s/:slug` response.
 
-**Script:** With U-VI's own staging session, request the directory, `/s/secret`,
-and a random non-existent slug. Compare status, body shape and safe headers.
-Run each slug 20 times and record median timing; retain sanitized responses and
-the timing table, never cookies.
+**Script:** With U-VI's own staging session, run
+`scripts/verify-space-directory-leak-oracle.mjs` against `/s/secret` and a
+random non-existent slug. It interleaves exactly 20 requests per target and
+compares status, body shape, body digest and safe headers while recording median
+timing; its output contains neither URLs, bodies nor cookies.
 
 **Automated evidence:** `lib/space-directory.test.ts` compares the hidden and
 missing response shape and proves neither the private id nor name is serialized.
@@ -129,9 +130,11 @@ the destination archived between start and step.
 **Scenario:** A WS-A admin cannot preview or start a migration into WS-B and
 cannot distinguish the foreign destination from a missing destination.
 
-**Script:** Capture a legitimate WS-A preview request, replay it with the same
-actor's own session using SP-BOLT and a random missing target, then compare
-status, body shape, safe headers and median timing across 20 runs.
+**Script:** Capture a legitimate WS-A preview request, then use
+`scripts/verify-space-directory-leak-oracle.mjs` with POST bodies containing
+SP-BOLT and a random missing target. Replay both with the same actor's own
+session and compare status, body shape, body digest, safe headers and median
+timing across exactly 20 runs per target.
 
 **Automated evidence:** `lib/space-directory.test.ts`, case “rejects a
 cross-tenant destination with the same response as an unknown space”.
@@ -160,6 +163,9 @@ remain open.
 ## Local and CI evidence
 
 - PR #211 and PR #212 completed all four required CI checks before merge.
+- `lib/space-directory-leak-oracle.test.ts` proves the executable live oracle
+  performs exactly 20 interleaved requests per target, emits no URL/body/cookie,
+  passes identical generic responses and fails a distinguishable foreign target.
 - On current main `0509f275f3d5e3e6f6c4a4adec86b863a8d572dc`, the focused
   space-directory, home UI and workspace-search run passes 13 tests across
   three files.
