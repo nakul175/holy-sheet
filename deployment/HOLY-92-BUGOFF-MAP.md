@@ -60,8 +60,13 @@ the old page and published URLs.
 **Automated evidence:** `lib/space-directory.test.ts`, case “previews access
 changes and moves a page tree with redirects, keeping trash trashed”.
 
-**Current result:** Blocked / Not Run on staging. The signed-in admin UI is
-present, but the named disposable fixture tree is not provisioned.
+**Current result:** Blocked / Not Run overall on staging. On 04 Nov 2026 IST,
+the normal OIDC route established a signed-in staging admin session and a
+non-mutating preview of the existing synthetic root
+`ZZ-TEST HOLY-92 staging migration 20261103` into Product returned 2 pages,
+0 broken references, 2 redirects, and nobody gaining or losing access. No job
+was started and no page moved. Execution, resume and old-URL checks still need
+the isolated N47 fixture and therefore remain open.
 
 ## F04 — Private space existence hidden (AC4)
 
@@ -161,8 +166,11 @@ remain open.
 - The current-main full regression previously passed 2,199 tests in 372 files,
   with 59 tests / 5 files explicitly skipped by their existing opt-in gates.
 - A signed-in staging admin session renders the Spaces directory and migration
-  wizard. That observation proves deployment/UI presence only, not the U-VI,
-  revocation, cross-tenant or leak-oracle cases above.
+  wizard. A non-mutating preview against the existing synthetic HOLY-92 tree
+  returned 2 pages, 0 broken references, 2 redirects and no access changes; no
+  job was started. That partial result proves deployment/UI and preview behavior
+  only, not execution/resume or the U-VI, revocation, cross-tenant and
+  leak-oracle cases above.
 - Anonymous staging and production endpoints respond through Caddy without a
   503. Anonymous health is not signed-in acceptance and is recorded only as a
   service-availability observation.
