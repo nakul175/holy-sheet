@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import SpaceHome, { SpaceHomePins } from "../components/space-home";
-import { SPACE_HOME_PAGE_UNAVAILABLE, SPACE_HOME_REFRESH_MS, SPACE_HOME_UNAVAILABLE, type SpaceHomePinView, type SpaceHomeView } from "../lib/space-home-shared";
+import { SPACE_HOME_LOAD_FAILED, SPACE_HOME_PAGE_UNAVAILABLE, SPACE_HOME_REFRESH_MS, SPACE_HOME_UNAVAILABLE, type SpaceHomePinView, type SpaceHomeView } from "../lib/space-home-shared";
 
 const fetchMock = vi.fn();
 afterEach(() => {
@@ -19,7 +19,7 @@ async function render(node: ReturnType<typeof createElement>) {
   document.body.append(host);
   const root: Root = createRoot(host);
   await act(async () => root.render(node));
-  return { host, unmount: async () => { await act(async () => root.unmount()); host.remove(); } };
+  return { host, rerender: async (next: ReturnType<typeof createElement>) => { await act(async () => root.render(next)); }, unmount: async () => { await act(async () => root.unmount()); host.remove(); } };
 }
 
 function pins(ids: string[]): SpaceHomePinView[] {
@@ -146,5 +146,38 @@ it("shows a true permission denial without rendering readable space content", as
   expect(view.host.querySelector("[role='alert']")?.textContent).toBe("You do not have access to this space");
   expect(view.host.textContent).not.toContain("No overview page has been set");
   expect(view.host.querySelector(".space-home-widgets")).toBeNull();
+  await view.unmount();
+});
+
+it("reports transport failures neutrally instead of calling the space restricted", async () => {
+  vi.stubGlobal("fetch", fetchMock);
+  fetchMock.mockRejectedValueOnce(new TypeError("network failed"));
+  const view = await render(createElement(SpaceHome, { workspaceId: "ws-a", spaceId: "sp-ops" }));
+  await act(async () => { await Promise.resolve(); });
+  expect(view.host.querySelector("[role='alert']")?.textContent).toBe(SPACE_HOME_LOAD_FAILED);
+  expect(view.host.textContent).not.toContain(SPACE_HOME_UNAVAILABLE);
+  expect(view.host.querySelector(".space-home-widgets")).toBeNull();
+  await view.unmount();
+});
+
+it("hides the prior space immediately while a route switch is loading", async () => {
+  vi.stubGlobal("fetch", fetchMock);
+  let finishNext: (response: Response) => void = () => undefined;
+  const first: SpaceHomeView = {
+    workspaceId: "ws-a", spaceId: "sp-one", spaceName: "First space", canManage: false,
+    archived: false, archivedAtIst: null, canUnarchive: false, home: null,
+    widgets: { pinned: [], recent: [], recordViews: [], owners: [] }, pinCandidates: [],
+  };
+  fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(first), { status: 200, headers: { "Content-Type": "application/json" } }));
+  const view = await render(createElement(SpaceHome, { workspaceId: "ws-a", spaceId: "sp-one" }));
+  await act(async () => { await Promise.resolve(); });
+  expect(view.host.textContent).toContain("First space");
+  fetchMock.mockImplementationOnce(() => new Promise<Response>(resolve => { finishNext = resolve; }));
+  await view.rerender(createElement(SpaceHome, { workspaceId: "ws-a", spaceId: "sp-two" }));
+  expect(view.host.textContent).not.toContain("First space");
+  expect(view.host.textContent).toContain("Opening space home…");
+  const second = { ...first, spaceId: "sp-two", spaceName: "Second space" };
+  await act(async () => finishNext(new Response(JSON.stringify(second), { status: 200, headers: { "Content-Type": "application/json" } })));
+  expect(view.host.textContent).toContain("Second space");
   await view.unmount();
 });

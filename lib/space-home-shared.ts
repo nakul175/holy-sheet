@@ -5,6 +5,7 @@ export const SPACE_HOME_DESCRIPTION = "Overview of this space for people who jus
 export const SPACE_HOME_START = "Start here";
 export const SPACE_HOME_INTRO = "Begin with the pinned pages, recent updates, and the people who keep this space current.";
 export const SPACE_HOME_UNAVAILABLE = "Space is restricted or unavailable";
+export const SPACE_HOME_LOAD_FAILED = "Space home could not be loaded. Try again.";
 export const SPACE_HOME_PAGE_UNAVAILABLE = "Page is restricted or unavailable";
 export const SPACE_HOME_NOT_ALLOWED = "Not allowed";
 /** Same recheck cadence as other HOLY-4 surfaces. The next read drops a revoked reader. */

@@ -6,6 +6,7 @@ import UiIcon from "./ui-icon";
 import {
   dropPin,
   movePin,
+  SPACE_HOME_LOAD_FAILED,
   SPACE_HOME_REFRESH_MS,
   SPACE_HOME_UNAVAILABLE,
   type SpaceHomePinView,
@@ -69,7 +70,7 @@ export function SpaceHomePins({ pins, canManage, busy, onReorder, onUnpin, onSet
 export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: string; spaceId: string }) {
   const [home, setHome] = useState<SpaceHomeView | null>(null);
   const [reload, setReload] = useState(0);
-  const [unavailable, setUnavailable] = useState("");
+  const [unavailable, setUnavailable] = useState<{ endpoint: string; message: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [candidate, setCandidate] = useState("");
@@ -80,19 +81,19 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
       void requestJson<SpaceHomeView>(endpoint).then(data => {
         if (!alive) return;
         setHome(data);
-        setUnavailable("");
+        setUnavailable(null);
         setError("");
         setCandidate(current => data.pinCandidates.some(item => item.pageId === current) ? current : data.pinCandidates[0]?.pageId ?? "");
       }).catch(reason => {
         if (!alive) return;
         setHome(null);
-        setUnavailable(reason instanceof ApiError ? reason.message : SPACE_HOME_UNAVAILABLE);
+        setUnavailable({ endpoint, message: reason instanceof ApiError && (reason.status === 403 || reason.status === 404) ? reason.message : SPACE_HOME_LOAD_FAILED });
       });
     };
     load();
     const timer = window.setInterval(load, SPACE_HOME_REFRESH_MS);
     const refresh = () => { if (document.visibilityState === "visible") load(); };
-    const logout = () => { setHome(null); setUnavailable(SPACE_HOME_UNAVAILABLE); };
+    const logout = () => { setHome(null); setUnavailable({ endpoint, message: SPACE_HOME_UNAVAILABLE }); };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("holy-sheet:logout", logout);
@@ -110,42 +111,44 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
     try {
       const data = await requestJson<SpaceHomeView>(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, operationId: crypto.randomUUID() }) });
       setHome(data);
-      setUnavailable("");
+      setUnavailable(null);
       setCandidate(data.pinCandidates[0]?.pageId ?? "");
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 404) {
         setHome(null);
-        setUnavailable(reason.message);
+        setUnavailable({ endpoint, message: reason.message });
         setError("");
       } else setError(reason instanceof ApiError ? reason.message : "Space home could not be saved.");
     } finally {
       setBusy(false);
     }
   }
+  const shownHome = home?.workspaceId === workspaceId && home.spaceId === spaceId ? home : null;
+  const shownUnavailable = unavailable?.endpoint === endpoint ? unavailable.message : "";
   return <main className="space-home-page">
     <a className="skip-link" href="#space-home">Skip to space home</a>
     <p><a href="/">Holy Sheet</a> / <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces`}>Spaces</a> / <span>Space</span></p>
-    {unavailable && <p role="alert">{unavailable}</p>}
-    {!home && !unavailable && <p role="status">Opening space home…</p>}
-    {home && <div id="space-home">
-      <h1>{home.spaceName}</h1>
+    {shownUnavailable && <p role="alert">{shownUnavailable}</p>}
+    {!shownHome && !shownUnavailable && <p role="status">Opening space home…</p>}
+    {shownHome && <div id="space-home">
+      <h1>{shownHome.spaceName}</h1>
       <p className="space-home-purpose">Shared knowledge, working notes, and decisions for everyone in this space.</p>
-      {home.archived && <p className="space-archive-banner" role="status">{SPACE_ARCHIVED_BANNER}{home.archivedAtIst ? ` Archived ${home.archivedAtIst}.` : ""} {home.canUnarchive && <button type="button" disabled={busy} onClick={() => void requestJson(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/spaces/directory`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "unarchive", spaceId, operationId: crypto.randomUUID() }) }).then(() => setReload(value => value + 1)).catch(reason => setError(reason instanceof ApiError ? reason.message : "This space is archived and read-only"))}>Unarchive</button>}</p>}
+      {shownHome.archived && <p className="space-archive-banner" role="status">{SPACE_ARCHIVED_BANNER}{shownHome.archivedAtIst ? ` Archived ${shownHome.archivedAtIst}.` : ""} {shownHome.canUnarchive && <button type="button" disabled={busy} onClick={() => void requestJson(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/spaces/directory`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "unarchive", spaceId, operationId: crypto.randomUUID() }) }).then(() => setReload(value => value + 1)).catch(reason => setError(reason instanceof ApiError ? reason.message : "This space is archived and read-only"))}>Unarchive</button>}</p>}
       {error && <p role="alert">{error}</p>}
       <section className="space-home-overview" aria-labelledby="space-home-overview-heading">
         <h2 id="space-home-overview-heading">Overview</h2>
-        {home.home ? <>
-          <p className="space-home-kicker">{home.home.templateName ?? "Space page"}</p>
-          <h3>{home.home.title}</h3>
-          {home.home.summary && <p>{home.home.summary}</p>}
-          {home.home.headings.map(heading => <p key={heading}>{heading}</p>)}
-          <p className="space-home-meta">Updated {home.home.updatedAtIst}</p>
-          <a href={`/pages/${encodeURIComponent(home.home.pageId)}`}>Open {home.home.title}</a>
+        {shownHome.home ? <>
+          <p className="space-home-kicker">{shownHome.home.templateName ?? "Space page"}</p>
+          <h3>{shownHome.home.title}</h3>
+          {shownHome.home.summary && <p>{shownHome.home.summary}</p>}
+          {shownHome.home.headings.map(heading => <p key={heading}>{heading}</p>)}
+          <p className="space-home-meta">Updated {shownHome.home.updatedAtIst}</p>
+          <a href={`/pages/${encodeURIComponent(shownHome.home.pageId)}`}>Open {shownHome.home.title}</a>
         </> : <div className="space-home-overview-empty">
           <p>No overview page has been set for this space.</p>
-          {home.canManage ? <>
-            {!!home.pinCandidates.length && <form onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "set-home", pageId: candidate }); }}>
-              <label>Choose an existing page <select aria-label="Choose an existing overview page" value={candidate} disabled={busy} onChange={event => setCandidate(event.target.value)}>{home.pinCandidates.map(item => <option key={item.pageId} value={item.pageId}>{item.title}</option>)}</select></label>
+          {shownHome.canManage ? <>
+            {!!shownHome.pinCandidates.length && <form onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "set-home", pageId: candidate }); }}>
+              <label>Choose an existing page <select aria-label="Choose an existing overview page" value={candidate} disabled={busy} onChange={event => setCandidate(event.target.value)}>{shownHome.pinCandidates.map(item => <option key={item.pageId} value={item.pageId}>{item.title}</option>)}</select></label>
               <button type="submit" disabled={busy || !candidate}>Set as overview</button>
             </form>}
             <p><a href="/workspaces">Create a page</a>, then return here to set it as the overview.</p>
@@ -155,13 +158,13 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
       <div className="space-home-widgets">
         <section aria-labelledby="space-home-pinned-heading">
           <h2 id="space-home-pinned-heading">Pinned</h2>
-          {home.canManage && !!home.pinCandidates.length && <form className="space-home-pin-form" onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "pin", pageId: candidate }); }}>
-            <label>Pin a page <select aria-label="Pin a page" value={candidate} disabled={busy} onChange={event => setCandidate(event.target.value)}>{home.pinCandidates.map(item => <option key={item.pageId} value={item.pageId}>{item.title}</option>)}</select></label>
+          {shownHome.canManage && !!shownHome.pinCandidates.length && <form className="space-home-pin-form" onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "pin", pageId: candidate }); }}>
+            <label>Pin a page <select aria-label="Pin a page" value={candidate} disabled={busy} onChange={event => setCandidate(event.target.value)}>{shownHome.pinCandidates.map(item => <option key={item.pageId} value={item.pageId}>{item.title}</option>)}</select></label>
             <button type="submit" disabled={busy || !candidate}>Pin page</button>
           </form>}
           <SpaceHomePins
-            pins={home.widgets.pinned}
-            canManage={home.canManage}
+            pins={shownHome.widgets.pinned}
+            canManage={shownHome.canManage}
             busy={busy}
             onReorder={pageIds => void send({ action: "reorder", pageIds })}
             onUnpin={pageId => void send({ action: "unpin", pageId })}
@@ -170,16 +173,16 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
         </section>
         <section aria-labelledby="space-home-recent-heading">
           <h2 id="space-home-recent-heading">Recently updated</h2>
-          {!home.widgets.recent.length && <p>No recent updates.</p>}
-          {!!home.widgets.recent.length && <ul className="space-home-list">{home.widgets.recent.map(item => <li key={item.pageId}>
+          {!shownHome.widgets.recent.length && <p>No recent updates.</p>}
+          {!!shownHome.widgets.recent.length && <ul className="space-home-list">{shownHome.widgets.recent.map(item => <li key={item.pageId}>
             <a href={`/pages/${encodeURIComponent(item.pageId)}`}>{item.title}</a>
             <span>{item.editorName ? `${item.editorName} · ` : ""}{item.updatedAtIst}</span>
           </li>)}</ul>}
         </section>
         <section aria-labelledby="space-home-views-heading">
           <h2 id="space-home-views-heading">Key record views</h2>
-          {!home.widgets.recordViews.length && <p>No record views.</p>}
-          {!!home.widgets.recordViews.length && <ul className="space-home-list">{home.widgets.recordViews.map(item => <li key={`${item.pageId}:${item.viewId}`}>
+          {!shownHome.widgets.recordViews.length && <p>No record views.</p>}
+          {!!shownHome.widgets.recordViews.length && <ul className="space-home-list">{shownHome.widgets.recordViews.map(item => <li key={`${item.pageId}:${item.viewId}`}>
             <span className="space-home-pin-icon" aria-hidden="true"><UiIcon name="grid" /></span>
             <a href={`/pages/${encodeURIComponent(item.pageId)}`}>{item.pageTitle}</a>
             <span>{item.collectionId} · {item.layout}</span>
@@ -187,8 +190,8 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
         </section>
         <section aria-labelledby="space-home-owners-heading">
           <h2 id="space-home-owners-heading">Owners</h2>
-          {!home.widgets.owners.length && <p>No owners to show.</p>}
-          {!!home.widgets.owners.length && <ul className="space-home-list">{home.widgets.owners.map(owner => <li key={owner.userId}>
+          {!shownHome.widgets.owners.length && <p>No owners to show.</p>}
+          {!!shownHome.widgets.owners.length && <ul className="space-home-list">{shownHome.widgets.owners.map(owner => <li key={owner.userId}>
             <span className="space-home-pin-icon" aria-hidden="true"><UiIcon name="user" /></span>
             <span>{owner.name}</span>
             <span>{owner.role === "leader" ? "Leader" : "Page owner"}</span>
