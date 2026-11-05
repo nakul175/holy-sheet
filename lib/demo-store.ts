@@ -14,7 +14,7 @@ let pages: Page[] = [{
   spaceId: "space-product",
   spaceName: "Product",
   parentPageId: null,
-  title: "Welcome to Holy Sheet",
+  title: "Welcome to Aplyd Pages",
   visibility: "private",
   version: 1,
   updatedAt: new Date().toISOString(),

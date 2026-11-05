@@ -131,7 +131,7 @@ export default function SpaceDirectory({ workspaceId, includeArchivedInitially =
 
   return <main className="space-directory">
     <a className="skip-link" href="#space-directory">Skip to spaces</a>
-    <p><a href="/">Holy Sheet</a> / <span>Spaces</span></p>
+    <p><a href="/">Aplyd Pages</a> / <span>Spaces</span></p>
     <h1 id="space-directory">Spaces</h1>
     <p>Open spaces can be joined. Restricted spaces show Request access. Private spaces you are not in stay hidden.</p>
     <label><input type="checkbox" checked={includeArchived} onChange={event => setIncludeArchived(event.target.checked)} /> Include archived</label>

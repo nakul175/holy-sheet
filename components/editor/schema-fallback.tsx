@@ -22,7 +22,7 @@ export default function SchemaFallback({ title, document, schemaVersion }: { tit
     try { link.click(); } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
   }
   return <section aria-label="Read-only document preview">
-    <p className="document-warning" role="status">This page uses a different document version. This preview is read-only; open it in a compatible Holy Sheet version to edit. Some formatting or blocks may not appear here. The complete document data is preserved.</p>
+    <p className="document-warning" role="status">This page uses a different document version. This preview is read-only; open it in a compatible Aplyd Pages version to edit. Some formatting or blocks may not appear here. The complete document data is preserved.</p>
     <button onClick={download}>Download document data</button>
     <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'inherit' }}>{documentPreviewText(document) || 'No text preview is available for these blocks.'}</pre>
   </section>;

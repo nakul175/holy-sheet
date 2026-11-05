@@ -1,4 +1,7 @@
-# Holy Sheet
+# Aplyd Pages
+
+> Product name: **Aplyd Pages**. Existing `holy-sheet`, `HOLY`, `HS_*`, database,
+> URL, event, package, and deployment identifiers remain stable for compatibility.
 
 Standalone document pages for the Aplyd productivity suite. HOLY-1 pages and HOLY-2 search are on main. This branch develops HOLY-3 rich documents and is **not release qualified yet**.
 
@@ -32,6 +35,6 @@ Pages are private by default. `version` is used for optimistic concurrency: a st
 
 ## SHO integration contract
 
-SHO can launch the same create-page flow with an optional source task ID, then retain the returned Holy Sheet page ID and permanent URL. The page always belongs to one selected Holy Sheet workspace and space; users may create a new space during the flow. SHO does not own or duplicate document content.
+SHO can launch the same create-page flow with an optional source task ID, then retain the returned Aplyd Pages page ID and permanent URL. The page always belongs to one selected Aplyd Pages workspace and space; users may create a new space during the flow. SHO does not own or duplicate document content.
 
 `/embed/pages/:id` renders the same rich editor component with reduced navigation. This is an integration surface; the actual SHO host and suite login adapter still require integration and qualification.

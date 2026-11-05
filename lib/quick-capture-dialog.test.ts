@@ -36,7 +36,7 @@ beforeEach(() => {
       offline: "An offline capture stays as a local draft on this device.",
       schedules: "Existing schedules stay paused. Capture does not activate a schedule.",
       recoverable: "A recoverable draft is kept when the version changes.",
-      provenance: "Holy Sheet does not open that address.",
+      provenance: "Aplyd Pages does not open that address.",
       assets: "Source assets are imported only when you select them.",
       policy: { version: 1, kinds: ["text", "link", "note"], defaultDestination: "space", visibility: "private", inheritExternal: false, offlinePolicy: "local-draft", recoverableDraft: null },
       destinations: { spaces: [{ id: "space-private", name: "My pages" }], forms: [] },

@@ -1,4 +1,4 @@
-name: Validate Holy Sheet
+name: Validate Aplyd Pages
 on:
   pull_request:
   push:
@@ -55,7 +55,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Qualify fail-closed Holy Sheet release guard
+      - name: Qualify fail-closed Aplyd Pages release guard
         run: npm run test:release-guard
       - name: Qualify synthetic PDF layout and preserve rendered pages
         run: |

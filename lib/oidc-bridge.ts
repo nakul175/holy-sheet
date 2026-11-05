@@ -17,9 +17,9 @@ function signedIn(destination:string){
  // The route is a standalone document: notify other same-origin tabs before opening
  // the new identity. Only an anonymous marker and an allowlisted path reach JavaScript.
  const script=`try{localStorage.setItem('hs-session-signout',crypto.randomUUID())}catch{}location.replace(${JSON.stringify(destination)});`;
- return new Response(`<!doctype html><html lang="en"><title>Holy Sheet</title><main><h1>Signed in.</h1><p>Opening Holy Sheet…</p><noscript><a href="${destination}">Continue to Holy Sheet</a></noscript></main><script nonce="${nonce}">${script}</script></html>`,{headers:{...headers,'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':`default-src 'none'; script-src 'nonce-${nonce}'; frame-ancestors 'none'; base-uri 'none'`}});
+ return new Response(`<!doctype html><html lang="en"><title>Aplyd Pages</title><main><h1>Signed in.</h1><p>Opening Aplyd Pages…</p><noscript><a href="${destination}">Continue to Aplyd Pages</a></noscript></main><script nonce="${nonce}">${script}</script></html>`,{headers:{...headers,'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':`default-src 'none'; script-src 'nonce-${nonce}'; frame-ancestors 'none'; base-uri 'none'`}});
 }
-function failure(status=503){return new Response('<!doctype html><html lang="en"><title>Holy Sheet sign-in</title><main><h1>Sign-in unavailable</h1><p>The sign-in request could not be completed. Return to Holy Sheet and try again.</p><a href="/">Return to Holy Sheet</a></main></html>',{status,headers:{...headers,'Content-Type':'text/html; charset=utf-8'}});}
+function failure(status=503){return new Response('<!doctype html><html lang="en"><title>Aplyd Pages sign-in</title><main><h1>Sign-in unavailable</h1><p>The sign-in request could not be completed. Return to Aplyd Pages and try again.</p><a href="/">Return to Aplyd Pages</a></main></html>',{status,headers:{...headers,'Content-Type':'text/html; charset=utf-8'}});}
 function origin(value:string|undefined){if(!value)throw Error('Missing origin');const url=new URL(value);if(url.protocol!=='https:'||url.username||url.password||url.origin!==value)throw Error('Invalid origin');return url.origin;}
 
 /** Confidential code/PKCE bridge. No refresh tokens, entitlement creation or email binding. */

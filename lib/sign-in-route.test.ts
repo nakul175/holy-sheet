@@ -1,7 +1,7 @@
 import { describe,expect,it } from 'vitest';
 import { GET } from '../app/auth/sign-in/route';
 
-describe('Holy Sheet sign-in entry',()=>{
+describe('Aplyd Pages sign-in entry',()=>{
  it('renders the branded Aplyd entry before starting OIDC',async()=>{
   const response=await GET(new Request('https://holy-sheet.example/auth/sign-in?next=%2Fpages%2Fwelcome'));
   const body=await response.text();

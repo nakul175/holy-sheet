@@ -132,7 +132,7 @@ export default function QuickCaptureDialog({ workspaceId, pageId, onClose }: { w
       <p>{catalogue?.offline ?? 'An offline capture stays as a local draft on this device. It is not an authoritative save until a permitted destination accepts it.'}</p>
       <p>{catalogue?.schedules ?? 'Existing schedules stay paused. Capture does not activate a schedule.'}</p>
       <p>{catalogue?.recoverable ?? 'A recoverable draft is kept when the version changes.'}</p>
-      <p>{catalogue?.provenance ?? 'Each capture records the source address, title, and time you supply. Holy Sheet does not open that address.'}</p>
+      <p>{catalogue?.provenance ?? 'Each capture records the source address, title, and time you supply. Aplyd Pages does not open that address.'}</p>
       <p>{catalogue?.assets ?? 'Source assets are imported only when you select them. Remote images, hidden form values, and cookies are not collected.'}</p>
       {catalogue?.drafts.length ? <p>A recoverable draft is kept for this capture.</p> : null}
       {error && <p role="alert">{error}</p>}
