@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-for(const width of [1366,1024,800,390,320])test(`all workspace screens fit and remain accessible at ${width}px`,async({page})=>{
+for(const width of [1920,1366,1024,800,390,320])test(`all workspace screens fit and remain accessible at ${width}px`,async({page})=>{
  await page.setViewportSize({width,height:768});
  for(const route of ['spaces','new','templates','snippets','people','invitations','handover']){
   await page.goto(`/workspaces/ws-aplyd/${route}`);
@@ -14,6 +14,19 @@ for(const width of [1366,1024,800,390,320])test(`all workspace screens fit and r
   expect(accessibility.violations.filter(v=>v.impact==='critical'||v.impact==='serious'),JSON.stringify(accessibility.violations)).toEqual([]);
   await page.screenshot({path:`artifacts/laptop-design/${route}-${width}.png`,fullPage:true});
  }
+});
+
+test('writing shell follows window resizing with tools open and closed',async({page})=>{
+ await page.goto('/pages/welcome');await expect(page.getByRole('textbox',{name:'Document content',exact:true})).toBeVisible();
+ for(const size of [{width:1920,height:1080},{width:1440,height:900},{width:1280,height:720}]){
+  await page.setViewportSize(size);
+  const open=page.getByRole('button',{name:'Open toolbox',exact:true});if(await open.isVisible())await open.click();
+  const geometry=await page.evaluate(()=>{const box=(s:string)=>document.querySelector(s)!.getBoundingClientRect();return {shell:box('.shell').right,header:box('.doc-header').right,nav:box('.sidebar').bottom,rail:box('.editor-toolbox').right,railBottom:box('.editor-toolbox').bottom,scroll:document.documentElement.scrollWidth,width:innerWidth,height:innerHeight,sidebarColor:getComputedStyle(document.querySelector('.sidebar')!).backgroundColor,newPageColor:getComputedStyle(document.querySelector('.laptop-create')!).backgroundColor};});
+  expect(geometry.shell).toBe(size.width);expect(geometry.header).toBe(size.width);expect(geometry.nav).toBe(size.height);expect(geometry.rail).toBe(size.width);expect(geometry.railBottom).toBe(size.height);expect(geometry.scroll).toBeLessThanOrEqual(size.width+1);expect(geometry.sidebarColor).toBe('rgb(44, 47, 113)');expect(geometry.newPageColor).toBe('rgb(217, 157, 41)');
+  const axe=await new AxeBuilder({page}).include('.laptop-document').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();expect(axe.violations.filter(v=>['serious','critical'].includes(v.impact??''))).toEqual([]);
+  await page.getByRole('button',{name:'Close toolbox',exact:true}).click();await expect(open).toBeFocused();await expect(page.locator('.editor-toolbox')).toBeHidden();expect(await page.locator('.laptop-toolbar-frame').evaluate(el=>el.getBoundingClientRect().right)).toBe(size.width);
+ }
+ await page.getByRole('button',{name:'Open toolbox',exact:true}).click();await page.screenshot({path:'artifacts/laptop-design/blue-gold-document.png',fullPage:true});
 });
 test('writing, tools, settings and subpages preserve the saved document',async({page,request,baseURL})=>{
  await page.setViewportSize({width:1366,height:768});
