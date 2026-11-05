@@ -57,10 +57,12 @@ it("renders a full depth-4 breadcrumb with links and a current page that is not 
   const onOpenPage = vi.fn();
   await render(createElement(BreadcrumbNav, { workspaceId: "ws", pageId: "p105", onOpenPage }));
   const nav = host.querySelector("nav[aria-label=Breadcrumb]")!;
-  expect([...nav.querySelectorAll("a")].map(link => link.textContent)).toEqual(["Product", "P-100", "P-103"]);
+  expect([...nav.querySelectorAll("a .breadcrumb-title")].map(title => title.textContent)).toEqual(["Product", "P-100", "P-103"]);
+  expect([...nav.querySelectorAll("a .breadcrumb-kind")].map(label => label.textContent)).toEqual(["Space", "Parent", "Parent"]);
   const current = nav.querySelector("[aria-current=page]");
   expect(current?.tagName).toBe("SPAN");
-  expect(current?.textContent).toBe("P-105");
+  expect(current?.querySelector(".breadcrumb-kind")?.textContent).toBe("Subpage");
+  expect(current?.querySelector(".breadcrumb-title")?.textContent).toBe("P-105");
   expect(current?.closest("a")).toBeNull();
   expect(nav.querySelector("[aria-label='Show middle pages']")).toBeNull();
   await act(async () => nav.querySelector<HTMLAnchorElement>("a[href='/pages/p100']")!.click());
@@ -148,7 +150,8 @@ it("does not put a hidden ancestor title or id in the breadcrumb DOM", async () 
   expect(html).not.toContain("Hidden root title");
   expect(html).not.toContain("hidden-root");
   expect(html).not.toContain("space-product");
-  expect(host.querySelector("[aria-current=page]")?.textContent).toBe("Visible leaf");
+  expect(host.querySelector("[aria-current=page] .breadcrumb-kind")?.textContent).toBe("Page");
+  expect(host.querySelector("[aria-current=page] .breadcrumb-title")?.textContent).toBe("Visible leaf");
 });
 
 it("shows trash to a permitted reader and the same unavailable sentence otherwise", async () => {
