@@ -139,3 +139,5 @@
 :is(.laptop-nav,.laptop-document .sidebar) .page-tree-add{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:5px 8px;border:0;border-radius:6px;background:transparent;color:var(--hs-secondary);font:inherit;font-size:11px;cursor:pointer}
 :is(.laptop-nav,.laptop-document .sidebar) .page-tree-add:hover{background:#ececf5;color:var(--hs-indigo)}
 :is(.laptop-nav,.laptop-document .sidebar) .page-tree-add svg{width:14px;height:14px;color:inherit}
+/* Dialogs opened from mobile navigation must sit above its drawer and scrim. */
+.laptop-document .overlay,.laptop-workspace .overlay{z-index:40}
