@@ -42,3 +42,20 @@ for(const width of [320,640])test(`keyboard, screen reader and narrow/zoom-equiv
 test('1000 headings open within a bounded interaction time and navigate without a document save',async({page,request,baseURL})=>{
  const p=(await fixture(request,baseURL!,Array.from({length:1000},(_,i)=>heading('large-'+i,'Section '+i,i%3+1)))).page;await page.goto('/pages/'+p.id);await expect(page.getByRole('textbox',{name:'Document content'})).toBeVisible();const started=Date.now(),dialog=await openOutline(page);await expect(dialog.locator('nav button[data-outline-jump]')).toHaveCount(1000,{timeout:3000});const elapsed=Date.now()-started;const metricsPath=test.info().outputPath('outline-1000-render-ms.json');await writeFile(metricsPath,JSON.stringify({elapsedMs:elapsed,headings:1000,environment:'local browser test, includes automation round trips'}));await test.info().attach('outline-1000-render-ms',{path:metricsPath,contentType:'application/json'});expect(elapsed).toBeLessThan(3000);await dialog.getByRole('button',{name:'Heading 1: Section 999, 1000 of 1000',exact:true}).click();await expect(dialog.getByRole('button',{name:'Heading 1: Section 999, 1000 of 1000',exact:true})).toHaveAttribute('aria-current','location');expect((await(await request.get(`/api/v1/pages/${p.id}/document`)).json()).page.version).toBe(p.version);
 });
+
+test('closing temporary sections preserves the viewport in a short document',async({page,request,baseURL})=>{
+ const content=sample();content[content.length-1]=heading('short-tail','Tail',3);
+ const data=await fixture(request,baseURL!,content),p=data.page,key=`${data.actorId}:${p.workspaceId}:${p.id}`;
+ await page.addInitScript(({key,id})=>{for(const suffix of ['outer','inner'])localStorage.setItem(`hs-collapse:${key}:${id}-${suffix}`,'closed');},{key,id:p.id});
+ await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/pages/'+p.id);await expect(page.getByRole('textbox',{name:'Document content',exact:true})).toBeVisible();
+ const dialog=await openOutline(page);await dialog.getByRole('button',{name:'Heading 2: Repeated, 2 of 5',exact:true}).click();
+ const before=await page.evaluate(()=>({y:scrollY,height:document.documentElement.scrollHeight,viewport:innerHeight}));
+ await dialog.getByRole('button',{name:'Close page outline'}).click();await expect(dialog).toHaveCount(0);
+ const after=await page.evaluate(()=>({y:scrollY,height:document.documentElement.scrollHeight,viewport:innerHeight}));
+ await writeFile(test.info().outputPath('short-document-scroll.json'),JSON.stringify({before,after}));
+ expect(Math.abs(after.y-before.y)).toBeLessThan(3);
+ await expect(page.locator(`.rich-prose h2[data-id="${p.id}-nested-target"]`)).toBeHidden();
+ await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
+ await expect.poll(()=>page.locator('.document>article').evaluate(node=>(node as HTMLElement).style.minHeight)).toBe('');
+ expect((await(await request.get(`/api/v1/pages/${p.id}/document`)).json()).page.version).toBe(p.version);
+});
