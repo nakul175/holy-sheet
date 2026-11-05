@@ -261,7 +261,8 @@ function RichEditorCore({formatHost,toolsHost,document,editable,onChange,onColla
   const insertKind=(type:string)=>{const item=catalogue.find(candidate=>candidate.type===type);if(item)insert(item);};
   const inspect=(target:EventTarget|null,event:{preventDefault():void;stopPropagation():void})=>{const link=inspectedTextLink(target);if(!link)return;event.preventDefault();event.stopPropagation();link.anchor.focus({preventScroll:true});setInspectedLink(link);};
   const formatting=<div className="laptop-format-row">{editable&&toolbar(!!formatHost)}<div className="editor-actions" role="toolbar" aria-label="Document tools">
-      {button("Undo","↶",()=>editor.chain().focus().undo().run(),false,!state?.undo)}{button("Redo","↷",()=>editor.chain().focus().redo().run(),false,!state?.redo)}
+      <button type="button" className="history-action" aria-label="Undo" title="Undo" disabled={!editable||!state?.undo} onMouseDown={event=>event.preventDefault()} onClick={()=>editor.chain().focus().undo().run()}><UiIcon name="undo"/><span>Undo</span></button>
+      <button type="button" className="history-action" aria-label="Redo" title="Redo" disabled={!editable||!state?.redo} onMouseDown={event=>event.preventDefault()} onClick={()=>editor.chain().focus().redo().run()}><UiIcon name="redo"/><span>Redo</span></button>
       <ReadingGuideControl model={readingGuide}/>
       <button ref={findButton} className="find-button" onClick={()=>{savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);}}>⌕ Find</button>
     </div>

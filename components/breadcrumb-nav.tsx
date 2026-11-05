@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { requestJson } from "./editor/use-document-session";
 import { enqueuePageRead, pageReadDepth } from "../lib/page-read-queue";
 import {
@@ -32,12 +32,25 @@ function useMobile() {
   return mobile;
 }
 
-function CrumbLink({ segment, onOpenPage, onOpenHref, children }: { segment: BreadcrumbReadable; onOpenPage?: (id: string) => void; onOpenHref?: (href: string) => void; children?: string }) {
+function CrumbLink({ segment, onOpenPage, onOpenHref, children, ariaLabel }: { segment: BreadcrumbReadable; onOpenPage?: (id: string) => void; onOpenHref?: (href: string) => void; children?: ReactNode; ariaLabel?: string }) {
   return <a className="breadcrumb-link" href={segment.href} onClick={event => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
     if (segment.kind === "page" && onOpenPage) { event.preventDefault(); onOpenPage(segment.id); return; }
     if (segment.kind === "space" && onOpenHref) { event.preventDefault(); onOpenHref(segment.href); }
-  }}>{children ?? segment.title}</a>;
+  }} aria-label={ariaLabel}>{children ?? segment.title}</a>;
+}
+
+function hierarchyLabel(segment: BreadcrumbReadable, index: number, currentAt: number) {
+  if (segment.kind === "space") return "Space";
+  if (segment.current) return currentAt > 1 ? "Subpage" : "Page";
+  return "Parent";
+}
+
+function LabeledCrumb({ segment, index, currentAt, onOpenPage, onOpenHref }: { segment: BreadcrumbReadable; index: number; currentAt: number; onOpenPage?: (id: string) => void; onOpenHref?: (href: string) => void }) {
+  const label = hierarchyLabel(segment, index, currentAt);
+  const content = <><span className="breadcrumb-kind" aria-hidden="true">{label}</span><span className="breadcrumb-title">{segment.title}</span></>;
+  if (segment.current) return <span className="breadcrumb-current" aria-current="page" aria-label={`${label}: ${segment.title}`}>{content}</span>;
+  return <CrumbLink segment={segment} ariaLabel={`${label}: ${segment.title}`} onOpenPage={onOpenPage} onOpenHref={onOpenHref}>{content}</CrumbLink>;
 }
 
 function SiblingMenu({ segment, open, onToggle, onOpenPage, onOpenHref, onShowAll }: { segment: BreadcrumbReadable; open: boolean; onToggle: () => void; onOpenPage?: (id: string) => void; onOpenHref?: (href: string) => void; onShowAll: () => void }) {
@@ -92,6 +105,7 @@ export default function BreadcrumbNav({ workspaceId, pageId, onOpenPage, onOpenH
   useEffect(() => { setMenu(null); }, [view?.state, view?.state === "ready" ? view.treeVersion : 0, mobile]);
 
   const presentation = view?.state === "ready" ? presentTrail(view.segments, mobile) : null;
+  const currentAt = view?.state === "ready" ? view.segments.findIndex(segment => segment.readable && segment.current) : -1;
   const toggle = (key: string) => setMenu(current => current === key ? null : key);
   const showAll = (id: string) => { setExpandedSibling(id); setMenu(`siblings:${id}`); };
   return <nav className="breadcrumbs" aria-label="Breadcrumb" data-layout={mobile ? "mobile" : "desktop"} aria-busy={view || failed ? undefined : true} onKeyDown={event => { if (event.key === "Escape" && menu) { event.preventDefault(); event.stopPropagation(); setMenu(null); } }}>
@@ -112,8 +126,9 @@ export default function BreadcrumbNav({ workspaceId, pageId, onOpenPage, onOpenH
           </ul>}
         </li>;
         const segment = item.segment;
+        const segmentIndex = view?.state === "ready" ? view.segments.findIndex(candidate => candidate.readable && candidate.id === segment.id) : index;
         return <li key={segment.id}>{separator}
-          {segment.current ? <span className="breadcrumb-current" aria-current="page">{segment.title}</span> : <CrumbLink segment={segment} onOpenPage={onOpenPage} onOpenHref={onOpenHref}/>}
+          <LabeledCrumb segment={segment} index={segmentIndex} currentAt={currentAt} onOpenPage={onOpenPage} onOpenHref={onOpenHref}/>
           <SiblingMenu segment={segment} open={menu === `siblings:${segment.id}`} onToggle={() => toggle(`siblings:${segment.id}`)} onOpenPage={onOpenPage} onOpenHref={onOpenHref} onShowAll={() => showAll(segment.id)}/>
         </li>;
       })}
@@ -127,7 +142,7 @@ function Back({ parent, onOpenPage, onOpenHref }: { parent: BreadcrumbSegment | 
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
     if (parent.kind === "page" && onOpenPage) { event.preventDefault(); onOpenPage(parent.id); }
     if (parent.kind === "space" && onOpenHref) { event.preventDefault(); onOpenHref(parent.href); }
-  }}>‹ {parent.title}</a>;
+  }}><span aria-hidden="true">‹</span><span className="breadcrumb-kind" aria-hidden="true">{parent.kind === "space" ? "Space" : "Parent"}</span><span className="breadcrumb-title">{parent.title}</span></a>;
 }
 
 /** Open-page failure. Trash is shown only when this reader may know; every other failure keeps the caller's neutral message. */
