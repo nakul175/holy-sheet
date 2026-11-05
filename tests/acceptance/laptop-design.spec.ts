@@ -28,6 +28,35 @@ test('writing shell follows window resizing with tools open and closed',async({p
  }
  await page.getByRole('button',{name:'Open toolbox',exact:true}).click();await page.screenshot({path:'artifacts/laptop-design/blue-gold-document.png',fullPage:true});
 });
+test('collapsing page navigation releases its grid column with either toolbox state',async({page})=>{
+ await page.goto('/pages/welcome');await expect(page.getByRole('textbox',{name:'Document content',exact:true})).toBeVisible();
+ for(const width of [1366,1920,800]){
+  await page.setViewportSize({width,height:900});
+  await page.getByRole('button',{name:'Collapse pages',exact:true}).click();await expect(page.locator('.sidebar')).toBeHidden();
+  for(const toolboxOpen of [true,false]){
+   const toggle=page.getByRole('button',{name:'Open toolbox',exact:true});
+   if(toolboxOpen&&await toggle.isVisible())await toggle.click();
+   if(!toolboxOpen)await page.getByRole('button',{name:'Close toolbox',exact:true}).click();
+   const bounds=await page.locator('.document').boundingBox();expect(bounds!.x).toBe(0);expect(bounds!.width).toBe(width);
+   expect(await page.locator('.doc-header').evaluate(el=>el.getBoundingClientRect().left)).toBe(0);
+   expect(await page.locator('.laptop-toolbar-frame').evaluate(el=>el.getBoundingClientRect().left)).toBe(0);
+   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width+1);
+   await expect(page.getByRole('button',{name:'Open page navigation',exact:true})).toBeVisible();
+  }
+  await page.getByRole('button',{name:'Open page navigation',exact:true}).click();await expect(page.locator('.sidebar')).toBeVisible();
+  const sidebar=await page.locator('.sidebar').boundingBox(),documentBounds=await page.locator('.document').boundingBox();expect(documentBounds!.x).toBe(sidebar!.width);expect(documentBounds!.x+documentBounds!.width).toBe(width);
+ }
+});
+
+test('embedded document occupies its single-column shell',async({page})=>{
+ await page.goto('/embed/pages/welcome');await expect(page.getByRole('textbox',{name:'Document content',exact:true})).toBeVisible();
+ for(const width of [1366,1920,800]){
+  await page.setViewportSize({width,height:900});
+  const bounds=await page.locator('.document').boundingBox();expect(bounds!.x).toBe(0);expect(bounds!.width).toBe(width);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width+1);
+ }
+});
+
 test('writing, tools, settings and subpages preserve the saved document',async({page,request,baseURL})=>{
  await page.setViewportSize({width:1366,height:768});
  const origin=baseURL!;
