@@ -6,8 +6,7 @@ body { font-family:var(--font-public-sans),system-ui,sans-serif; -webkit-font-sm
 .suite-bar { position:fixed; inset:0 0 auto; height:64px; display:flex; align-items:center; gap:18px; padding:0 24px; z-index:8; color:white; background:var(--navy); border-bottom:1px solid #ffffff14; }
 .suite-brand { display:flex; align-items:center; gap:11px; flex-shrink:0; color:white; text-decoration:none; font-weight:650; font-size:17px; letter-spacing:-.025em; }
 .suite-brand:hover { color:white; }
-.suite-mark { display:grid; place-items:center; width:32px; height:36px; border:1px solid #ffffff99; border-radius:5px; position:relative; }
-.suite-mark:after { content:''; position:absolute; height:7px; width:7px; right:-1px; top:-1px; background:var(--gold); border-radius:0 4px 0 3px; }
+.suite-brand .holy-sheet-brand-logo { width:48px; height:48px; flex:0 0 48px; }
 .suite-divider { width:1px; height:24px; background:#ffffff30; }
 .suite-workspace { color:#e1e2f0; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .suite-actions { display:flex; align-items:center; gap:12px; margin-left:auto; }
@@ -337,8 +336,6 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
  .shell { display:block; padding-top:64px; }
  .suite-bar { height:64px; gap:10px; padding:0 14px; }
  .suite-brand { font-size:15px; gap:8px; }
- .suite-mark { width:25px; height:30px; }
- .suite-mark svg { width:17px; }
  .suite-divider,.suite-workspace { display:none; }
  .suite-actions { gap:6px; }
  .suite-actions .suite-search { width:44px!important; padding:0; background:transparent; color:white; border:0; }
@@ -392,7 +389,7 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 }
 @media(max-width:520px) { .editor-toolbox-body { display:block; } .editor-toolbox-body section+section { border-left:0; border-top:1px solid var(--line); } }
 @media(max-width:360px) { .overlay { padding:8px; } .editor-dialog { max-height:calc(100dvh - 16px); padding:16px; } .shortcut-results li { align-items:flex-start; flex-direction:column; gap:8px; } .shortcut-keys { justify-content:flex-start; flex-wrap:wrap; } }
-@media(max-width:370px) { .suite-bar { gap:2px; padding-inline:8px; } .suite-brand { font-size:14px; } .suite-actions { gap:2px; } .suite-mark { display:none; } .page-command-bar { padding-inline:8px; } .document>article { padding-inline:16px; } }
+@media(max-width:370px) { .suite-bar { gap:2px; padding-inline:8px; } .suite-brand { font-size:14px; } .suite-actions { gap:2px; } .page-command-bar { padding-inline:8px; } .document>article { padding-inline:16px; } }
 .page-tree-host { display:grid; gap:4px; }
 .page-tree-virtual { max-height:min(70vh, 640px); overflow:auto; }
 .page-tree-space { min-height:28px; border-radius:8px; }
