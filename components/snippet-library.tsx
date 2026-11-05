@@ -107,13 +107,13 @@ export default function SnippetLibrary({ workspaceId, initialSnippetId }: { work
         {usage && <table><caption>Placements you can read</caption><thead><tr><th>Page</th><th>Owner</th><th>Version</th></tr></thead><tbody>{usage.placements.map(row => <tr key={row.pageId}><td>{row.pageTitle}</td><td>{row.pageOwnerName || row.pageOwnerId}</td><td>{row.versionMode === "latest" ? "Follow latest" : "Pinned"} v{row.versionNumber}</td></tr>)}{!usage.placements.length && <tr><td colSpan={3}>No readable placements.</td></tr>}</tbody></table>}
       </>}
     </section>}
-    {library?.canGrant && <form onSubmit={event => { event.preventDefault(); const intent = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value"); void run(async () => { await post(base, { action: intent === "revoke" ? "revoke" : "grant", operationId: crypto.randomUUID(), spaceId, userId: grantUser, role: grantRole }); setNotice(intent === "revoke" ? "Role removed." : "Role granted."); }); }}>
+    {library?.canGrant && <details className="laptop-disclosure"><summary>Manage snippet roles</summary><form onSubmit={event => { event.preventDefault(); const intent = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value"); void run(async () => { await post(base, { action: intent === "revoke" ? "revoke" : "grant", operationId: crypto.randomUUID(), spaceId, userId: grantUser, role: grantRole }); setNotice(intent === "revoke" ? "Role removed." : "Role granted."); }); }}>
       <h2>Snippet roles</h2>
       <label>Space<select aria-label="Role space" value={spaceId} onChange={event => setSpaceId(event.target.value)}>{library.spaces.map(space => <option key={space.id} value={space.id}>{space.name}</option>)}</select></label>
       <label>Person<input aria-label="Role person" value={grantUser} onChange={event => setGrantUser(event.target.value)} required /></label>
       <label>Role<select aria-label="Snippet role" value={grantRole} onChange={event => setGrantRole(event.target.value as typeof grantRole)}><option value="manager">Snippet manager</option><option value="approver">Approver</option><option value="reviewer">Reviewer</option></select></label>
       <button value="grant" disabled={busy}>Grant</button>
       <button value="revoke" disabled={busy}>Revoke</button>
-    </form>}
+    </form></details>}
   </main>;
 }

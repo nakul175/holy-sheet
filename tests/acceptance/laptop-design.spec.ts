@@ -1,13 +1,14 @@
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-for(const width of [1366,1024,390])test(`all workspace screens fit and remain accessible at ${width}px`,async({page})=>{
+for(const width of [1366,1024,800,390,320])test(`all workspace screens fit and remain accessible at ${width}px`,async({page})=>{
  await page.setViewportSize({width,height:768});
  for(const route of ['spaces','new','templates','snippets','people','invitations','handover']){
   await page.goto(`/workspaces/ws-aplyd/${route}`);
   await expect(page.locator('.laptop-screen')).toBeVisible();
   await expect(page.locator('.laptop-screen h1')).toBeVisible();
-  await expect(page.locator('.laptop-screen')).not.toContainText('Opening workspace…');
+  await expect(page.locator('.laptop-screen')).not.toContainText(/Loading[ …]|Opening[ …]/);
+  await expect(page.locator('.laptop-screen [role=alert]')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
   const accessibility=await new AxeBuilder({page}).include('.laptop-workspace').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
   expect(accessibility.violations.filter(v=>v.impact==='critical'||v.impact==='serious'),JSON.stringify(accessibility.violations)).toEqual([]);
@@ -48,4 +49,12 @@ test('templates filter and open an actual template preview',async({page})=>{
 });
 test('invitation screen does not imply email delivery and keeps identity form explicit',async({page})=>{
  await page.goto('/workspaces/ws-aplyd/invitations');await expect(page.getByRole('heading',{name:'Workspace invitations'})).toBeVisible();await expect(page.getByLabel('Aplyd recipient ID')).toBeHidden();await page.getByRole('button',{name:'Link an Aplyd invitation',exact:true}).click();await expect(page.getByLabel('Aplyd recipient ID')).toBeVisible();await expect(page.getByText('Sending a new email invitation is not available here yet.',{exact:false})).toBeVisible();
+});
+
+test('failed invitation submission retains entered values without creating access',async({page})=>{
+ await page.goto('/workspaces/ws-aplyd/invitations');await page.getByRole('button',{name:'Link an Aplyd invitation',exact:true}).click();
+ await page.getByLabel('Aplyd invitation reference').fill('disposable-reference');await page.getByLabel('Aplyd recipient ID').fill('disposable-subject');
+ let writes=0;await page.route('**/api/v1/workspaces/ws-aplyd/invitations',async route=>{if(route.request().method()==='POST'){writes++;await route.fulfill({status:503,json:{error:'Temporarily unavailable'}});}else await route.continue();});
+ await page.getByRole('button',{name:'Save invitation',exact:true}).click();await expect(page.getByRole('alert')).toBeVisible();
+ await expect(page.getByLabel('Aplyd invitation reference')).toHaveValue('disposable-reference');await expect(page.getByLabel('Aplyd recipient ID')).toHaveValue('disposable-subject');await expect(page.getByRole('button',{name:'Save invitation',exact:true})).toBeEnabled();expect(writes).toBe(1);
 });
