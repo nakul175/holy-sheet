@@ -30,10 +30,10 @@ export function HolySheetEditor({pageId,viewContext,sessionProvider}:HostedEdito
   if(!session)return <p role="status">Checking your document access…</p>;
   if(session.status!=='ready')return <section aria-live="polite"><p>{session.status==='signin'?'Sign in to your task again.':'Document access could not be checked.'}</p><button onClick={()=>setRetry(n=>n+1)}>Check again</button></section>;
   const documentUrl=`${session.origin}/pages/${pageId}`;
-  return <section aria-label="Holy Sheet document">
-    <a href={documentUrl} target="_blank" rel="noopener noreferrer">Open in Holy Sheet</a>
+  return <section aria-label="Aplyd Pages document">
+    <a href={documentUrl} target="_blank" rel="noopener noreferrer">Open in Aplyd Pages</a>
     <button onClick={()=>setGeneration(n=>n+1)}>Reload document</button>
-    <iframe key={`${session.subject}:${pageId}:${generation}`} title="Holy Sheet document" referrerPolicy="no-referrer"
+    <iframe key={`${session.subject}:${pageId}:${generation}`} title="Aplyd Pages document" referrerPolicy="no-referrer"
       src={`${session.origin}/embed/pages/${pageId}#hs-user=${encodeURIComponent(session.subject)}`}
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
       style={{width:'100%',height:'70vh',border:'1px solid var(--border)',marginTop:12}}/>

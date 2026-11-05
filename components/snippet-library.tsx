@@ -68,7 +68,7 @@ export default function SnippetLibrary({ workspaceId, initialSnippetId }: { work
 
   const manageable = library?.spaces.filter(space => space.canManage) ?? [];
   return <main className="snippet-library">
-    <p><a href="/">Holy Sheet</a></p>
+    <p><a href="/">Aplyd Pages</a></p>
     <h1>Snippet library</h1>
     <p>Approved wording can be inserted into pages. Drafts stay in this library until an approver accepts them.</p>
     {error && <p role="alert">{error}</p>}

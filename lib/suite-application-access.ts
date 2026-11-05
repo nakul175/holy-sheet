@@ -8,5 +8,5 @@ export async function requireSuiteApplicationAccess(sub:string,uid:string,issuer
  try{response=await fetch(endpoint,{method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(3000),headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:'holy-sheet',client_secret:secret,sub,uid})});}catch{throw new DocumentError('Suite application access verification is unavailable','identity_unavailable',503);}
  if(!response.ok)throw new DocumentError('Suite application access verification is unavailable','identity_unavailable',503);
  let result:unknown;try{result=await response.json();}catch{throw new DocumentError('Suite application access verification is unavailable','identity_unavailable',503);}
- if((result as {active?:unknown})?.active!==true||(result as {subject?:unknown}).subject!==sub)throw new DocumentError('Holy Sheet access has been removed','application_access_required',403);
+ if((result as {active?:unknown})?.active!==true||(result as {subject?:unknown}).subject!==sub)throw new DocumentError('Aplyd Pages access has been removed','application_access_required',403);
 }

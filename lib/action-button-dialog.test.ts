@@ -36,7 +36,7 @@ beforeEach(() => {
     if (String(url).includes("view=history")) return { events: [{ action: "invoke", actorName: "Ada", atIst: "03 Nov 2026, 09:00 IST", source: "action-button", revision: 2, actionId: "hs.record.append-note" }], receipts: [{ revision: 2, actionStatus: "succeeded", linkStatus: "failed" }] };
     return {
       manage: true,
-      boundary: "Buttons run allowlisted Holy Sheet action contracts only. They do not run scripts or open arbitrary URLs.",
+      boundary: "Buttons run allowlisted Aplyd Pages action contracts only. They do not run scripts or open arbitrary URLs.",
       assignment: "Configuring or assigning an action button does not grant access to a page, record, collection, or field.",
       authority: "Seeing a button or belonging to the workspace does not grant the action.",
       review: "Review the impact.",

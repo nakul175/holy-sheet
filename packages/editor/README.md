@@ -1,4 +1,4 @@
-# Holy Sheet editor
+# Aplyd Pages editor
 
 The local entry contains the real HS editor, document API client, uploads and
 encrypted recovery, compiled from the canonical application sources. The hosted

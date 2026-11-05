@@ -131,7 +131,7 @@ function masked(label: string) {
 export function RecordRefBody({ state, display = "chip", notice = "", onRetry, onRequest, onRestore }: { state: RecordState; display?: "chip" | "card"; notice?: string; onRetry: () => void; onRequest: () => void; onRestore: () => void }) {
   if (state.status === "loading") return <p className="record-ref-placeholder" role="status" aria-busy="true">Loading record…</p>;
   if (state.status === "error") return <p className="record-ref-placeholder" role="alert">Couldn't load records — <button type="button" onClick={onRetry}>Retry</button></p>;
-  if (state.status === "unsupported") return <p className="record-ref-placeholder">This block needs a newer Holy Sheet.</p>;
+  if (state.status === "unsupported") return <p className="record-ref-placeholder">This block needs a newer Aplyd Pages version.</p>;
   if (state.status === "restricted") return <div className="record-ref-placeholder"><p>Restricted record</p><button type="button" onClick={onRequest}>Request access</button>{notice && <p role="status">{notice}</p>}</div>;
   if (state.status === "archived") return <div className="record-ref-placeholder"><p>Archived record — <button type="button" onClick={onRestore}>Restore</button></p></div>;
   if (display === "chip") return <a className="record-ref-chip" href={state.href}><span aria-hidden="true">{state.icon}</span> {state.title}</a>;
@@ -141,7 +141,7 @@ export function RecordRefBody({ state, display = "chip", notice = "", onRetry, o
 export function RecordViewBody({ state, onRetry }: { state: ViewState; onRetry: () => void }) {
   if (state.status === "loading") return <p className="record-ref-placeholder" role="status" aria-busy="true">Loading record…</p>;
   if (state.status === "error") return <p className="record-ref-placeholder" role="alert">Couldn't load records — <button type="button" onClick={onRetry}>Retry</button></p>;
-  if (state.status === "unsupported") return <p className="record-ref-placeholder">This block needs a newer Holy Sheet.</p>;
+  if (state.status === "unsupported") return <p className="record-ref-placeholder">This block needs a newer Aplyd Pages version.</p>;
   if (state.status === "restricted") return <div className="record-ref-placeholder"><p>Restricted record</p></div>;
   const head = <tr>{state.columns.map(column => <th key={column.key} scope="col">{column.label}</th>)}</tr>;
   const body = state.rows.map(row => <tr key={row.id}>{row.cells.map((cell, index) => <td key={state.columns[index]?.key ?? index}>{cell.access === "hidden" ? masked(state.columns[index]?.label ?? "Field") : cell.value || "—"}</td>)}</tr>);

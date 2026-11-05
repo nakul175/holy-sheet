@@ -127,7 +127,7 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
   const shownUnavailable = unavailable?.endpoint === endpoint ? unavailable.message : "";
   return <main className="space-home-page">
     <a className="skip-link" href="#space-home">Skip to space home</a>
-    <p><a href="/">Holy Sheet</a> / <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces`}>Spaces</a> / <span>Space</span></p>
+    <p><a href="/">Aplyd Pages</a> / <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces`}>Spaces</a> / <span>Space</span></p>
     {shownUnavailable && <p role="alert">{shownUnavailable}</p>}
     {!shownHome && !shownUnavailable && <p role="status">Opening space home…</p>}
     {shownHome && <div id="space-home">

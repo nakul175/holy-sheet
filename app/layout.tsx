@@ -11,7 +11,7 @@ const publicSans = localFont({src:[
 ],variable:'--font-public-sans',display:'swap',adjustFontFallback:'Arial'});
 
 export const metadata: Metadata = {
-  title: "Holy Sheet",
+  title: "Aplyd Pages",
   description: "Pages that stay close to the work",
 };
 

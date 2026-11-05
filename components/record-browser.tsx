@@ -1762,7 +1762,7 @@ export default function RecordBrowser({ workspaceId, tenantId, initialCollection
   return (
     <main className="record-browser">
       <header>
-        <p>Holy Sheet · shared data</p>
+        <p>Aplyd Pages · shared data</p>
         <h1>Records</h1>
         <p>Tenant-owned structured data. Opening or relating a record never grants access.</p>
         <RecordNotifications workspaceId={workspaceId} tenantId={tenantId} onOpen={(id) => void open(id)} />

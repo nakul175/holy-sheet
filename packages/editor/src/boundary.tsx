@@ -33,6 +33,6 @@ export function SessionGate({pageId,viewContext,sessionProvider,children}:Sessio
   if(phase==='ready')return children;
   return <main className="workspace-home"><section aria-live="polite">
     <h1>{phase==='checking'?'Checking your document access…':phase==='missing'?'Open this document from your task':phase==='unavailable'?'Document access could not be checked':'Use the same Aplyd account as your task'}</h1>
-    {phase==='missing'?<p>Reopen the document from the Holy Sheet launcher in your task.</p>:phase!=='checking'&&<><p>{phase==='unavailable'?'Try again when connected.':'Sign in to Holy Sheet, then reload the document in your task.'}</p>{phase!=='unavailable'&&<a className="sign-in-link" href={'/auth/sign-in?next='+encodeURIComponent(`/pages/${pageId}`)} target={viewContext==='embedded'?'_blank':undefined} rel="noopener noreferrer">Sign in with Aplyd</a>}<button onClick={()=>setRetry(n=>n+1)}>Check again</button></>}
+    {phase==='missing'?<p>Reopen the document from the Aplyd Pages launcher in your task.</p>:phase!=='checking'&&<><p>{phase==='unavailable'?'Try again when connected.':'Sign in to Aplyd Pages, then reload the document in your task.'}</p>{phase!=='unavailable'&&<a className="sign-in-link" href={'/auth/sign-in?next='+encodeURIComponent(`/pages/${pageId}`)} target={viewContext==='embedded'?'_blank':undefined} rel="noopener noreferrer">Sign in with Aplyd</a>}<button onClick={()=>setRetry(n=>n+1)}>Check again</button></>}
   </section></main>;
 }

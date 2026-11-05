@@ -57,7 +57,7 @@ export default function SpaceReviews({ workspaceId, spaceId }: { workspaceId: st
   }
   const csv = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(spaceId)}/reviews?export=csv&filter=${encodeURIComponent(filter)}`;
   const empty = dashboard ? isEmptyReviewDashboard(dashboard) : false;
-  return <main className="space-reviews-page"><a className="skip-link" href="#space-reviews">Skip to reviews</a><p><a href="/">Holy Sheet</a> / <span>Space</span> / Reviews</p><h1>Reviews</h1>
+  return <main className="space-reviews-page"><a className="skip-link" href="#space-reviews">Skip to reviews</a><p><a href="/">Aplyd Pages</a> / <span>Space</span> / Reviews</p><h1>Reviews</h1>
     {error && <p role="alert">{error}</p>}
     {!dashboard && !error && <p role="status">Opening reviews…</p>}
     {dashboard && <div id="space-reviews">
