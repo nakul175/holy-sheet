@@ -1,5 +1,13 @@
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import type {Page} from '@playwright/test';
+
+async function expectInsetSelects(page:Page){
+ for(const select of await page.locator('select:not([multiple]):not([size]):visible').all()){
+  const style=await select.evaluate(el=>{const s=getComputedStyle(el);return {appearance:s.appearance,padding:parseFloat(s.paddingInlineEnd),position:s.backgroundPositionX,image:s.backgroundImage};});
+  expect(style.appearance).toBe('none');expect(style.padding).toBeGreaterThanOrEqual(36);expect(style.position).toContain('12px');expect(style.image).toContain('data:image/svg+xml');
+ }
+}
 
 for(const width of [1920,1366,1024,800,390,320])test(`all workspace screens fit and remain accessible at ${width}px`,async({page})=>{
  await page.setViewportSize({width,height:768});
@@ -10,10 +18,32 @@ for(const width of [1920,1366,1024,800,390,320])test(`all workspace screens fit 
   await expect(page.locator('.laptop-screen')).not.toContainText(/Loading[ …]|Opening[ …]/);
   await expect(page.locator('.laptop-screen [role=alert]')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+  await expectInsetSelects(page);
   const accessibility=await new AxeBuilder({page}).include('.laptop-workspace').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
   expect(accessibility.violations.filter(v=>v.impact==='critical'||v.impact==='serious'),JSON.stringify(accessibility.violations)).toEqual([]);
   await page.screenshot({path:`artifacts/laptop-design/${route}-${width}.png`,fullPage:true});
  }
+});
+
+test('space home select actions align and remain usable with long page titles',async({page,request,baseURL})=>{
+ const title='A long page title for dropdown spacing and keyboard selection '+Date.now();
+ const response=await request.post('/api/pages',{headers:{Origin:baseURL!},data:{title,spaceId:'space-product'}});expect(response.ok()).toBe(true);const {page:record}=await response.json();
+ await page.goto('/workspaces/ws-aplyd/spaces/space-product');
+ const select=page.getByRole('combobox',{name:'Pin a page',exact:true});await expect(select).toBeVisible();await select.selectOption(record.id);
+ for(const width of [1366,800,390,320]){
+  await page.setViewportSize({width,height:900});await expectInsetSelects(page);
+  for(const form of await page.locator('.space-home-select-form').all()){
+   const control=await form.locator('select').boundingBox(),button=await form.locator('button[type=submit]').boundingBox();
+   expect(control!.height).toBe(button!.height);
+   if(button!.x>control!.x+control!.width-1)expect(button!.y).toBe(control!.y);
+   else expect(button!.y).toBeGreaterThanOrEqual(control!.y+control!.height);
+  }
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width+1);
+  await page.screenshot({path:`artifacts/laptop-design/select-spacing/space-home-${width}.png`,fullPage:true});
+ }
+ await page.setViewportSize({width:1366,height:900});await select.focus();await expect(select).toBeFocused();await select.press('Tab');await expect(page.getByRole('button',{name:'Pin page',exact:true})).toBeFocused();await page.keyboard.press('Shift+Tab');await expect(select).toBeFocused();
+ await select.selectOption(record.id);await page.getByRole('button',{name:'Pin page',exact:true}).click();await expect(page.getByRole('list',{name:'Pinned pages'}).getByRole('link',{name:title,exact:true})).toBeVisible();
+ await page.emulateMedia({forcedColors:'active'});await expect(select).toHaveCSS('appearance','auto');await expect(select).toHaveCSS('background-image','none');await page.emulateMedia({forcedColors:'none'});
 });
 
 test('writing shell follows window resizing with tools open and closed',async({page})=>{
