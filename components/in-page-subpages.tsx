@@ -18,13 +18,14 @@ export default function InPageSubpages({ workspaceId, spaceId, pageId, canCreate
     return () => { live = false; window.removeEventListener("focus", onFocus); };
   }, [workspaceId, spaceId, pageId]);
 
-  if (failed || (!canCreate && !slice?.nodes.length)) return null;
+  const nodes = Array.isArray(slice?.nodes) ? slice.nodes : [];
+  if (failed || (!canCreate && !nodes.length)) return null;
   return <section className="in-page-subpages" aria-labelledby="in-page-subpages-heading">
     <div className="in-page-subpages-heading">
       <div><span className="in-page-subpages-kicker">CONTINUE READING</span><h2 id="in-page-subpages-heading">Subpages</h2></div>
       {canCreate && <button type="button" onClick={onCreate}><UiIcon name="plus"/>Add subpage</button>}
     </div>
-    {slice?.nodes.length ? <ul>{slice.nodes.map(child => <li key={child.id}>
+    {nodes.length ? <ul>{nodes.map(child => <li key={child.id}>
       <button type="button" onClick={() => onOpen(child.id)} aria-label={`Open subpage ${child.title}`}>
         <span className="in-page-subpage-icon"><UiIcon name="document"/></span><span><strong>{child.title}</strong><small>Subpage</small></span><span className="in-page-subpage-arrow" aria-hidden="true">→</span>
       </button>
