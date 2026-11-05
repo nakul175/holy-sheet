@@ -1,0 +1,38 @@
+{
+  "scope": "NJ-approved complete laptop design; staging review before production",
+  "baseline": "13176a70a8c5c8bbc5434ecbbe22bb2fcfa3c202",
+  "branch": "codex/laptop-design-staging",
+  "screens": [
+    "Document / subpages / toolbox",
+    "Spaces",
+    "New page",
+    "Templates",
+    "Snippets",
+    "Page settings",
+    "People & access",
+    "Invitations",
+    "Page handover"
+  ],
+  "bugOff": {
+    "folder": "https://bugoff.aplyd.org/en-US/projects/repository/3?node=177",
+    "cases": {
+      "SC-LAPTOP-01": 2548,
+      "SC-LAPTOP-02": 2549,
+      "SC-LAPTOP-03": 2550,
+      "SC-LAPTOP-04": 2551,
+      "SC-LAPTOP-05": 2552,
+      "SC-LAPTOP-06": 2553
+    }
+  },
+  "btf": "Issue creation attempted twice with distinct titles; BTF returned A record with this name already exists. No story ID claimed.",
+  "tests": [
+    "npm test",
+    "npm run typecheck",
+    "npm run build",
+    "npx playwright test --config playwright.accessibility.config.ts --retries=0",
+    "normal staging sign-in and native role matrix",
+    "exact-image staging switch, rollback and reapply"
+  ],
+  "knownProductLimit": "Invitations retain the existing Aplyd invitation-reference and recipient-ID workflow. No backend email invitation delivery is claimed.",
+  "production": "Not authorized for this design; remain unchanged until NJ staging review."
+}

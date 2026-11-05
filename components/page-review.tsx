@@ -13,7 +13,7 @@ export function PageReviewChrome({ view }: { view: PageReviewView }) {
   </div>;
 }
 
-export function PageReviewHost({ pageId, workspaceId, spaceId }: { pageId: string; workspaceId: string; spaceId: string }) {
+export function PageReviewHost({ pageId, workspaceId, spaceId, chromeOnly=false }: { pageId: string; workspaceId: string; spaceId: string; chromeOnly?:boolean }) {
   const [view, setView] = useState<PageReviewView | null>(null);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
@@ -54,7 +54,7 @@ export function PageReviewHost({ pageId, workspaceId, spaceId }: { pageId: strin
   if (!view || (!view.canManage && !view.header && !view.banner && !view.verified && view.badge !== "Overdue")) return null;
   return <>
     <PageReviewChrome view={view} />
-    {view.canManage && <p className="review-actions"><button type="button" onClick={() => { setError(""); setOpen(true); }}>Review settings</button> <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(spaceId)}/reviews`}>Space reviews</a></p>}
+    {!chromeOnly && view.canManage && <p className="review-actions"><button type="button" onClick={() => { setError(""); setOpen(true); }}>Review settings</button> <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(spaceId)}/reviews`}>Space reviews</a></p>}
     {open && <ReviewSettings view={view} busy={busy} error={error} onClose={() => { if (!busy) setOpen(false); }} onSave={send} />}
   </>;
 }

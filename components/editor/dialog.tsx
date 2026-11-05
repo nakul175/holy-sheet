@@ -14,11 +14,12 @@ function focusable(root:HTMLElement){
   return true;
  });
 }
-export function Dialog({title,onClose,children}:{title:string;onClose:()=>void;children:ReactNode}){
+export function Dialog({title,onClose,children,presentation='dialog'}:{title:string;onClose:()=>void;children:ReactNode;presentation?:'dialog'|'page'}){
  const ref=useRef<HTMLDivElement>(null);
  // Capture before children mount: an autoFocus field otherwise replaces the opener.
  const previous=useRef<HTMLElement|null>(typeof document==='undefined'?null:document.activeElement as HTMLElement|null);
- useEffect(()=>{const root=ref.current;if(root)(focusable(root)[0]??root).focus();return()=>{if(previous.current?.isConnected)previous.current.focus();};},[]);
+ useEffect(()=>{if(presentation==='page')return;const root=ref.current;if(root)(focusable(root)[0]??root).focus();return()=>{if(previous.current?.isConnected)previous.current.focus();};},[]);
+ if(presentation==='page')return <section className="laptop-panel"><h1>{title}</h1>{children}</section>;
  return <div className="overlay" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}><div ref={ref} tabIndex={-1} className="modal editor-dialog" role="dialog" aria-modal="true" aria-label={title} onKeyDown={event=>{
   if(event.defaultPrevented||event.nativeEvent.isComposing||event.keyCode===229)return;
   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();onClose();return;}

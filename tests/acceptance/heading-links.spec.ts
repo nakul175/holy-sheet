@@ -19,7 +19,8 @@ async function ready(page:BrowserPage,id:string,fragment=''){
 }
 async function observeClipboard(page:BrowserPage){await page.addInitScript(()=>{const target=window as unknown as {headingCopyArguments:string[]};target.headingCopyArguments=[];const clipboard=navigator.clipboard,native=clipboard.writeText.bind(clipboard);clipboard.writeText=(value:string)=>{target.headingCopyArguments.push(value);return native(value);};});}
 
-test('copy uses a saved ID only and leaves exact model, selection, history and document writes unchanged',async({page,request,baseURL})=>{
+test('copy uses a saved ID only and leaves exact model, selection, history and document writes unchanged',async({page,request,baseURL,context})=>{
+ await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:baseURL!});
  const f=await fixture(request,baseURL!),before=await stored(request,f.page.id),versions=await history(request,f.page.id);let operations=0;page.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/operations'))operations++;});await observeClipboard(page);await ready(page,f.page.id);const editor=page.getByRole('textbox',{name:'Document content',exact:true});await editor.press('ControlOrMeta+Home');await editor.press('Shift+ArrowRight');
  // Chrome can report the shifted caret on a later selectionchange. Snapshot only after that one-character selection is in the editor model.
  await expect.poll(async()=>(await model(page)).selection).toMatchObject({type:'text',anchor:1,head:2});

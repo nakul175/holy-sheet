@@ -131,9 +131,9 @@ export default function SpaceDirectory({ workspaceId, includeArchivedInitially =
 
   return <main className="space-directory">
     <a className="skip-link" href="#space-directory">Skip to spaces</a>
-    <p><a href="/">Holy Sheet</a> / <span>Spaces</span></p>
+
     <h1 id="space-directory">Spaces</h1>
-    <p>Open spaces can be joined. Restricted spaces show Request access. Private spaces you are not in stay hidden.</p>
+    <p>Find a space for your work.</p>
     <label><input type="checkbox" checked={includeArchived} onChange={event => setIncludeArchived(event.target.checked)} /> Include archived</label>
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
@@ -154,7 +154,7 @@ export default function SpaceDirectory({ workspaceId, includeArchivedInitially =
       </li>)}
       {!view.spaces.length && <li>No spaces to show.</li>}
     </ul>}
-    {view?.canAdminister && <section aria-labelledby="move-tree-heading" className="space-migration">
+    {view?.canAdminister && <details className="space-migration laptop-disclosure"><summary>Move a page tree</summary>
       <h2 id="move-tree-heading">Move a page tree</h2>
       <form onSubmit={event => void reviewMove(event)}>
         <label>Page <input aria-label="Page to move" value={rootPageId} onChange={event => setRootPageId(event.target.value)} required /></label>
@@ -175,6 +175,6 @@ export default function SpaceDirectory({ workspaceId, includeArchivedInitially =
         <p role="status">{job.status === "completed" ? `Moved ${job.movedPageIds.length} pages.` : job.status === "halted" ? `Stopped after ${job.movedPageIds.length} of ${job.pageCount} pages. ${job.remainingPageIds.length} pages were not moved.` : `Moving pages. ${job.movedPageIds.length} of ${job.pageCount} moved.`} {job.atIst}</p>
         {job.status === "halted" && <button type="button" disabled={busy} onClick={() => void resumeMove()}>Resume migration</button>}
       </div>}
-    </section>}
+    </details>}
   </main>;
 }

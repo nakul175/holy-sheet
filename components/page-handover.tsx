@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import {WorkspaceTabs} from './laptop-workspace';
 import { ApiError, requestJson } from "./editor/use-document-session";
 
 type Member = { id: string; name: string; role: string; active: boolean };
@@ -171,9 +172,9 @@ export default function PageHandover({ workspaceId }: { workspaceId: string }) {
   const recipients = members.filter(member => member.active && member.role !== "observer");
   return <main className="page-handover-page">
     <a className="skip-link" href="#page-handover">Skip to page handover</a>
-    <p><a href="/">Holy Sheet</a> / Page handover</p>
+    <WorkspaceTabs workspaceId={workspaceId}/>
     <h1>Page handover</h1>
-    <p>Transfer page ownership when someone changes role or leaves. Ownership is not a permission. Manage rights follow the existing role mapping. Pages the recipient cannot edit stay put unless you grant edit.</p>
+    <p>Transfer pages to a workspace member. Review their access before confirming.</p>
     {error && <p role="alert">{error}</p>}
     {!access && !error && <p role="status">Opening page handover…</p>}
     {access && <div id="page-handover">
@@ -199,7 +200,8 @@ export default function PageHandover({ workspaceId }: { workspaceId: string }) {
       <section aria-label="Pages without an active owner">
         <h2>Pages without an active owner</h2>
         {!report && <p role="status">Loading the report…</p>}
-        {report && <>
+        {report && !report.pages.length && !report.trashed.length && <p className="laptop-empty-state">Every page has an active owner.</p>}
+        {report && (!!report.pages.length || !!report.trashed.length) && <>
           <h3>Pages</h3>
           <Rows rows={report.pages} decisions={{}} onDecision={() => undefined} />
           <h3>Trash</h3>

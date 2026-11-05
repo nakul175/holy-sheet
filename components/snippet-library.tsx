@@ -68,18 +68,18 @@ export default function SnippetLibrary({ workspaceId, initialSnippetId }: { work
 
   const manageable = library?.spaces.filter(space => space.canManage) ?? [];
   return <main className="snippet-library">
-    <p><a href="/">Holy Sheet</a></p>
+
     <h1>Snippet library</h1>
-    <p>Approved wording can be inserted into pages. Drafts stay in this library until an approver accepts them.</p>
+    <p>Reusable wording for your pages. Review drafts before publishing.</p>
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {manageable.length > 0 && <form onSubmit={event => { event.preventDefault(); void run(async () => { await post(base, { action: "create", operationId: crypto.randomUUID(), spaceId, title, content: paragraph(body) }); setTitle(""); setBody(""); await loadList(); setNotice("Draft snippet created."); }); }}>
+    {manageable.length > 0 && <details className="laptop-disclosure"><summary>New snippet</summary><form onSubmit={event => { event.preventDefault(); void run(async () => { await post(base, { action: "create", operationId: crypto.randomUUID(), spaceId, title, content: paragraph(body) }); setTitle(""); setBody(""); await loadList(); setNotice("Draft snippet created."); }); }}>
       <h2>New snippet</h2>
       <label>Space<select aria-label="Snippet space" value={spaceId} onChange={event => setSpaceId(event.target.value)}>{manageable.map(space => <option key={space.id} value={space.id}>{space.name}</option>)}</select></label>
       <label>Title<input aria-label="Snippet title" value={title} onChange={event => setTitle(event.target.value)} required maxLength={120} /></label>
       <label>Text<textarea aria-label="Snippet text" value={body} onChange={event => setBody(event.target.value)} required /></label>
       <button disabled={busy}>Create draft</button>
-    </form>}
+    </form></details>}
     <h2>Library</h2>
     {!library && !error && <p role="status">Loading snippets…</p>}
     {library && !library.snippets.length && <p>No snippets are available in the spaces you can read.</p>}
