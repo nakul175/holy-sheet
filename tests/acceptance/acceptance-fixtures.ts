@@ -33,3 +33,10 @@ export const test = base.extend({
 });
 
 export { expect };
+
+// Compact navigation places account actions inside the mobile page drawer.
+export async function openAccountMenu(page: Page) {
+  const account=page.getByLabel('Account and workspace',{exact:true});
+  if(!await account.isVisible())await page.getByRole('button',{name:'Open page navigation',exact:true}).click();
+  await account.click();
+}

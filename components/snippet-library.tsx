@@ -68,18 +68,18 @@ export default function SnippetLibrary({ workspaceId, initialSnippetId }: { work
 
   const manageable = library?.spaces.filter(space => space.canManage) ?? [];
   return <main className="snippet-library">
-    <p><a href="/">Holy Sheet</a></p>
+
     <h1>Snippet library</h1>
-    <p>Approved wording can be inserted into pages. Drafts stay in this library until an approver accepts them.</p>
+    <p>Reusable wording for your pages. Review drafts before publishing.</p>
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {manageable.length > 0 && <form onSubmit={event => { event.preventDefault(); void run(async () => { await post(base, { action: "create", operationId: crypto.randomUUID(), spaceId, title, content: paragraph(body) }); setTitle(""); setBody(""); await loadList(); setNotice("Draft snippet created."); }); }}>
+    {manageable.length > 0 && <details className="laptop-disclosure"><summary>New snippet</summary><form onSubmit={event => { event.preventDefault(); void run(async () => { await post(base, { action: "create", operationId: crypto.randomUUID(), spaceId, title, content: paragraph(body) }); setTitle(""); setBody(""); await loadList(); setNotice("Draft snippet created."); }); }}>
       <h2>New snippet</h2>
       <label>Space<select aria-label="Snippet space" value={spaceId} onChange={event => setSpaceId(event.target.value)}>{manageable.map(space => <option key={space.id} value={space.id}>{space.name}</option>)}</select></label>
       <label>Title<input aria-label="Snippet title" value={title} onChange={event => setTitle(event.target.value)} required maxLength={120} /></label>
       <label>Text<textarea aria-label="Snippet text" value={body} onChange={event => setBody(event.target.value)} required /></label>
       <button disabled={busy}>Create draft</button>
-    </form>}
+    </form></details>}
     <h2>Library</h2>
     {!library && !error && <p role="status">Loading snippets…</p>}
     {library && !library.snippets.length && <p>No snippets are available in the spaces you can read.</p>}
@@ -107,13 +107,13 @@ export default function SnippetLibrary({ workspaceId, initialSnippetId }: { work
         {usage && <table><caption>Placements you can read</caption><thead><tr><th>Page</th><th>Owner</th><th>Version</th></tr></thead><tbody>{usage.placements.map(row => <tr key={row.pageId}><td>{row.pageTitle}</td><td>{row.pageOwnerName || row.pageOwnerId}</td><td>{row.versionMode === "latest" ? "Follow latest" : "Pinned"} v{row.versionNumber}</td></tr>)}{!usage.placements.length && <tr><td colSpan={3}>No readable placements.</td></tr>}</tbody></table>}
       </>}
     </section>}
-    {library?.canGrant && <form onSubmit={event => { event.preventDefault(); const intent = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value"); void run(async () => { await post(base, { action: intent === "revoke" ? "revoke" : "grant", operationId: crypto.randomUUID(), spaceId, userId: grantUser, role: grantRole }); setNotice(intent === "revoke" ? "Role removed." : "Role granted."); }); }}>
+    {library?.canGrant && <details className="laptop-disclosure"><summary>Manage snippet roles</summary><form onSubmit={event => { event.preventDefault(); const intent = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value"); void run(async () => { await post(base, { action: intent === "revoke" ? "revoke" : "grant", operationId: crypto.randomUUID(), spaceId, userId: grantUser, role: grantRole }); setNotice(intent === "revoke" ? "Role removed." : "Role granted."); }); }}>
       <h2>Snippet roles</h2>
       <label>Space<select aria-label="Role space" value={spaceId} onChange={event => setSpaceId(event.target.value)}>{library.spaces.map(space => <option key={space.id} value={space.id}>{space.name}</option>)}</select></label>
       <label>Person<input aria-label="Role person" value={grantUser} onChange={event => setGrantUser(event.target.value)} required /></label>
       <label>Role<select aria-label="Snippet role" value={grantRole} onChange={event => setGrantRole(event.target.value as typeof grantRole)}><option value="manager">Snippet manager</option><option value="approver">Approver</option><option value="reviewer">Reviewer</option></select></label>
       <button value="grant" disabled={busy}>Grant</button>
       <button value="revoke" disabled={busy}>Revoke</button>
-    </form>}
+    </form></details>}
   </main>;
 }

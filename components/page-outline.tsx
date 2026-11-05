@@ -7,6 +7,22 @@ import styles from './page-outline.module.css';
 import {savedHeadingIds} from './editor/heading-links';
 import {watchSearchBlockJump} from './editor/search-block-jump';
 import {CopyHeadingLink,HeadingLinkDestination} from './heading-links';
+// Collapsing a temporary section can shorten the page below the current viewport.
+// Keep only the missing scroll room, then release it when the reader scrolls above it.
+function retainScrollRoom(host:HTMLElement|null,top:number):()=>void{
+ if(!host)return()=>{};
+ const naturalMax=Math.max(0,document.documentElement.scrollHeight-window.innerHeight);
+ const missing=Math.ceil(top-naturalMax);if(missing<=0)return()=>{};
+ const style=getComputedStyle(host),extra=style.boxSizing==='border-box'?0:
+  (['paddingTop','paddingBottom','borderTopWidth','borderBottomWidth'] as const).reduce((sum,key)=>sum+(parseFloat(style[key])||0),0);
+ const original=host.style.minHeight,priority=host.style.getPropertyPriority('min-height');
+ const reserved=Math.ceil(host.getBoundingClientRect().height+missing-extra)+'px';
+ host.style.setProperty('min-height',reserved);
+ const cleanup=()=>{window.removeEventListener('scroll',onScroll);window.removeEventListener('resize',cleanup);if(host.style.minHeight===reserved){if(original)host.style.setProperty('min-height',original,priority);else host.style.removeProperty('min-height');}};
+ const onScroll=()=>{if(window.scrollY<=naturalMax)cleanup();};
+ window.addEventListener('scroll',onScroll,{passive:true});window.addEventListener('resize',cleanup,{once:true});
+ return cleanup;
+}
 function SearchBlockJump({host,scope,pageId,available}:{host:RefObject<HTMLElement|null>;scope:string;pageId:string;available:boolean}){
  useEffect(()=>{const node=host.current;if(!available||!node)return;return watchSearchBlockJump({host:node,scope,pageId});},[host,scope,pageId,available]);
  return null;
@@ -14,10 +30,11 @@ function SearchBlockJump({host,scope,pageId,available}:{host:RefObject<HTMLEleme
 export default function PageOutline({documentHost,preferenceKey,available,pageId,savedDocument}:{documentHost:RefObject<HTMLElement|null>;preferenceKey:string;available:boolean;pageId?:string;savedDocument?:unknown}){
  const [open,setOpen]=useState(false),[snapshot,setSnapshot]=useState<OutlineSnapshot&{key:string}>({root:null,headings:[],key:''}),[selected,setSelected]=useState(''),[notice,setNotice]=useState('');
  const panel=useRef<HTMLElement>(null),opener=useRef<HTMLButtonElement>(null),temporary=useRef<TemporarySection[]>([]),selectedId=useRef('');const panelId=useId();
- const confirmed=useRef<ReadonlySet<string>>(new Set());
+ const confirmed=useRef<ReadonlySet<string>>(new Set()),releaseScrollRoom=useRef<()=>void>(()=>{});
+ useEffect(()=>()=>releaseScrollRoom.current(),[]);
  const saved=useMemo(()=>available&&savedDocument!==undefined?savedHeadingIds(savedDocument):null,[available,savedDocument]);
  if(!available)confirmed.current=new Set();else if(saved)confirmed.current=saved;
- function close(){setOpen(false);const button=opener.current,details=button?.closest('details');if(button?.isConnected){if(details)details.querySelector('summary')?.focus({preventScroll:true});else button.focus({preventScroll:true});}temporary.current=restoreTemporarySections(temporary.current);setSnapshot({root:null,headings:[],key:''});selectedId.current='';setSelected('');setNotice('');}
+ function close(){const scroll={left:window.scrollX,top:window.scrollY};releaseScrollRoom.current();setOpen(false);const button=opener.current,details=button?.closest('details');if(button?.isConnected){if(details)details.querySelector('summary')?.focus({preventScroll:true});else button.focus({preventScroll:true});}temporary.current=restoreTemporarySections(temporary.current);releaseScrollRoom.current=retainScrollRoom(documentHost.current,scroll.top);window.scrollTo({...scroll,behavior:'instant'});setSnapshot({root:null,headings:[],key:''});selectedId.current='';setSelected('');setNotice('');}
  useEffect(()=>{
   if(!open)return;
   panel.current?.querySelector<HTMLElement>('button')?.focus();

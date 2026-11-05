@@ -1,10 +1,11 @@
+import {openAccountMenu} from './acceptance-fixtures';
 import {type APIRequestContext, type Page} from '@playwright/test';
 import {test, expect} from './acceptance-fixtures';
 import axe,{type AxeResults,type RunOptions} from 'axe-core';
 const origin='http://127.0.0.1:53300';
 
 async function pageFixture(request:APIRequestContext,suffix:string){const reply=await request.post(origin+'/api/pages',{headers:{Origin:origin},data:{title:'Shortcut help '+suffix,spaceId:'space-product'}});expect(reply.status()).toBe(200);return (await reply.json()).page as {id:string;version:number};}
-async function openHelp(page:Page){await page.getByLabel('Account and workspace',{exact:true}).click();await page.getByRole('button',{name:'Keyboard shortcuts',exact:true}).click();return page.getByRole('dialog',{name:'Keyboard shortcuts',exact:true});}
+async function openHelp(page:Page){await openAccountMenu(page);await page.getByRole('button',{name:'Keyboard shortcuts',exact:true}).click();return page.getByRole('dialog',{name:'Keyboard shortcuts',exact:true});}
 
 for(const width of [1440,320])test(`shortcut help is accessible and draft-safe at ${width}px`,async({page,request})=>{
  await page.setViewportSize({width,height:900});await page.emulateMedia({reducedMotion:'reduce'});const fixture=await pageFixture(request,String(width));await page.goto('/pages/'+fixture.id);

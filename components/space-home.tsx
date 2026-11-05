@@ -147,7 +147,7 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
         </> : <div className="space-home-overview-empty">
           <p>No overview page has been set for this space.</p>
           {shownHome.canManage ? <>
-            {!!shownHome.pinCandidates.length && <form onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "set-home", pageId: candidate }); }}>
+            {!!shownHome.pinCandidates.length && <form className="space-home-select-form" onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "set-home", pageId: candidate }); }}>
               <label>Choose an existing page <select aria-label="Choose an existing overview page" value={candidate} disabled={busy} onChange={event => setCandidate(event.target.value)}>{shownHome.pinCandidates.map(item => <option key={item.pageId} value={item.pageId}>{item.title}</option>)}</select></label>
               <button type="submit" disabled={busy || !candidate}>Set as overview</button>
             </form>}
@@ -158,7 +158,7 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
       <div className="space-home-widgets">
         <section aria-labelledby="space-home-pinned-heading">
           <h2 id="space-home-pinned-heading">Pinned</h2>
-          {shownHome.canManage && !!shownHome.pinCandidates.length && <form className="space-home-pin-form" onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "pin", pageId: candidate }); }}>
+          {shownHome.canManage && !!shownHome.pinCandidates.length && <form className="space-home-pin-form space-home-select-form" onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "pin", pageId: candidate }); }}>
             <label>Pin a page <select aria-label="Pin a page" value={candidate} disabled={busy} onChange={event => setCandidate(event.target.value)}>{shownHome.pinCandidates.map(item => <option key={item.pageId} value={item.pageId}>{item.title}</option>)}</select></label>
             <button type="submit" disabled={busy || !candidate}>Pin page</button>
           </form>}

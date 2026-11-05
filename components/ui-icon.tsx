@@ -1,5 +1,15 @@
 import type { CSSProperties } from 'react';
 const paths = {
+ quote: <><path d="M4 8h6v6H4zM14 8h6v6h-6zM10 14l-3 4M20 14l-3 4"/></>,
+ divider: <path d="M4 12h16"/>,
+ pin: <><path d="m9 3 6 0-1 6 4 4v2H6v-2l4-4-1-6M12 15v6"/></>,
+ close: <path d="m6 6 12 12M18 6 6 18"/>,
+ panel: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></>,
+ heading: <path d="M5 5v14M19 5v14M5 12h14"/>,
+ list: <><path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r=".5"/><circle cx="4" cy="12" r=".5"/><circle cx="4" cy="18" r=".5"/></>,
+ checklist: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m6 12 3 3 5-6M16 9h2M16 14h2"/></>,
+ table: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M10 4v16"/></>,
+ image: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1"/><path d="m3 17 6-5 4 3 4-5 4 6"/></>,
  document: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></>,
  search: <><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></>,
  plus: <path d="M12 5v14M5 12h14"/>,
@@ -13,6 +23,8 @@ const paths = {
  more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
  link: <><path d="m10 13 4-4M8 16l-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0M16 8l1-1a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(1 0) scale(.9)"/></>,
  history: <><path d="M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2"/></>,
+ undo: <><path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/></>,
+ redo: <><path d="m15 7 5 5-5 5"/><path d="M19 12h-8a6 6 0 0 0-6 6"/></>,
  bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></>,
 };
 export default function UiIcon({name,style}:{name:keyof typeof paths;style?:CSSProperties}){return <svg className="ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false" style={style}>{paths[name]}</svg>;}

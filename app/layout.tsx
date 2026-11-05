@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "@aplyd/holy-sheet-editor/styles.css";
 import "./workspace.css";
+import "./laptop-ui.css";
 import SessionBoundary from '../components/session-boundary';
 
 const publicSans = localFont({src:[

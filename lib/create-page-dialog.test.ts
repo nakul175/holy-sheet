@@ -14,6 +14,8 @@ async function mount(props:Partial<Parameters<typeof CreatePage>[0]>={}){
  Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host),created=vi.fn();
  await act(async()=>root.render(createElement(CreatePage,{parent,workspaceId:'w',spaces:[{id:'s',workspaceId:'w',name:'General'}],onClose:vi.fn(),onCreated:created,onTemplates:vi.fn(),...props})));
+ const newSpaceButton=Array.from(host.querySelectorAll('button')).find(button=>button.textContent?.includes('New space'));
+ if(newSpaceButton?.getAttribute('aria-expanded')==='false')await act(async()=>newSpaceButton.click());
  return {host,created,submit:()=>act(async()=>{host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));}),dispose:async()=>{await act(async()=>root.unmount());host.remove();}};
 }
 async function fill(input:HTMLInputElement,value:string){await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));});}
