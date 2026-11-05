@@ -12,6 +12,7 @@ import CreatePage from './create-page-dialog';
 import CreateWorkspaceDialog from './create-workspace-dialog';
 import {SignInLink,SignOutButton,continueToSignIn} from './session-boundary';
 import {ApiError,requestJson} from './editor/use-document-session';
+import HolySheetBrand from './holy-sheet-brand';
 
 export default function WorkspaceHome({chooseWorkspace=false}:{chooseWorkspace?:boolean}){
  const router=useRouter();
@@ -31,7 +32,7 @@ export default function WorkspaceHome({chooseWorkspace=false}:{chooseWorkspace?:
  },[router,chooseWorkspace]);
  const availableSpaces=spaces.filter(s=>s.workspaceId===workspaceId),space=availableSpaces[0]?.id??'',workspacePages=pages.filter(p=>p.workspaceId===workspaceId);
  function open(id:string){if(creationDirty&&!confirm('Leave this new-page form? Its title has not been saved.'))return;router.push(`/pages/${encodeURIComponent(id)}`);}
- return <main className="workspace-home"><div className="brand"><span>✦</span>Holy Sheet</div>{!loading&&!needsSignIn&&<SignOutButton/>}<section><h1>{chooseWorkspace?'Choose your workspace':'A clear place for your next idea.'}</h1>
+ return <main className="workspace-home"><div className="brand"><HolySheetBrand/>Holy Sheet</div>{!loading&&!needsSignIn&&<SignOutButton/>}<section><h1>{chooseWorkspace?'Choose your workspace':'A clear place for your next idea.'}</h1>
  {loading?<p role="status">Opening your workspace…</p>:!needsSignIn&&workspaces.length?<>
   <label>Workspace<select value={workspaceId} onChange={e=>{if(creationDirty&&!confirm('Leave this new-page form? Its title has not been saved.'))return;setCreationDirty(false);setWorkspaceId(e.target.value);}}>{workspaces.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
   {workspaces.find(w=>w.id===workspaceId)?.canCreateWorkspace&&<button onClick={()=>{if(creationDirty&&!confirm('Leave this new-page form? Its title has not been saved.'))return;setWorkspaceCreationOpen(true);}}>Create workspace</button>}
