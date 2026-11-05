@@ -8,3 +8,8 @@
 .exit { min-height:44px; padding:9px 14px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); font:inherit; }
 .exit:focus-visible { outline:2px solid var(--navy); outline-offset:3px; }
 @media(max-width:850px) { .focused.focused :global(.document)>article { margin:16px auto 48px; } .focused.focused :global(.doc-header) { padding:8px 12px; } }
+
+.focused.focused :global(.laptop-tools-toggle-host),.focused.focused :global(.laptop-focus){display:none}
+.focused.focused :global(.laptop-toolbar-frame){margin-right:0;position:sticky;top:60px;z-index:4;background:white}
+.focused.focused :global(.document)>article{padding-right:32px}
+@media(max-width:520px){.focused.focused :global(.document)>article{padding-right:18px}}

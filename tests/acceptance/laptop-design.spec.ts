@@ -37,7 +37,7 @@ test('writing, tools, settings and subpages preserve the saved document',async({
  const unchanged=(await(await request.get(`/api/v1/pages/${record.id}/document`)).json()).page;expect(unchanged.document).toEqual(baseline.document);expect(unchanged.version).toBe(baseline.version);
  await page.getByRole('button',{name:'Collapse pages',exact:true}).click();await expect(page.getByRole('complementary',{name:'Workspace navigation'})).toBeHidden();
  await page.getByRole('button',{name:'Open page navigation',exact:true}).click();await expect(page.getByRole('complementary',{name:'Workspace navigation'})).toBeVisible();
- await page.getByRole('button',{name:'＋ Subpage',exact:true}).click();const creation=page.getByRole('dialog',{name:'Create a page',exact:true});await creation.getByLabel('Title',{exact:true}).fill('Child '+record.id);await creation.getByRole('button',{name:'Create page',exact:true}).click();
+ await page.getByRole('button',{name:'Subpage',exact:true}).click();const creation=page.getByRole('dialog',{name:'Create a page',exact:true});await creation.getByLabel('Title',{exact:true}).fill('Child '+record.id);await creation.getByRole('button',{name:'Create page',exact:true}).click();
  await expect(page.getByRole('textbox',{name:'Page title',exact:true})).toHaveValue('Child '+record.id);
  const child=(await(await request.get('/api/pages')).json()).pages.find((p:{title:string})=>p.title==='Child '+record.id);expect(child.parentPageId).toBe(record.id);
  await page.goto(`/pages/${record.id}`);await expect(editor).toContainText('Preserve this draft');
@@ -57,4 +57,19 @@ test('failed invitation submission retains entered values without creating acces
  let writes=0;await page.route('**/api/v1/workspaces/ws-aplyd/invitations',async route=>{if(route.request().method()==='POST'){writes++;await route.fulfill({status:503,json:{error:'Temporarily unavailable'}});}else await route.continue();});
  await page.getByRole('button',{name:'Save invitation',exact:true}).click();await expect(page.locator('.laptop-screen').getByRole('alert')).toHaveText('Temporarily unavailable');
  await expect(page.getByLabel('Aplyd invitation reference')).toHaveValue('disposable-reference');await expect(page.getByLabel('Aplyd recipient ID')).toHaveValue('disposable-subject');await expect(page.getByRole('button',{name:'Save invitation',exact:true})).toBeEnabled();expect(writes).toBe(1);
+});
+
+test('approved writing frame keeps long workspace identity and selected tree row compact',async({page,request,baseURL})=>{
+ const response=await request.post('/api/pages',{headers:{Origin:baseURL!},data:{title:'Design fidelity '+Date.now(),spaceId:'space-product'}});expect(response.ok()).toBe(true);const {page:record}=await response.json();
+ const longName='HOLY-92 N47 Acme staging 20261104';
+ await page.route(`**/api/v1/pages/${record.id}/document`,async route=>{const res=await route.fetch();const json=await res.json();json.page.workspaceName=longName;await route.fulfill({response:res,json});});
+ await page.setViewportSize({width:1366,height:768});await page.goto(`/pages/${record.id}`);await expect(page.getByRole('textbox',{name:'Document content',exact:true})).toBeVisible();
+ const identity=page.locator('.workspace-identity strong');await expect(identity).toHaveAttribute('title',longName);
+ const sizes=await page.evaluate(()=>{const box=(s:string)=>document.querySelector(s)!.getBoundingClientRect();const style=(s:string)=>getComputedStyle(document.querySelector(s)!);return {brandWidth:box('.workspace-avatar').width,brandHeight:box('.workspace-avatar').height,nameHeight:box('.workspace-identity strong').height,nameLine:parseFloat(style('.workspace-identity strong').lineHeight),toolbarBottom:box('.laptop-toolbar-host').bottom,titleTop:box('.title').top,toolboxRight:box('.editor-toolbox').right,toolboxBottom:box('.editor-toolbox').bottom,navy:style('.workspace-avatar').backgroundColor,viewportWidth:innerWidth,viewportHeight:innerHeight};});
+ expect(sizes.brandWidth).toBe(31);expect(sizes.brandHeight).toBe(34);expect(sizes.nameHeight).toBeLessThanOrEqual(sizes.nameLine+1);expect(sizes.toolbarBottom).toBeLessThan(sizes.titleTop);expect(sizes.toolboxRight).toBe(sizes.viewportWidth);expect(sizes.toolboxBottom).toBe(sizes.viewportHeight);expect(sizes.navy).toBe('rgb(44, 47, 113)');
+ const row=page.locator(`.page-tree-row[aria-current=page]`);await expect(row).toBeVisible();await row.getByRole('button',{name:record.title,exact:true}).click();
+ expect(await row.locator('.page-tree-open').evaluate(el=>getComputedStyle(el).boxShadow)).toBe('none');expect(await row.evaluate(el=>getComputedStyle(el).boxShadow)).toContain('inset');
+ await page.getByRole('group',{name:'Toolbox sections'}).getByRole('button',{name:'Page',exact:true}).click();await expect(page.locator('.toolbox-utilities').getByRole('button',{name:'Comments',exact:true})).toBeVisible();
+ await page.getByRole('group',{name:'Toolbox sections'}).getByRole('button',{name:'Insert',exact:true}).click();await expect(page.getByRole('button',{name:'Subpage',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Close toolbox',exact:true}).click();await expect(page.getByRole('button',{name:'Open toolbox',exact:true})).toBeFocused();await page.getByRole('button',{name:'Open toolbox',exact:true}).click();await page.getByLabel('More formatting',{exact:true}).click();await expect(page.getByLabel('Text colour',{exact:true})).toBeVisible();await page.getByLabel('Text colour',{exact:true}).press('Escape');await expect(page.getByLabel('More formatting',{exact:true})).toBeFocused();await page.screenshot({path:'artifacts/laptop-design/fidelity-document-1366.png',fullPage:true});
 });
