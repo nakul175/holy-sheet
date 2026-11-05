@@ -55,6 +55,6 @@ test('failed invitation submission retains entered values without creating acces
  await page.goto('/workspaces/ws-aplyd/invitations');await page.getByRole('button',{name:'Link an Aplyd invitation',exact:true}).click();
  await page.getByLabel('Aplyd invitation reference').fill('disposable-reference');await page.getByLabel('Aplyd recipient ID').fill('disposable-subject');
  let writes=0;await page.route('**/api/v1/workspaces/ws-aplyd/invitations',async route=>{if(route.request().method()==='POST'){writes++;await route.fulfill({status:503,json:{error:'Temporarily unavailable'}});}else await route.continue();});
- await page.getByRole('button',{name:'Save invitation',exact:true}).click();await expect(page.getByRole('alert')).toBeVisible();
+ await page.getByRole('button',{name:'Save invitation',exact:true}).click();await expect(page.locator('.laptop-screen').getByRole('alert')).toHaveText('Temporarily unavailable');
  await expect(page.getByLabel('Aplyd invitation reference')).toHaveValue('disposable-reference');await expect(page.getByLabel('Aplyd recipient ID')).toHaveValue('disposable-subject');await expect(page.getByRole('button',{name:'Save invitation',exact:true})).toBeEnabled();expect(writes).toBe(1);
 });
