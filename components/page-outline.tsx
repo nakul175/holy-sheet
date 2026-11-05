@@ -17,7 +17,7 @@ export default function PageOutline({documentHost,preferenceKey,available,pageId
  const confirmed=useRef<ReadonlySet<string>>(new Set());
  const saved=useMemo(()=>available&&savedDocument!==undefined?savedHeadingIds(savedDocument):null,[available,savedDocument]);
  if(!available)confirmed.current=new Set();else if(saved)confirmed.current=saved;
- function close(){setOpen(false);const button=opener.current,details=button?.closest('details');if(button?.isConnected){if(details)details.querySelector('summary')?.focus({preventScroll:true});else button.focus({preventScroll:true});}temporary.current=restoreTemporarySections(temporary.current);setSnapshot({root:null,headings:[],key:''});selectedId.current='';setSelected('');setNotice('');}
+ function close(){const scroll={left:window.scrollX,top:window.scrollY};setOpen(false);const button=opener.current,details=button?.closest('details');if(button?.isConnected){if(details)details.querySelector('summary')?.focus({preventScroll:true});else button.focus({preventScroll:true});}temporary.current=restoreTemporarySections(temporary.current);window.scrollTo({...scroll,behavior:'instant'});setSnapshot({root:null,headings:[],key:''});selectedId.current='';setSelected('');setNotice('');}
  useEffect(()=>{
   if(!open)return;
   panel.current?.querySelector<HTMLElement>('button')?.focus();
