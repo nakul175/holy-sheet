@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Dialog} from './editor/rich-editor';
+import {Dialog} from './editor/dialog';
 import {ApiError,requestJson} from './editor/use-document-session';
 import type {AccessPreview,MemberChange,WorkspaceAccess,WorkspaceRole} from '../lib/workspace-administration';
 import type {OwnershipPreview} from '../lib/ownership-transfer';

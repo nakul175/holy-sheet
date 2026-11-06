@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Dialog} from './editor/rich-editor';
+import {Dialog} from './editor/dialog';
 import {ApiError,requestJson} from './editor/use-document-session';
 type Policy={enabled:boolean;version:number;manage:boolean;replayed?:boolean;applied?:{enabled:boolean;version:number}};
 export default function ExportPolicyDialog({workspaceId,onClose}:{workspaceId:string;onClose:()=>void}){

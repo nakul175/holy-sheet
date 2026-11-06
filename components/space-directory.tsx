@@ -2,6 +2,7 @@
 import { WorkspaceSection } from "./workspace-section";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import UiIcon from "./ui-icon";
 import { ApiError, requestJson } from "./editor/use-document-session";
 import { SPACE_UNAVAILABLE, type DirectoryView, type MigrationJob, type MigrationPreview } from "../lib/space-directory-shared";
 
@@ -139,17 +140,17 @@ export default function SpaceDirectory({ workspaceId, includeArchivedInitially =
     <p><a href="/">Aplyd Pages</a> / <span>Spaces</span></p>
     <h1 id="space-directory">Spaces</h1>
 
-    <label><input type="checkbox" checked={includeArchived} onChange={event => setIncludeArchived(event.target.checked)} /> Include archived</label>
+
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {!view && !error && <p role="status">Opening spaces…</p>}
-    {view && <ul className="space-directory-list">
+    {view && <section className="directory-card"><div className="directory-card-heading"><h2>Workspace spaces</h2><label><input type="checkbox" checked={includeArchived} onChange={event => setIncludeArchived(event.target.checked)} /> Include archived</label></div><ul className="space-directory-list">
       {view.spaces.map(space => <li key={space.id}>
-        <div>
+        <div className="directory-space"><i aria-hidden="true"><UiIcon name="folder"/></i><div>
           <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(space.id)}`}>{space.name}</a>
           <span>{labels[space.visibility]}{space.archived ? " · Archived" : ""}{space.archivedAtIst ? ` · ${space.archivedAtIst}` : ""}</span>
         </div>
-        <div className="space-directory-actions">
+        </div><div className="space-directory-actions">
           {space.action === "join" && <button type="button" disabled={busy} onClick={() => void send({ action: "join", spaceId: space.id })}>Join</button>}
           {space.action === "request" && <button type="button" disabled={busy || space.requestPending} onClick={() => void send({ action: "request-access", spaceId: space.id })}>{space.requestPending ? "Access requested" : "Request access"}</button>}
           {view.canAdminister && <details><summary aria-label={`Actions for ${space.name}`}>···</summary>
@@ -160,7 +161,7 @@ export default function SpaceDirectory({ workspaceId, includeArchivedInitially =
         </div>
       </li>)}
       {!view.spaces.length && <li>No spaces to show.</li>}
-    </ul>}
+    </ul></section>}
     {view?.canAdminister && moveOpen && <section aria-labelledby="move-tree-heading" className="space-migration">
       <h2 id="move-tree-heading" tabIndex={-1} ref={moveHeading}>Move a page tree</h2>
       <button type="button" disabled={busy} onClick={() => setMoveOpen(false)}>Close move form</button>

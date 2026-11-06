@@ -1,10 +1,14 @@
-import type { ReactNode } from 'react';
+'use client';
+import { useState, type ReactNode } from 'react';
+import WorkspaceAccessDialog from './workspace-access-dialog';
+import ExportPolicyDialog from './export-policy-dialog';
 import HolySheetBrand from './holy-sheet-brand';
 import UiIcon from './ui-icon';
 
 export function WorkspaceSection({workspaceId, section, spaces = [], children}: {
   workspaceId: string; section: 'Spaces' | 'Snippets'; children: ReactNode; spaces?: { id:string; name:string }[];
 }) {
+  const [dialog,setDialog] = useState<'access'|'policy'|null>(null);
   const base = '/workspaces/' + encodeURIComponent(workspaceId);
   return <div className="workspace-section">
     <header><a href="/" className="suite-brand"><HolySheetBrand onBlue/>Aplyd Pages</a><a href="/workspaces">Workspaces</a></header>
@@ -12,8 +16,11 @@ export function WorkspaceSection({workspaceId, section, spaces = [], children}: 
       <a href={base + '/spaces'} aria-current={section === 'Spaces' ? 'location' : undefined}><UiIcon name="folder"/>Spaces</a>
       <a href={base + '/snippets'} aria-current={section === 'Snippets' ? 'location' : undefined}><UiIcon name="document"/>Snippets</a>
       {spaces.length > 0 && <div className="workspace-space-links">{spaces.map(space => <a key={space.id} href={base + "/spaces/" + encodeURIComponent(space.id)}><UiIcon name="folder"/>{space.name}</a>)}</div>}
+      <button className="section-access" onClick={() => setDialog('access')}><UiIcon name="users"/>Workspace access</button>
     </nav>
     {children}
+    {dialog === 'access' && <WorkspaceAccessDialog workspaceId={workspaceId} onClose={() => setDialog(null)} onExportPolicy={() => setDialog('policy')}/>}
+    {dialog === 'policy' && <ExportPolicyDialog workspaceId={workspaceId} onClose={() => setDialog(null)}/>}
   </div>;
 }
 
