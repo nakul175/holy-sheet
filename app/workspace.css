@@ -435,3 +435,8 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
   .top-toolbox { flex-wrap:nowrap; overflow-x:auto; }
   .top-toolbox > div { flex:none; flex-wrap:nowrap; }
 }
+
+/* Leave the card actions reachable above the dock in a short landscape viewport. */
+@media(max-width:850px) and (max-height:600px) {
+  .editor-toolbox { max-height:32dvh; }
+}
