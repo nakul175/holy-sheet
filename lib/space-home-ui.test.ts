@@ -111,7 +111,7 @@ it("shows a neutral load, then a readable empty overview with one-write manager 
   expect(view.host.textContent).not.toContain(SPACE_HOME_PAGE_UNAVAILABLE);
   await act(async () => finish(new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } })));
   expect(view.host.textContent).toContain("No overview page has been set for this space.");
-  expect(view.host.querySelector("a[href='/workspaces']")?.textContent).toBe("Create a page");
+  expect(view.host.querySelector("main a[href='/workspaces']")?.textContent).toBe("Create a page");
   const submit = Array.from(view.host.querySelectorAll("button")).find(button => button.textContent === "Set as overview")!;
   fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ...payload, home: { pageId: "page-1", title: "Operating guide", summary: "", headings: [], templateName: null, role: "owner", updatedAtIst: "04 Nov 2026, 12:00 IST" } }), { status: 200, headers: { "Content-Type": "application/json" } }));
   await act(async () => submit.click());
@@ -133,7 +133,7 @@ it("does not offer overview mutations to a readable non-manager", async () => {
   await act(async () => { await Promise.resolve(); });
   expect(view.host.textContent).toContain("Ask a space leader to create or choose an overview page.");
   expect(view.host.textContent).not.toContain("Set as overview");
-  expect(view.host.querySelector("a[href='/workspaces']")).toBeNull();
+  expect(view.host.querySelector("main a[href='/workspaces']")).toBeNull();
   expect(fetchMock.mock.calls.filter(call => call[1]?.method === "POST")).toHaveLength(0);
   await view.unmount();
 });

@@ -1,4 +1,5 @@
 "use client";
+import { WorkspaceSection, SpaceTabs } from "./workspace-section";
 import { useEffect, useState } from "react";
 import { ApiError, requestJson } from "./editor/use-document-session";
 import type { SpaceReviewDashboard } from "../lib/page-review";
@@ -57,15 +58,15 @@ export default function SpaceReviews({ workspaceId, spaceId }: { workspaceId: st
   }
   const csv = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(spaceId)}/reviews?export=csv&filter=${encodeURIComponent(filter)}`;
   const empty = dashboard ? isEmptyReviewDashboard(dashboard) : false;
-  return <main className="space-reviews-page"><a className="skip-link" href="#space-reviews">Skip to reviews</a><p><a href="/">Aplyd Pages</a> / <span>Space</span> / Reviews</p><h1>Reviews</h1>
+  return <WorkspaceSection workspaceId={workspaceId} section="Spaces" spaces={dashboard ? [{id:spaceId,name:dashboard.spaceName}] : []}><main className="space-reviews-page"><a className="skip-link" href="#space-reviews">Skip to reviews</a><p><a href="/">Aplyd Pages</a> / <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces`}>Spaces</a> / Page reviews</p>
     {error && <p role="alert">{error}</p>}
     {!dashboard && !error && <p role="status">Opening reviews…</p>}
     {dashboard && <div id="space-reviews">
-      <p>{dashboard.spaceName}</p>
+      <h1>{dashboard.spaceName}</h1><SpaceTabs workspaceId={workspaceId} spaceId={spaceId} reviews/>
       {empty ? <section className="reviews-empty" aria-labelledby="reviews-empty-title">
         <span className="reviews-empty-icon" aria-hidden="true">✓</span>
         <h2 id="reviews-empty-title">No page reviews yet</h2>
-        <p>Set a review date on a page that needs a regular owner check. When reviews become due, they’ll appear here with the right context and next action.</p>
+        <p>Set a date for the page owner to check that the content is still accurate.</p>
         <a className="reviews-empty-cta" href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(spaceId)}`}>Choose a page to review</a>
         <small>You can add a review from a page’s ••• menu.</small>
       </section> : <><div className="review-toolbar">
@@ -76,5 +77,5 @@ export default function SpaceReviews({ workspaceId, spaceId }: { workspaceId: st
       <SpaceReviewTable dashboard={dashboard} />
       </>}
     </div>}
-  </main>;
+  </main></WorkspaceSection>;
 }

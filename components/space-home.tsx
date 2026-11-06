@@ -1,4 +1,5 @@
 "use client";
+import { WorkspaceSection, SpaceTabs } from "./workspace-section";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { ApiError, requestJson } from "./editor/use-document-session";
@@ -31,7 +32,7 @@ export function SpaceHomePins({ pins, canManage, busy, onReorder, onUnpin, onSet
     if (next.join("\0") !== ids.join("\0")) onReorder(next);
   }
   return <div>
-    {canManage && <p id={helpId}>Use the up and down arrow keys, or drag a card, to reorder pinned pages.</p>}
+    {canManage && pins.length > 1 && <p id={helpId}>Use the up and down arrow keys, or drag a card, to reorder pinned pages.</p>}
     {!pins.length && <p>Nothing pinned yet.</p>}
     {!!pins.length && <ul className="space-home-pins" aria-label="Pinned pages" aria-describedby={canManage ? helpId : undefined}>
       {pins.map((pin, index) => <li
@@ -125,43 +126,42 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
   }
   const shownHome = home?.workspaceId === workspaceId && home.spaceId === spaceId ? home : null;
   const shownUnavailable = unavailable?.endpoint === endpoint ? unavailable.message : "";
-  return <main className="space-home-page">
+  return <WorkspaceSection workspaceId={workspaceId} section="Spaces" spaces={shownHome ? [{id:spaceId,name:shownHome.spaceName}] : []}><main className="space-home-page">
     <a className="skip-link" href="#space-home">Skip to space home</a>
-    <p><a href="/">Aplyd Pages</a> / <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces`}>Spaces</a> / <span>Space</span></p>
+    <p><a href="/">Aplyd Pages</a> / <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces`}>Spaces</a> / <span>{shownHome?.spaceName ?? "Space"}</span></p>
     {shownUnavailable && <p role="alert">{shownUnavailable}</p>}
     {!shownHome && !shownUnavailable && <p role="status">Opening space home…</p>}
     {shownHome && <div id="space-home">
       <h1>{shownHome.spaceName}</h1>
+      <SpaceTabs workspaceId={workspaceId} spaceId={spaceId}/>
       <p className="space-home-purpose">Shared knowledge, working notes, and decisions for everyone in this space.</p>
       {shownHome.archived && <p className="space-archive-banner" role="status">{SPACE_ARCHIVED_BANNER}{shownHome.archivedAtIst ? ` Archived ${shownHome.archivedAtIst}.` : ""} {shownHome.canUnarchive && <button type="button" disabled={busy} onClick={() => void requestJson(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/spaces/directory`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "unarchive", spaceId, operationId: crypto.randomUUID() }) }).then(() => setReload(value => value + 1)).catch(reason => setError(reason instanceof ApiError ? reason.message : "This space is archived and read-only"))}>Unarchive</button>}</p>}
       {error && <p role="alert">{error}</p>}
-      <section className="space-home-overview" aria-labelledby="space-home-overview-heading">
+      {shownHome.home && <section className="space-home-overview" aria-labelledby="space-home-overview-heading">
         <h2 id="space-home-overview-heading">Overview</h2>
-        {shownHome.home ? <>
           <p className="space-home-kicker">{shownHome.home.templateName ?? "Space page"}</p>
           <h3>{shownHome.home.title}</h3>
           {shownHome.home.summary && <p>{shownHome.home.summary}</p>}
           {shownHome.home.headings.map(heading => <p key={heading}>{heading}</p>)}
           <p className="space-home-meta">Updated {shownHome.home.updatedAtIst}</p>
           <a href={`/pages/${encodeURIComponent(shownHome.home.pageId)}`}>Open {shownHome.home.title}</a>
-        </> : <div className="space-home-overview-empty">
-          <p>No overview page has been set for this space.</p>
-          {shownHome.canManage ? <>
-            {!!shownHome.pinCandidates.length && <form onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "set-home", pageId: candidate }); }}>
+      </section>}
+
+      {!shownHome.home && !shownHome.canManage && <details><summary>Space overview</summary><p>Ask a space leader to create or choose an overview page.</p></details>}
+      {shownHome.canManage && <details className="organize-space"><summary>Organize space</summary>
+        {!shownHome.home && <p>No overview page has been set for this space.</p>}
+        {!!shownHome.pinCandidates.length && <><form onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "set-home", pageId: candidate }); }}>
               <label>Choose an existing page <select aria-label="Choose an existing overview page" value={candidate} disabled={busy} onChange={event => setCandidate(event.target.value)}>{shownHome.pinCandidates.map(item => <option key={item.pageId} value={item.pageId}>{item.title}</option>)}</select></label>
               <button type="submit" disabled={busy || !candidate}>Set as overview</button>
-            </form>}
-            <p><a href="/workspaces">Create a page</a>, then return here to set it as the overview.</p>
-          </> : <p>Ask a space leader to create or choose an overview page.</p>}
-        </div>}
-      </section>
-      <div className="space-home-widgets">
-        <section aria-labelledby="space-home-pinned-heading">
-          <h2 id="space-home-pinned-heading">Pinned</h2>
-          {shownHome.canManage && !!shownHome.pinCandidates.length && <form className="space-home-pin-form" onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "pin", pageId: candidate }); }}>
+            </form><form className="space-home-pin-form" onSubmit={event => { event.preventDefault(); if (candidate) void send({ action: "pin", pageId: candidate }); }}>
             <label>Pin a page <select aria-label="Pin a page" value={candidate} disabled={busy} onChange={event => setCandidate(event.target.value)}>{shownHome.pinCandidates.map(item => <option key={item.pageId} value={item.pageId}>{item.title}</option>)}</select></label>
             <button type="submit" disabled={busy || !candidate}>Pin page</button>
-          </form>}
+          </form></>}
+        <a href="/workspaces">Create a page</a>
+      </details>}
+      <div className="space-home-widgets">
+        {shownHome.widgets.pinned.length > 0 && <section aria-labelledby="space-home-pinned-heading">
+          <h2 id="space-home-pinned-heading">Pinned</h2>
           <SpaceHomePins
             pins={shownHome.widgets.pinned}
             canManage={shownHome.canManage}
@@ -170,7 +170,7 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
             onUnpin={pageId => void send({ action: "unpin", pageId })}
             onSetHome={pageId => void send({ action: "set-home", pageId })}
           />
-        </section>
+        </section>}
         <section aria-labelledby="space-home-recent-heading">
           <h2 id="space-home-recent-heading">Recently updated</h2>
           {!shownHome.widgets.recent.length && <p>No recent updates.</p>}
@@ -179,15 +179,14 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
             <span>{item.editorName ? `${item.editorName} · ` : ""}{item.updatedAtIst}</span>
           </li>)}</ul>}
         </section>
-        <section aria-labelledby="space-home-views-heading">
+        {shownHome.widgets.recordViews.length > 0 && <section aria-labelledby="space-home-views-heading">
           <h2 id="space-home-views-heading">Key record views</h2>
-          {!shownHome.widgets.recordViews.length && <p>No record views.</p>}
           {!!shownHome.widgets.recordViews.length && <ul className="space-home-list">{shownHome.widgets.recordViews.map(item => <li key={`${item.pageId}:${item.viewId}`}>
             <span className="space-home-pin-icon" aria-hidden="true"><UiIcon name="grid" /></span>
             <a href={`/pages/${encodeURIComponent(item.pageId)}`}>{item.pageTitle}</a>
             <span>{item.collectionId} · {item.layout}</span>
           </li>)}</ul>}
-        </section>
+        </section>}
         <section aria-labelledby="space-home-owners-heading">
           <h2 id="space-home-owners-heading">Owners</h2>
           {!shownHome.widgets.owners.length && <p>No owners to show.</p>}
@@ -199,5 +198,5 @@ export default function SpaceHome({ workspaceId, spaceId }: { workspaceId: strin
         </section>
       </div>
     </div>}
-  </main>;
+  </main></WorkspaceSection>;
 }

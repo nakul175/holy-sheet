@@ -4,7 +4,7 @@ import {createRoot} from 'react-dom/client';
 import {it,expect,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({request:vi.fn()}));
 vi.mock('../components/editor/use-document-session',async()=>({...await vi.importActual('../components/editor/use-document-session'),requestJson:mocks.request}));
-vi.mock('../components/editor/rich-editor',()=>({Dialog:({children}:{children:ReactNode})=>createElement('div',{role:'dialog'},children)}));
+vi.mock('../components/editor/dialog',()=>({Dialog:({children}:{children:ReactNode})=>createElement('div',{role:'dialog'},children)}));
 import WorkspaceAccessDialog from '../components/workspace-access-dialog';
 import {ApiError} from '../components/editor/use-document-session';
 it('requires a reviewed promotion, preserves the operation on uncertain failure and confirms only acknowledgement',async()=>{
