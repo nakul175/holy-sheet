@@ -5,7 +5,7 @@ type HolySheetBrandProps = {
 export default function HolySheetBrand({onBlue=false}:HolySheetBrandProps){
  return <img
   className={`aplyd-bot holy-sheet-brand-logo${onBlue?' aplyd-bot--on-blue':''}`}
-  src="/brand/little-bot-heroes/holy-sheet.png"
+  src="/brand/little-bot-heroes/pages.png"
   alt=""
   width="1254"
   height="1254"

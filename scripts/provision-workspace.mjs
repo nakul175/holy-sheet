@@ -11,7 +11,7 @@ try{
   await client.query('SELECT pg_advisory_xact_lock(730217439)');
   await client.query(migrations);
   await client.query('INSERT INTO hs_users(id,name) VALUES($1,$2) ON CONFLICT(id) DO NOTHING',[id,process.env.HS_BOOTSTRAP_USER_NAME??'Staging owner']);
-  await client.query("INSERT INTO hs_workspaces(id,name) VALUES('ws-staging','Aplyd Pages staging') ON CONFLICT DO NOTHING");
+  await client.query("INSERT INTO hs_workspaces(id,name) VALUES('ws-staging','Pages by Aplyd staging') ON CONFLICT DO NOTHING");
   await client.query("INSERT INTO hs_members(workspace_id,user_id) VALUES('ws-staging',$1) ON CONFLICT DO NOTHING",[id]);
   await client.query("INSERT INTO hs_spaces(id,workspace_id,name) VALUES('space-staging','ws-staging','Product') ON CONFLICT DO NOTHING");
   await client.query('COMMIT');

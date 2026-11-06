@@ -56,7 +56,7 @@ export default function RecordCatalogue({workspaceId,tenantId,collection:initial
  useEffect(()=>{void load();const revoke=()=>clear();window.addEventListener('hs-session-lock',revoke);return()=>{revoke();window.removeEventListener('hs-session-lock',revoke);};},[base,initialCollection]);
  const open=collections.find(item=>item.id===openId);
  return <main className={styles.root}>
-  <p className={styles.help}>Aplyd Pages · shared data</p>
+  <p className={styles.help}>Pages by Aplyd · shared data</p>
   <h1>Data catalogue</h1>
   <p className={styles.help}>Collections and field definitions you can view. Each opening checks the current collection and field permissions. Restricted definitions are omitted, and this catalogue does not show record values or grant access.</p>
   <p><a href={recordsHref}>Back to records</a></p>

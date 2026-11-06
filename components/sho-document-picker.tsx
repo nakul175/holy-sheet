@@ -29,7 +29,7 @@ export default function ShoDocumentPicker() {
                 setSpaces([]);
 
             }
-            throw Error(data.error || 'Aplyd Pages is unavailable. Retry when connected.');
+            throw Error(data.error || 'Pages by Aplyd is unavailable. Retry when connected.');
         }
         return data;
     }
@@ -83,7 +83,7 @@ export default function ShoDocumentPicker() {
         }
     }
     const workspaces = Array.from(new Set(spaces.map(s => s.workspaceId)));
-    return <main className={`workspace-home ${styles.picker}`}><h1>Aplyd Pages documents</h1><p>Pages stay in Aplyd Pages and keep their existing permissions.</p>
+    return <main className={`workspace-home ${styles.picker}`}><h1>Pages by Aplyd documents</h1><p>Pages stay in Pages by Aplyd and keep their existing permissions.</p>
  {error && <p role="status">{error}</p>}
  {!ready ? <><SignInLink path="/" newWindow/><button onClick={() => setRetry(n => n + 1)}>Retry access check</button></> : <>
  <label>Workspace <select value={workspace} disabled={busy || pending} onChange={e => { setWorkspace(e.target.value); setSpace(''); }}><option value="">Choose workspace</option>{workspaces.map(id => <option key={id} value={id}>{spaces.find(s => s.workspaceId === id)?.workspaceName ?? 'Workspace'}</option>)}</select></label>

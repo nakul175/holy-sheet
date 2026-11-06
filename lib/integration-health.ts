@@ -44,7 +44,7 @@ export function parseConsumerIdentity(input: { clientId: unknown; label: unknown
   const clientId = input.clientId.normalize("NFC");
   const label = input.label.normalize("NFC").trim();
   if (clientId !== input.clientId || !clientPattern.test(clientId) || reservedClients.has(clientId) || looksLikeCredential(clientId)) {
-    return { ok: false as const, message: "Use a paused consumer id without spaces, credentials, or a reserved Aplyd Pages channel." };
+    return { ok: false as const, message: "Use a paused consumer id without spaces, credentials, or a reserved Pages by Aplyd channel." };
   }
   if (label !== input.label.trim() || !labelPattern.test(label) || /[\p{Cc}]/u.test(label) || looksLikeCredential(label)) {
     return { ok: false as const, message: "Use a consumer label of 1–100 characters without control characters or credentials." };

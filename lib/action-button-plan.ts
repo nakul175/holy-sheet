@@ -1,7 +1,7 @@
 import { DocumentError, stableStringify } from "./document";
 import { recordHash, recordName, recordValueEmpty, typedRecordValue, type RecordField } from "./shared-record-types";
 
-export const actionButtonBoundary = "Buttons run allowlisted Aplyd Pages action contracts only. They do not run scripts or open arbitrary URLs.";
+export const actionButtonBoundary = "Buttons run allowlisted Pages by Aplyd action contracts only. They do not run scripts or open arbitrary URLs.";
 export const actionButtonAssignment = "Configuring or assigning an action button does not grant access to a page, record, collection, or field.";
 export const actionButtonAuthority = "Seeing a button or belonging to the workspace does not grant the action. The server checks the current user's record, field, and action rights.";
 export const actionButtonReview = "Review the impact. Confirming is the only way to run a change.";

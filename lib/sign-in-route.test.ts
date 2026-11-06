@@ -1,7 +1,7 @@
 import { describe,expect,it } from 'vitest';
 import { GET } from '../app/auth/sign-in/route';
 
-describe('Aplyd Pages sign-in entry',()=>{
+describe('Pages by Aplyd sign-in entry',()=>{
  it('renders the branded Aplyd entry before starting OIDC',async()=>{
   const response=await GET(new Request('https://holy-sheet.example/auth/sign-in?next=%2Fpages%2Fwelcome'));
   const body=await response.text();
@@ -10,7 +10,7 @@ describe('Aplyd Pages sign-in entry',()=>{
   expect(response.headers.get('content-security-policy')).toMatch(/style-src 'nonce-[^']+'/);
   expect(body).toContain('Give every idea a place to belong.');
   expect(body).toContain('Continue with Aplyd');
-  expect(body).toContain('src="/brand/little-bot-heroes/holy-sheet.png"');
+  expect(body).toContain('src="/brand/little-bot-heroes/pages.png"');
   expect(body).toContain('drop-shadow(1px 0 0 #fff8e9)');
   expect(body).not.toContain('aria-hidden="true">✦</span>');
   expect(body).toContain('/auth/sign-in?continue=1&amp;next=%2Fpages%2Fwelcome');

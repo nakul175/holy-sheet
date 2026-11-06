@@ -77,7 +77,7 @@ export default function SnippetLibrary({ workspaceId, initialSnippetId }: { work
 
   const manageable = library?.spaces.filter(space => space.canManage) ?? [];
   return <WorkspaceSection workspaceId={workspaceId} section="Snippets" spaces={library?.spaces}><main className="snippet-library">
-    <p><a href="/">Aplyd Pages</a></p>
+    <p><a href="/">Pages by Aplyd</a></p>
     <h1>Snippets</h1>
     <p>Approved wording can be inserted into pages. Drafts stay in this library until an approver accepts them.</p>
     {error && <p role="alert">{error}</p>}
