@@ -13,6 +13,16 @@ describe('Little Bot Heroes brand mark',()=>{
   expect(png[25]).toBe(6);
  });
 
+ it('ships transparent browser and Apple icons from the same mark',()=>{
+  for(const [path,size] of [['app/icon.png',64],['app/apple-icon.png',180]] as const){
+   const png=readFileSync(path);
+   expect(png.subarray(1,4).toString()).toBe('PNG');
+   expect(png.readUInt32BE(16)).toBe(size);
+   expect(png.readUInt32BE(20)).toBe(size);
+   expect(png[25]).toBe(6);
+  }
+ });
+
  it('adds the ivory-edge treatment only on navy',()=>{
   const white=renderToStaticMarkup(createElement(HolySheetBrand));
   const navy=renderToStaticMarkup(createElement(HolySheetBrand,{onBlue:true}));
