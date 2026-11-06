@@ -137,7 +137,7 @@ export default function SpaceDirectory({ workspaceId, includeArchivedInitially =
 
   return <WorkspaceSection workspaceId={workspaceId} section="Spaces" spaces={view?.spaces.filter(space => space.action === "open" && !space.archived)}><main className="space-directory">
     <a className="skip-link" href="#space-directory">Skip to spaces</a>
-    <p><a href="/">Aplyd Pages</a> / <span>Spaces</span></p>
+    <p><a href="/">Pages by Aplyd</a> / <span>Spaces</span></p>
     <h1 id="space-directory">Spaces</h1>
 
 

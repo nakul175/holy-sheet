@@ -3,7 +3,7 @@ import { stableStringify, type RichNode } from "./document";
 import type { RecordExportSlice } from "./record-page-refs";
 
 export const COMPLIANCE_READY_SUBJECT = "Your compliance pack is ready";
-export const COMPLIANCE_READY_BODY = "Your Aplyd Pages compliance pack is ready to download for 24 hours. This message does not include pack contents.";
+export const COMPLIANCE_READY_BODY = "Your Pages by Aplyd compliance pack is ready to download for 24 hours. This message does not include pack contents.";
 export const ATTACHMENTS_EXCLUDED_NOTE = "Attachments excluded by export policy.";
 export const RESTRICTED_RECORD = "Restricted record";
 export const COMPLIANCE_SECONDS_PER_ITEM = 2;

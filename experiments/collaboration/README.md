@@ -1,6 +1,6 @@
 # HOLY-17 protocol experiment
 
-This isolated package evaluates a candidate; it is not imported by Aplyd Pages, is excluded from the Docker context, and does not enable collaboration or change the application lockfile. Install with `npm ci --ignore-scripts --prefix experiments/collaboration`; run with `npm test --prefix experiments/collaboration`.
+This isolated package evaluates a candidate; it is not imported by Pages by Aplyd, is excluded from the Docker context, and does not enable collaboration or change the application lockfile. Install with `npm ci --ignore-scripts --prefix experiments/collaboration`; run with `npm test --prefix experiments/collaboration`.
 
 Candidate: Loro 1.17.1, pinned with registry integrity. Its movable tree can keep a stable container while a block moves, and nested rich text can merge text/marks separately from structure. That is a useful fit to investigate for HOLY-17 move-versus-edit requirements. This remains a candidate, not an approved production protocol. A direct Tiptap binding using Yjs is another option; its transaction/initialization/schema caveats also need qualification before selection.
 
@@ -16,7 +16,7 @@ Local result: 12 positive protocol checks and one unsafe-behavior characterizati
 
 ## What this does not prove
 
-There is no Tiptap-to-tree mapping, valid-document projector, server authority or authorization in this package. Generic CRDT convergence does not enforce Aplyd Pages schema or permission policy. A raw update must never be accepted directly into the canonical page merely because the binary decoder accepts it. Application block IDs here are synthetic metadata; authenticated writers could duplicate or alter them without an enforcing adapter.
+There is no Tiptap-to-tree mapping, valid-document projector, server authority or authorization in this package. Generic CRDT convergence does not enforce Pages by Aplyd schema or permission policy. A raw update must never be accepted directly into the canonical page merely because the binary decoder accepts it. Application block IDs here are synthetic metadata; authenticated writers could duplicate or alter them without an enforcing adapter.
 
 The implementation gate remains: transaction-to-operation mapping for every supported rich block, schema-safe deterministic projection, immutable block identity, concurrent insertion/deletion/move semantics, limits before allocation, page/epoch binding, authenticated operation attribution and deduplication, transactional persistence before acknowledgement, permission recheck under the canonical page lock, revocation/Trash termination, relative cursors, presence expiry, reconnect recovery, local Undo, history and encrypted draft integration. Delete-versus-move and concurrent table shape/merge/split transforms still need explicit product semantics and proofs. Existing plain snapshot save must not race the collaboration authority.
 

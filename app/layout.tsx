@@ -1,21 +1,14 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
 import "@aplyd/holy-sheet-editor/styles.css";
 import "./workspace.css";
 import "./workspace-sections.css";
 import SessionBoundary from '../components/session-boundary';
 
-const publicSans = localFont({src:[
-  {path:'./fonts/PublicSans-Regular.woff2',weight:'400',style:'normal'},
-  {path:'./fonts/PublicSans-Medium.woff2',weight:'500',style:'normal'},
-  {path:'./fonts/PublicSans-SemiBold.woff2',weight:'600',style:'normal'},
-],variable:'--font-public-sans',display:'swap',adjustFontFallback:'Arial'});
-
 export const metadata: Metadata = {
-  title: "Aplyd Pages",
+  title: "Pages by Aplyd",
   description: "Pages that stay close to the work",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en" className={publicSans.variable}><body><SessionBoundary>{children}</SessionBoundary></body></html>;
+  return <html lang="en"><head><link rel="stylesheet" href="/fonts/pages.css"/></head><body><SessionBoundary>{children}</SessionBoundary></body></html>;
 }

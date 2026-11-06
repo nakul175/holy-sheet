@@ -13,12 +13,12 @@ function signInPage(request:Request){
  const headers={
   'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',
   'Content-Type':'text/html; charset=utf-8',
-  'Content-Security-Policy':`default-src 'none'; style-src 'nonce-${nonce}'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
+  'Content-Security-Policy':`default-src 'none'; style-src 'nonce-${nonce}' 'self'; font-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
  };
  return new Response(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in · Aplyd Pages</title><style nonce="${nonce}">
-:root{--navy:#2c2f71;--navy-dark:#1f2252;--gold:#d99d29;--bg:#f5f6f8;--card:#fff;--line:#e3e6eb;--ink:#171b22;--ink-2:#3a4250;--muted:#5e6673;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:light}
+<link rel="stylesheet" href="/fonts/pages.css"><title>Sign in · Pages by Aplyd</title><style nonce="${nonce}">
+:root{--navy:#2c2f71;--navy-dark:#1f2252;--gold:#d99d29;--bg:#f5f6f8;--card:#fff;--line:#e3e6eb;--ink:#171b22;--ink-2:#3a4250;--muted:#5e6673;font-family:Lato,sans-serif;color-scheme:light}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--ink)}main{min-height:100vh;min-height:100dvh;display:grid;grid-template-columns:minmax(0,1.08fr) minmax(420px,.92fr)}
 .story{position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding:80px clamp(44px,7vw,110px);background:var(--navy);color:#fff}
 .brand{position:absolute;top:28px;left:clamp(44px,7vw,110px);display:flex;align-items:center;gap:11px;color:#fff;font-size:15px;font-weight:720;letter-spacing:-.01em}.mark{display:block;width:64px;height:64px;object-fit:contain;filter:drop-shadow(1px 0 0 #fff8e9) drop-shadow(-1px 0 0 #fff8e9) drop-shadow(0 1px 0 #fff8e9) drop-shadow(0 -1px 0 #fff8e9)}.suite{color:#ffffffa8;font-weight:520}
@@ -29,8 +29,8 @@ function signInPage(request:Request){
 @media(max-width:460px){.story{min-height:auto;padding-top:88px}.suite{display:none}.copy h1{font-size:39px}.copy p{font-size:14px}.access{align-items:flex-start}.card{padding:26px 22px}.card h2{font-size:27px}}
 @media(prefers-reduced-motion:reduce){.continue{transition:none}}
 </style></head><body><main>
-<section class="story" aria-labelledby="aplyd-pages-heading"><div class="brand"><img class="mark" src="/brand/little-bot-heroes/holy-sheet.png" width="1254" height="1254" alt="" aria-hidden="true"><span>Aplyd Pages</span></div><div class="copy"><p class="eyebrow">Shared knowledge, beautifully organised</p><h1 id="aplyd-pages-heading">Give every idea a place to belong.</h1><p>Pages, records and working knowledge—connected across your Aplyd suite.</p></div><div class="canvas" aria-hidden="true"><div class="sun"></div><div class="sheet s1"></div><div class="sheet s2"></div><div class="sheet s3"></div></div></section>
-<section class="access" aria-labelledby="sign-in-heading"><div class="card"><h2 id="sign-in-heading">Welcome back</h2><p class="lead">Use your Aplyd account to continue to Aplyd Pages.</p><a class="continue" href="${escape(destination)}"><span>Continue with Aplyd</span><span class="arrow" aria-hidden="true">→</span></a><p class="trust"><span class="shield" aria-hidden="true">✓</span><span>One secure sign-in for the applications your organisation has assigned to you.</span></p><p class="foot">Aplyd productivity suite</p></div></section>
+<section class="story" aria-labelledby="aplyd-pages-heading"><div class="brand"><img class="mark" src="/brand/little-bot-heroes/pages.png" width="1254" height="1254" alt="" aria-hidden="true"><span>Pages by Aplyd</span></div><div class="copy"><p class="eyebrow">Shared knowledge, beautifully organised</p><h1 id="aplyd-pages-heading">Give every idea a place to belong.</h1><p>Pages, records and working knowledge—connected across your Aplyd suite.</p></div><div class="canvas" aria-hidden="true"><div class="sun"></div><div class="sheet s1"></div><div class="sheet s2"></div><div class="sheet s3"></div></div></section>
+<section class="access" aria-labelledby="sign-in-heading"><div class="card"><h2 id="sign-in-heading">Welcome back</h2><p class="lead">Use your Aplyd account to continue to Pages by Aplyd.</p><a class="continue" href="${escape(destination)}"><span>Continue with Aplyd</span><span class="arrow" aria-hidden="true">→</span></a><p class="trust"><span class="shield" aria-hidden="true">✓</span><span>One secure sign-in for the applications your organisation has assigned to you.</span></p><p class="foot">Aplyd productivity suite</p></div></section>
 </main></body></html>`,{headers});
 }
 

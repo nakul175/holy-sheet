@@ -6,7 +6,7 @@ import HolySheetBrand from '../components/holy-sheet-brand';
 
 describe('Little Bot Heroes brand mark',()=>{
  it('keeps the supplied PNG alpha channel',()=>{
-  const png=readFileSync('public/brand/little-bot-heroes/holy-sheet.png');
+  const png=readFileSync('public/brand/little-bot-heroes/pages.png');
   expect(png.subarray(1,4).toString()).toBe('PNG');
   expect(png.readUInt32BE(16)).toBe(1254);
   expect(png.readUInt32BE(20)).toBe(1254);

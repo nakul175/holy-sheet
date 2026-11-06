@@ -1,4 +1,4 @@
-name: Validate Aplyd Pages
+name: Validate Pages by Aplyd
 on:
   pull_request:
   push:
@@ -55,7 +55,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Qualify fail-closed Aplyd Pages release guard
+      - name: Qualify fail-closed Pages by Aplyd release guard
         run: npm run test:release-guard
       - name: Qualify synthetic PDF layout and preserve rendered pages
         run: |
@@ -121,7 +121,7 @@ jobs:
         run: |
           mkdir -p artifacts
           for editor in 0 1; do
-            docker run --detach --name hs-container-check --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 100 --memory 512m --tmpfs /tmp:rw,noexec,nosuid,size=64m --publish 127.0.0.1:53104:3000 --env HS_LOCAL_PREVIEW=0 --env HS_RICH_EDITOR_ENABLED=$editor --env HS_OIDC_ENABLED=0 --env HS_ORIGIN=https://staging.holysheet.aplyd.org --env HS_IDENTITY_ISSUER=https://identity.example.invalid --env HS_IDENTITY_JWKS_URL=https://identity.example.invalid/jwks holy-sheet-candidate:${{ env.HS_CANDIDATE_SHA }}
+            docker run --detach --name hs-container-check --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 100 --memory 512m --tmpfs /tmp:rw,noexec,nosuid,size=64m --publish 127.0.0.1:53104:3000 --env HS_LOCAL_PREVIEW=0 --env HS_RICH_EDITOR_ENABLED=$editor --env HS_OIDC_ENABLED=0 --env HS_ORIGIN=https://staging.pages.aplyd.org --env HS_IDENTITY_ISSUER=https://identity.example.invalid --env HS_IDENTITY_JWKS_URL=https://identity.example.invalid/jwks holy-sheet-candidate:${{ env.HS_CANDIDATE_SHA }}
             for attempt in $(seq 1 30); do
               if curl --fail --silent http://127.0.0.1:53104/ > /dev/null; then break; fi
               sleep 1

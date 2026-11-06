@@ -8,8 +8,8 @@ type Login={state:string;verifier:string;next:string;issued:number};
 const now=()=>Math.floor(Date.now()/1000);
 function origin(value:string|undefined,fallback:string){const u=new URL(value??fallback);if(u.protocol!=='https:'||u.origin!==u.href.replace(/\/$/,''))throw Error('Invalid origin');return u.origin;}
 function config(){
- const app=origin(process.env.HS_ORIGIN,'https://holysheet.aplyd.org'),sho=origin(process.env.HS_SHO_ORIGIN,'https://sheethappensofficer.aplyd.org');
- const staging=app==='https://staging.holysheet.aplyd.org',clientId=staging?'holy-sheet-staging':'holy-sheet';
+ const app=origin(process.env.HS_ORIGIN,'https://pages.aplyd.org'),sho=origin(process.env.HS_SHO_ORIGIN,'https://sheethappensofficer.aplyd.org');
+ const staging=['https://staging.pages.aplyd.org','https://staging.holysheet.aplyd.org'].includes(app),clientId=staging?'holy-sheet-staging':'holy-sheet';
  const secret=staging?process.env.HS_SHO_STAGING_CLIENT_SECRET:process.env.HS_SHO_CLIENT_SECRET;
  const key=Buffer.from(process.env.HS_OIDC_TRANSACTION_KEY??'','base64');
  if(!secret||secret.length<32||key.length!==32)throw Error('SHO connection is not configured');

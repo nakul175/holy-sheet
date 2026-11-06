@@ -4,7 +4,7 @@ import { safeSignInReturn } from './auth-paths';
 export { safeSignInReturn } from './auth-paths';
 
 const loginCookie='__Host-hs_login',logoutCookie='__Host-hs_logout';
-const headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'; base-uri 'none'"};
+const headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; style-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'"};
 type Login={kind:'login';state:string;nonce:string;verifier:string;next:string;issued:number};
 type Logout={kind:'logout';state:string;issued:number};
 const now=()=>Math.floor(Date.now()/1000);
@@ -17,9 +17,9 @@ function signedIn(destination:string){
  // The route is a standalone document: notify other same-origin tabs before opening
  // the new identity. Only an anonymous marker and an allowlisted path reach JavaScript.
  const script=`try{localStorage.setItem('hs-session-signout',crypto.randomUUID())}catch{}location.replace(${JSON.stringify(destination)});`;
- return new Response(`<!doctype html><html lang="en"><title>Aplyd Pages</title><main><h1>Signed in.</h1><p>Opening Aplyd Pages…</p><noscript><a href="${destination}">Continue to Aplyd Pages</a></noscript></main><script nonce="${nonce}">${script}</script></html>`,{headers:{...headers,'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':`default-src 'none'; script-src 'nonce-${nonce}'; frame-ancestors 'none'; base-uri 'none'`}});
+ return new Response(`<!doctype html><html lang="en"><link rel="stylesheet" href="/fonts/pages.css"><title>Pages by Aplyd</title><main><h1>Signed in.</h1><p>Opening Pages by Aplyd…</p><noscript><a href="${destination}">Continue to Pages by Aplyd</a></noscript></main><script nonce="${nonce}">${script}</script></html>`,{headers:{...headers,'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'`}});
 }
-function failure(status=503){return new Response('<!doctype html><html lang="en"><title>Aplyd Pages sign-in</title><main><h1>Sign-in unavailable</h1><p>The sign-in request could not be completed. Return to Aplyd Pages and try again.</p><a href="/">Return to Aplyd Pages</a></main></html>',{status,headers:{...headers,'Content-Type':'text/html; charset=utf-8'}});}
+function failure(status=503){return new Response('<!doctype html><html lang="en"><link rel="stylesheet" href="/fonts/pages.css"><title>Pages by Aplyd sign-in</title><main><h1>Sign-in unavailable</h1><p>The sign-in request could not be completed. Return to Pages by Aplyd and try again.</p><a href="/">Return to Pages by Aplyd</a></main></html>',{status,headers:{...headers,'Content-Type':'text/html; charset=utf-8'}});}
 function origin(value:string|undefined){if(!value)throw Error('Missing origin');const url=new URL(value);if(url.protocol!=='https:'||url.username||url.password||url.origin!==value)throw Error('Invalid origin');return url.origin;}
 
 /** Confidential code/PKCE bridge. No refresh tokens, entitlement creation or email binding. */

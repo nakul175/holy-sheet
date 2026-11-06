@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-const args=process.argv.slice(2),origin=args.find(a=>a.startsWith('http'))??'https://staging.holysheet.aplyd.org';
-assert.ok(['http://127.0.0.1:53104','https://staging.holysheet.aplyd.org'].includes(origin),'Use the isolated container port or approved HS staging origin.');
+const args=process.argv.slice(2),origin=args.find(a=>a.startsWith('http'))??'https://staging.pages.aplyd.org';
+assert.ok(['http://127.0.0.1:53104','https://staging.pages.aplyd.org','https://staging.holysheet.aplyd.org'].includes(origin),'Use the isolated container port or approved HS staging origin.');
 const bridge=args.includes('--oidc'),framing=args.includes('--require-framing'),picker=args.includes('--picker'),checks=[];
+const appOrigin=origin==='http://127.0.0.1:53104'?'https://staging.pages.aplyd.org':origin;
 async function check(name,path,status,options={}){
   const started=performance.now(),response=await fetch(origin+path,{redirect:'manual',signal:AbortSignal.timeout(10000),...options});
   assert.equal(response.status,status,`${name}: expected ${status}, got ${response.status}`);
@@ -13,9 +14,9 @@ async function check(name,path,status,options={}){
 const landingShell=await check('Public landing','/',200);
 const workspaceShell=await check('Workspace chooser public shell','/workspaces',200);
 await check('Workspace actor hint cannot authenticate','/api/workspaces',401,{headers:{'x-user-id':'local-owner','x-hs-local-preview':'1'}});
-await check('Space creation intent requires identity','/api/v1/space-creations',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Space creation intent requires identity','/api/v1/space-creations',401,{method:'POST',headers:{origin:appOrigin,'content-type':'application/json'},body:'{}'});
 await check('Space creation intent rejects foreign origin','/api/v1/space-creations',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
-await check('Workspace creation requires identity','/api/v1/workspace-creations',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Workspace creation requires identity','/api/v1/workspace-creations',401,{method:'POST',headers:{origin:appOrigin,'content-type':'application/json'},body:'{}'});
 await check('Workspace creation rejects foreign origin','/api/v1/workspace-creations',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
 await check('Local-only synthetic record preview','/qualification/record-layout',404);
 const documentShell=await check('Standalone public shell','/pages/welcome',200),embedShell=await check('Embedded public shell','/embed/pages/11111111-1111-4111-8111-111111111111',200);
@@ -31,7 +32,7 @@ if(picker){
   if(framing)assert.equal(pickerShell.headers.get('content-security-policy'),embedShell.headers.get('content-security-policy'));
   await check('Picker metadata requires verified identity','/api/v1/integrations/sho/picker',401);
   await check('Picker actor hint cannot authenticate','/api/v1/integrations/sho/picker',401,{headers:{'x-hs-actor':'local-owner'}});
-  await check('Picker creation requires verified identity','/api/v1/integrations/sho/picker',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json','x-hs-actor':'local-owner'},body:'{}'});
+  await check('Picker creation requires verified identity','/api/v1/integrations/sho/picker',401,{method:'POST',headers:{origin:appOrigin,'content-type':'application/json','x-hs-actor':'local-owner'},body:'{}'});
 }
 await check('Sign-in entry page','/auth/sign-in',200);
 const login=await check('Sign-in bridge readiness','/auth/sign-in?continue=1',bridge?303:503);
@@ -48,9 +49,9 @@ for(const [name,path] of [
   ['Trash','/api/v1/workspaces/ws-aplyd/trash'],['Workspace membership','/api/v1/workspaces/ws-aplyd/members'],['Personal navigation','/api/v1/personal-navigation'],['Templates','/api/v1/templates?workspaceId=ws-aplyd'],
   ['Media','/api/media/11111111-1111-4111-8111-111111111111'],['Upload recovery','/api/uploads/11111111-1111-4111-8111-111111111111'],
 ])await check(`${name} requires verified identity`,path,401);
-await check('Private export download requires identity','/api/v1/exports/11111111-1111-4111-8111-111111111111/download',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
-await check('Import preparation requires identity','/api/v1/imports',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/octet-stream'},body:'synthetic'});
-await check('Trash mutation requires identity','/api/v1/pages/welcome/trash',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Private export download requires identity','/api/v1/exports/11111111-1111-4111-8111-111111111111/download',401,{method:'POST',headers:{origin:appOrigin,'content-type':'application/json'},body:'{}'});
+await check('Import preparation requires identity','/api/v1/imports',401,{method:'POST',headers:{origin:appOrigin,'content-type':'application/octet-stream'},body:'synthetic'});
+await check('Trash mutation requires identity','/api/v1/pages/welcome/trash',401,{method:'POST',headers:{origin:appOrigin,'content-type':'application/json'},body:'{}'});
 await check('Recovery mutation rejects foreign origin','/api/v1/workspaces/ws-aplyd/trash',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});
-await check('Page move requires identity','/api/v1/pages/welcome/location',401,{method:'POST',headers:{origin:'https://staging.holysheet.aplyd.org','content-type':'application/json'},body:'{}'});
+await check('Page move requires identity','/api/v1/pages/welcome/location',401,{method:'POST',headers:{origin:appOrigin,'content-type':'application/json'},body:'{}'});
 await check('Page move rejects foreign origin','/api/v1/pages/welcome/location',403,{method:'POST',headers:{origin:'https://untrusted.example.invalid','content-type':'application/json'},body:'{}'});

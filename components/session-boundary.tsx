@@ -20,7 +20,7 @@ export default function SessionBoundary({children}:{children:ReactNode}){
   window.addEventListener('holy-sheet:logout',lock);window.addEventListener('holy-sheet:identity',identified);window.addEventListener('storage',storage);window.addEventListener('focus',check);document.addEventListener('visibilitychange',visible);const timer=setInterval(()=>void check(),60_000);void check();
   return()=>{active.current=false;clearInterval(timer);window.removeEventListener('holy-sheet:logout',lock);window.removeEventListener('holy-sheet:identity',identified);window.removeEventListener('storage',storage);window.removeEventListener('focus',check);document.removeEventListener('visibilitychange',visible);};
  },[]);
- if(locked)return <main className="workspace-home"><div className="brand"><HolySheetBrand/>Aplyd Pages</div><section><h1>Your session is locked.</h1><p>Sign in again to check your access. Recovery is available only through your last completed encrypted checkpoint.</p><SignInLink path={typeof window==='undefined'?'/':window.location.pathname} newWindow={typeof window!=='undefined'&&window.self!==window.top}/></section></main>;
+ if(locked)return <main className="workspace-home"><div className="brand"><HolySheetBrand/>Pages by Aplyd</div><section><h1>Your session is locked.</h1><p>Sign in again to check your access. Recovery is available only through your last completed encrypted checkpoint.</p><SignInLink path={typeof window==='undefined'?'/':window.location.pathname} newWindow={typeof window!=='undefined'&&window.self!==window.top}/></section></main>;
  return children;
 }
 export function SignOutButton({checkpoint}:{checkpoint?:()=>Promise<void>}){

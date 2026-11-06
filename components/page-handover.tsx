@@ -171,7 +171,7 @@ export default function PageHandover({ workspaceId }: { workspaceId: string }) {
   const recipients = members.filter(member => member.active && member.role !== "observer");
   return <main className="page-handover-page">
     <a className="skip-link" href="#page-handover">Skip to page handover</a>
-    <p><a href="/">Aplyd Pages</a> / Page handover</p>
+    <p><a href="/">Pages by Aplyd</a> / Page handover</p>
     <h1>Page handover</h1>
     <p>Transfer page ownership when someone changes role or leaves. Ownership is not a permission. Manage rights follow the existing role mapping. Pages the recipient cannot edit stay put unless you grant edit.</p>
     {error && <p role="alert">{error}</p>}

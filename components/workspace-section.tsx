@@ -11,7 +11,7 @@ export function WorkspaceSection({workspaceId, section, spaces = [], children}: 
   const [dialog,setDialog] = useState<'access'|'policy'|null>(null);
   const base = '/workspaces/' + encodeURIComponent(workspaceId);
   return <div className="workspace-section">
-    <header><a href="/" className="suite-brand"><HolySheetBrand onBlue/>Aplyd Pages</a><a href="/workspaces">Workspaces</a></header>
+    <header><a href="/" className="suite-brand"><HolySheetBrand onBlue/>Pages by Aplyd</a><a href="/workspaces">Workspaces</a></header>
     <nav aria-label="Workspace navigation">
       <a href={base + '/spaces'} aria-current={section === 'Spaces' ? 'location' : undefined}><UiIcon name="folder"/>Spaces</a>
       <a href={base + '/snippets'} aria-current={section === 'Snippets' ? 'location' : undefined}><UiIcon name="document"/>Snippets</a>

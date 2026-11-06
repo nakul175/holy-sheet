@@ -1,6 +1,6 @@
 /* Suite shell: SHO's navy/gold hierarchy, adapted for a document workspace. */
 :root { --navy:#2c2f71; --navy-dark:#1f2252; --gold:#d99d29; --ink:#1b1d35; --muted:#626876; --line:#e3e6eb; --panel:#f8f9fc; --soft:#f2f3f8; --accent:var(--navy); --accent-soft:#eeeff9; }
-body { font-family:var(--font-public-sans),system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+body { font-family:Lato,sans-serif; -webkit-font-smoothing:antialiased; }
 .ui-icon { flex-shrink:0; vertical-align:middle; }
 .shell { grid-template-columns:246px minmax(0,1fr); padding-top:64px; background:#f4f5f8; }
 .suite-bar { position:fixed; inset:0 0 auto; height:64px; display:flex; align-items:center; gap:18px; padding:0 24px; z-index:8; color:white; background:var(--navy); border-bottom:1px solid #ffffff14; }

@@ -51,7 +51,7 @@ export function captureDraftFingerprint(draft: Pick<LocalCaptureDraft, "actorId"
 export function sourceAccessMessage(access: QuickCaptureSourceAccess, sourceUrl: string) {
   if (access === "unavailable") return "The source page is not available to you. Nothing was fetched.";
   if (sourceUrl) return "The source address was not opened.";
-  if (access === "permitted") return "The Aplyd Pages page is one you can open. No external page was fetched.";
+  if (access === "permitted") return "The Pages document is one you can open. No external page was fetched.";
   return "No external page was fetched.";
 }
 

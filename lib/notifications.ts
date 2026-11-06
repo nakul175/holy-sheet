@@ -42,18 +42,18 @@ export async function inbox(r:Repository,actor:Actor){
     if(n.kind==='page-handover'){
       const place=await r.db.query<{workspace_id:string}>('SELECT workspace_id FROM hs_pages WHERE id=$1',[n.page_id]);
       const workspaceId=place.rows[0]?.workspace_id;
-      notifications.push({id:n.id,pageId:n.page_id,pageTitle:'Page handover',threadId:'',commentId:'',body:n.summary,authorName:'Aplyd Pages',createdAt:new Date(n.created_at).toISOString(),readAt:n.read_at?new Date(n.read_at).toISOString():null,kind:n.kind,href:workspaceId?`/workspaces/${encodeURIComponent(workspaceId)}/handover`:undefined,atIst:formatIst(n.created_at)});
+      notifications.push({id:n.id,pageId:n.page_id,pageTitle:'Page handover',threadId:'',commentId:'',body:n.summary,authorName:'Pages by Aplyd',createdAt:new Date(n.created_at).toISOString(),readAt:n.read_at?new Date(n.read_at).toISOString():null,kind:n.kind,href:workspaceId?`/workspaces/${encodeURIComponent(workspaceId)}/handover`:undefined,atIst:formatIst(n.created_at)});
       continue;
     }
     if(n.kind==='page-digest'||n.kind==='page-publish'){
       const view=await presentFollowNotification(r,actor,n.page_id,n.summary);
-      notifications.push({id:n.id,pageId:n.page_id,pageTitle:view.pageTitle,threadId:'',commentId:'',body:view.body,authorName:'Aplyd Pages',createdAt:new Date(n.created_at).toISOString(),readAt:n.read_at?new Date(n.read_at).toISOString():null,kind:n.kind});
+      notifications.push({id:n.id,pageId:n.page_id,pageTitle:view.pageTitle,threadId:'',commentId:'',body:view.body,authorName:'Pages by Aplyd',createdAt:new Date(n.created_at).toISOString(),readAt:n.read_at?new Date(n.read_at).toISOString():null,kind:n.kind});
       continue;
     }
     let pageTitle='Page is restricted or unavailable',body:string|null=null;
     try{const page=await r.get(n.page_id,actor);pageTitle=page.title;body=n.summary;}
     catch(e){if(!(e instanceof DocumentError&&e.status===404))throw e;}
-    notifications.push({id:n.id,pageId:n.page_id,pageTitle,threadId:'',commentId:'',body,authorName:'Aplyd Pages',createdAt:new Date(n.created_at).toISOString(),readAt:n.read_at?new Date(n.read_at).toISOString():null,kind:n.kind});
+    notifications.push({id:n.id,pageId:n.page_id,pageTitle,threadId:'',commentId:'',body,authorName:'Pages by Aplyd',createdAt:new Date(n.created_at).toISOString(),readAt:n.read_at?new Date(n.read_at).toISOString():null,kind:n.kind});
   }
   notifications.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id));
   return {notifications};
