@@ -425,11 +425,13 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .top-toolbox { display:flex; align-items:center; flex-wrap:wrap; gap:8px 18px; padding:6px 12px; border:1px solid var(--line); border-radius:12px; background:white; }
 .top-toolbox > div { display:flex; align-items:center; flex-wrap:wrap; gap:4px; }
 .top-toolbox > div > span { margin-right:6px; color:var(--muted); font-size:11px; font-weight:650; text-transform:uppercase; }
-.top-toolbox button { min-width:36px; min-height:44px; padding:4px 9px; border:1px solid var(--line); border-radius:7px; background:#fafbfc; color:var(--ink); cursor:pointer; }
+.top-toolbox button { min-width:44px; min-height:44px; padding:4px 9px; border:1px solid var(--line); border-radius:7px; background:#fafbfc; color:var(--ink); cursor:pointer; }
 .top-toolbox button:hover,.top-toolbox button[aria-pressed=true] { background:#eff0f8; color:var(--navy); }
 @media(min-width:851px) {
   .document:has(.top-toolbox) .editor-toolbox { top:214px; max-height:calc(100dvh - 234px); }
 }
 @media(max-width:850px) {
   .top-toolbox-slot:not(:empty) { margin:8px 12px; }
+  .top-toolbox { flex-wrap:nowrap; overflow-x:auto; }
+  .top-toolbox > div { flex:none; flex-wrap:nowrap; }
 }
