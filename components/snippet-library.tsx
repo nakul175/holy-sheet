@@ -1,4 +1,5 @@
 "use client";
+import { WorkspaceSection } from "./workspace-section";
 import { useEffect, useState } from "react";
 import { requestJson } from "./editor/use-document-session";
 
@@ -25,6 +26,14 @@ export default function SnippetLibrary({ workspaceId, initialSnippetId }: { work
   const [armed, setArmed] = useState(false);
   const [nextBody, setNextBody] = useState("");
   const [grantUser, setGrantUser] = useState("");
+  const [members,setMembers] = useState<{id:string;name:string;active:boolean}[]>([]);
+  const [accessOpen,setAccessOpen] = useState(false);
+  useEffect(() => {
+    if (!accessOpen || !library?.canGrant) return;
+    let active = true;
+    requestJson<{members:typeof members}>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`).then(data => {if (active) setMembers(data.members);}).catch(() => {if(active) setError("Could not load workspace members. Close and reopen snippet access to retry.");});
+    return () => {active = false;};
+  }, [workspaceId,accessOpen,library?.canGrant]);
   const [grantRole, setGrantRole] = useState<"manager" | "approver" | "reviewer">("approver");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -67,22 +76,21 @@ export default function SnippetLibrary({ workspaceId, initialSnippetId }: { work
   }
 
   const manageable = library?.spaces.filter(space => space.canManage) ?? [];
-  return <main className="snippet-library">
+  return <WorkspaceSection workspaceId={workspaceId} section="Snippets" spaces={library?.spaces}><main className="snippet-library">
     <p><a href="/">Aplyd Pages</a></p>
-    <h1>Snippet library</h1>
+    <h1>Snippets</h1>
     <p>Approved wording can be inserted into pages. Drafts stay in this library until an approver accepts them.</p>
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {manageable.length > 0 && <form onSubmit={event => { event.preventDefault(); void run(async () => { await post(base, { action: "create", operationId: crypto.randomUUID(), spaceId, title, content: paragraph(body) }); setTitle(""); setBody(""); await loadList(); setNotice("Draft snippet created."); }); }}>
-      <h2>New snippet</h2>
+    {manageable.length > 0 && <details><summary>New snippet</summary><form onSubmit={event => { event.preventDefault(); void run(async () => { await post(base, { action: "create", operationId: crypto.randomUUID(), spaceId, title, content: paragraph(body) }); setTitle(""); setBody(""); await loadList(); setNotice("Draft snippet created."); }); }}>
+
       <label>Space<select aria-label="Snippet space" value={spaceId} onChange={event => setSpaceId(event.target.value)}>{manageable.map(space => <option key={space.id} value={space.id}>{space.name}</option>)}</select></label>
       <label>Title<input aria-label="Snippet title" value={title} onChange={event => setTitle(event.target.value)} required maxLength={120} /></label>
       <label>Text<textarea aria-label="Snippet text" value={body} onChange={event => setBody(event.target.value)} required /></label>
       <button disabled={busy}>Create draft</button>
-    </form>}
-    <h2>Library</h2>
+    </form></details>}
     {!library && !error && <p role="status">Loading snippets…</p>}
-    {library && !library.snippets.length && <p>No snippets are available in the spaces you can read.</p>}
+    {library && !library.snippets.length && <section className="snippet-empty"><h2>No snippets yet</h2><p>Your team’s reusable wording will appear here.</p></section>}
     {!!library?.snippets.length && <ul aria-label="Snippets">{library.snippets.map(item => <li key={item.id}><button type="button" aria-current={item.id === selected ? "true" : undefined} onClick={() => { setSelected(item.id); void run(() => loadDetail(item.id).then(() => undefined)); }}>{item.title}</button> <span>{item.state}{item.deleted ? " · deleted" : ""}</span></li>)}</ul>}
     {detail && <section aria-labelledby="snippet-detail-title">
       <h2 id="snippet-detail-title">{detail.title}</h2>
@@ -107,13 +115,13 @@ export default function SnippetLibrary({ workspaceId, initialSnippetId }: { work
         {usage && <table><caption>Placements you can read</caption><thead><tr><th>Page</th><th>Owner</th><th>Version</th></tr></thead><tbody>{usage.placements.map(row => <tr key={row.pageId}><td>{row.pageTitle}</td><td>{row.pageOwnerName || row.pageOwnerId}</td><td>{row.versionMode === "latest" ? "Follow latest" : "Pinned"} v{row.versionNumber}</td></tr>)}{!usage.placements.length && <tr><td colSpan={3}>No readable placements.</td></tr>}</tbody></table>}
       </>}
     </section>}
-    {library?.canGrant && <form onSubmit={event => { event.preventDefault(); const intent = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value"); void run(async () => { await post(base, { action: intent === "revoke" ? "revoke" : "grant", operationId: crypto.randomUUID(), spaceId, userId: grantUser, role: grantRole }); setNotice(intent === "revoke" ? "Role removed." : "Role granted."); }); }}>
+    {library?.canGrant && <details onToggle={event => setAccessOpen(event.currentTarget.open)}><summary>Manage snippet access</summary><form onSubmit={event => { event.preventDefault(); const intent = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value"); void run(async () => { await post(base, { action: intent === "revoke" ? "revoke" : "grant", operationId: crypto.randomUUID(), spaceId, userId: grantUser, role: grantRole }); setNotice(intent === "revoke" ? "Role removed." : "Role granted."); }); }}>
       <h2>Snippet roles</h2>
       <label>Space<select aria-label="Role space" value={spaceId} onChange={event => setSpaceId(event.target.value)}>{library.spaces.map(space => <option key={space.id} value={space.id}>{space.name}</option>)}</select></label>
-      <label>Person<input aria-label="Role person" value={grantUser} onChange={event => setGrantUser(event.target.value)} required /></label>
+      <label>Person<select aria-label="Role person" value={grantUser} onChange={event => setGrantUser(event.target.value)} required><option value="">Choose a workspace member</option>{members.map(member => <option value={member.id} key={member.id}>{member.name}{member.active ? "" : " · inactive"}</option>)}</select></label>
       <label>Role<select aria-label="Snippet role" value={grantRole} onChange={event => setGrantRole(event.target.value as typeof grantRole)}><option value="manager">Snippet manager</option><option value="approver">Approver</option><option value="reviewer">Reviewer</option></select></label>
       <button value="grant" disabled={busy}>Grant</button>
       <button value="revoke" disabled={busy}>Revoke</button>
-    </form>}
-  </main>;
+    </form></details>}
+  </main></WorkspaceSection>;
 }
