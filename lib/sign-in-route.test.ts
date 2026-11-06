@@ -10,6 +10,9 @@ describe('Aplyd Pages sign-in entry',()=>{
   expect(response.headers.get('content-security-policy')).toMatch(/style-src 'nonce-[^']+'/);
   expect(body).toContain('Give every idea a place to belong.');
   expect(body).toContain('Continue with Aplyd');
+  expect(body).toContain('src="/brand/little-bot-heroes/holy-sheet.png"');
+  expect(body).toContain('drop-shadow(1px 0 0 #fff8e9)');
+  expect(body).not.toContain('aria-hidden="true">✦</span>');
   expect(body).toContain('/auth/sign-in?continue=1&amp;next=%2Fpages%2Fwelcome');
  });
 
