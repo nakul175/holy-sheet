@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { EditorContent, ReactNodeViewRenderer, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import { Extension } from "@tiptap/core";
 import { BubbleMenu } from "@tiptap/react/menus";
@@ -72,7 +73,7 @@ const presencePluginKey=new PluginKey<DecorationSet>('holySheetPresence');
 type Collaborator={sessionId:string;actorId:string;name:string;clientId:string;anchorBlockId:string|null;anchorOffset:number|null;headBlockId:string|null;headOffset:number|null};
 type CollaborationStart={sessionId:string;epoch:string;stepVersion:number;pageVersion:number;document:RichNode;collaborators:Collaborator[]};
 type CollaborationStatus='saved'|'saving'|'offline'|'error';
-type RichEditorProps={document:RichNode;editable:boolean;onChange:(doc:RichNode)=>void;onCollaborativeChange?:(doc:RichNode,pageVersion:number,status:CollaborationStatus)=>void;pageId:string;preferenceKey:string;onComment?:(anchors:AnchorInput[],quote:string)=>void;onOpenComments?:()=>void;onOpenHistory?:()=>void;onCreateSubpage?:()=>void;commentsReady?:boolean;threads?:ThreadView[];activeThreadId?:string|null;onOpenThread?:(id:string)=>void;navigateThread?:number;mediaEnabled?:boolean;recoveryActorId?:string;resumeUpload?:RecoveredUpload|null;onRecoveryClosed?:()=>void};
+type RichEditorProps={topToolboxHost?: HTMLDivElement | null;document:RichNode;editable:boolean;onChange:(doc:RichNode)=>void;onCollaborativeChange?:(doc:RichNode,pageVersion:number,status:CollaborationStatus)=>void;pageId:string;preferenceKey:string;onComment?:(anchors:AnchorInput[],quote:string)=>void;onOpenComments?:()=>void;onOpenHistory?:()=>void;onCreateSubpage?:()=>void;commentsReady?:boolean;threads?:ThreadView[];activeThreadId?:string|null;onOpenThread?:(id:string)=>void;navigateThread?:number;mediaEnabled?:boolean;recoveryActorId?:string;resumeUpload?:RecoveredUpload|null;onRecoveryClosed?:()=>void};
 const ProtectedImage=Image.extend({
   addAttributes(){return {...this.parent?.(),attachmentId:{default:null},caption:{default:""},width:{default:640}};},
   renderHTML({HTMLAttributes}){const {caption,...attrs}=HTMLAttributes;return ["figure",{"data-hs-image":""},["img",attrs],...(caption?[["figcaption",{},String(caption)]]:[])];},
@@ -115,7 +116,7 @@ export default function RichEditor(props:RichEditorProps){
   return <RichEditorCore {...props} document={start?.document??props.document} collaboration={active}/>;
 }
 
-function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId,preferenceKey,onComment,onOpenComments,onOpenHistory,onCreateSubpage,commentsReady=true,threads=noThreads,activeThreadId=null,onOpenThread,navigateThread=0,mediaEnabled=true,recoveryActorId,resumeUpload,onRecoveryClosed,collaboration}:{collaboration?:(CollaborationStart&{clientId:string})}&RichEditorProps){
+function RichEditorCore({topToolboxHost,document,editable,onChange,onCollaborativeChange,pageId,preferenceKey,onComment,onOpenComments,onOpenHistory,onCreateSubpage,commentsReady=true,threads=noThreads,activeThreadId=null,onOpenThread,navigateThread=0,mediaEnabled=true,recoveryActorId,resumeUpload,onRecoveryClosed,collaboration}:{collaboration?:(CollaborationStart&{clientId:string})}&RichEditorProps){
   const [insertOpen,setInsertOpen]=useState(false),[query,setQuery]=useState(""),[active,setActive]=useState(0),[notice,setNotice]=useState(""),[linkOpen,setLinkOpen]=useState(false),[pageOpen,setPageOpen]=useState(false),[snippetOpen,setSnippetOpen]=useState(false),[recordOpen,setRecordOpen]=useState(false),[viewOpen,setViewOpen]=useState(false),[media,setMedia]=useState<"image"|"file"|null>(null),[findOpen,setFindOpen]=useState(false),[findQuery,setFindQuery]=useState(""),[matchCase,setMatchCase]=useState(false),[wholeWords,setWholeWords]=useState(false),[matchIndex,setMatchIndex]=useState(0);
   const [transformOpen,setTransformOpen]=useState(false),[transformPlan,setTransformPlan]=useState<TransformPlan|null>(null);
   const [inspectedLink,setInspectedLink]=useState<InspectedLink|null>(null);
@@ -245,13 +246,31 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
   }
   if(!editor)return <div className="editor-skeleton" aria-label="Loading editor"/>;
   const button=(label:string,children:ReactNode,run:()=>void,pressed:boolean|'mixed'=false,disabled=false)=><button type="button" key={label} aria-label={label} title={pressed==='mixed'?`${label}: mixed formatting`:label} aria-pressed={pressed} disabled={!editable||disabled} onMouseDown={e=>e.preventDefault()} onClick={run}>{children}</button>;
+  const commonFormatting = <>
+    {button("Bold","B",()=>editor.chain().focus().toggleBold().run(),state?.format.bold??false)}
+    {button("Italic",<i>I</i>,()=>editor.chain().focus().toggleItalic().run(),state?.format.italic??false)}
+    {button("Underline",<u>U</u>,()=>editor.chain().focus().toggleUnderline().run(),state?.format.underline??false)}
+  </>;
   function toolbar(){if(!editor)return null;return <div className="format-tools" role="toolbar" aria-label="Text formatting">
-    {button("Bold","B",()=>editor.chain().focus().toggleBold().run(),state?.format.bold??false)}{button("Italic",<i>I</i>,()=>editor.chain().focus().toggleItalic().run(),state?.format.italic??false)}{button("Underline",<u>U</u>,()=>editor.chain().focus().toggleUnderline().run(),state?.format.underline??false)}{button("Strikethrough",<s>S</s>,()=>editor.chain().focus().toggleStrike().run(),state?.format.strike??false)}
+    {commonFormatting}{button("Strikethrough",<s>S</s>,()=>editor.chain().focus().toggleStrike().run(),state?.format.strike??false)}
     {button("Edit link","↗",()=>setLinkOpen(true))}{button("Clear formatting","Tx",()=>clearFormatting(editor))}
     <label className="colour-control">Text colour<select aria-label="Text colour" disabled={!editable} value={state?.format.color??""} onChange={e=>e.target.value?editor.chain().focus().setColor(e.target.value).run():editor.chain().focus().unsetColor().run()}><option value="">Default</option>{state?.format.color===mixedPaletteValue&&<option value={mixedPaletteValue} disabled>Mixed colours</option>}{palette.map((c,i)=><option key={c} value={c}>{["Black","Grey","Blue","Green","Amber","Red","Purple"][i]}</option>)}</select></label>
     <label className="colour-control">Highlight<select aria-label="Text highlight" disabled={!editable} value={state?.format.highlight??""} onChange={e=>e.target.value?editor.chain().focus().setHighlight({color:e.target.value}).run():editor.chain().focus().unsetHighlight().run()}><option value="">None</option>{state?.format.highlight===mixedPaletteValue&&<option value={mixedPaletteValue} disabled>Mixed highlights</option>}{highlights.map((c,i)=><option key={c} value={c}>{["Amber","Blue","Green","Red","Purple"][i]}</option>)}</select></label>
   </div>;}
   const insertKind=(type:string)=>{const item=catalogue.find(candidate=>candidate.type===type);if(item)insert(item);};
+  function insertButtons(compact: boolean) {
+    const blocks = [
+      ['heading', 'H1', 'Heading'], ['bulletList', '☷', 'List'], ['taskList', '☑', 'Checklist'],
+      ['table', '▦', 'Table'], ['image', '▧', 'Image'], ['subpage', '＋', 'Subpage'],
+    ];
+    return blocks.map(([kind, icon, label]) => (
+      <button key={kind} type="button" disabled={!editable || (kind === 'image' && !mediaEnabled)}
+        onMouseDown={event => event.preventDefault()}
+        onClick={kind === 'subpage' ? onCreateSubpage : () => insertKind(kind)}>
+        {!compact && icon + ' '}<span>{label}</span>
+      </button>
+    ));
+  }
   const inspect=(target:EventTarget|null,event:{preventDefault():void;stopPropagation():void})=>{const link=inspectedTextLink(target);if(!link)return;event.preventDefault();event.stopPropagation();link.anchor.focus({preventScroll:true});setInspectedLink(link);};
   return <div className="rich-editor" data-editable={editable} data-preference-key={preferenceKey} data-has-selection={!editor.state.selection.empty} onClickCapture={event=>{if(event.button===0&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey)inspect(event.target,event);}} onKeyDownCapture={event=>{if(event.key==='Enter'&&!event.nativeEvent.isComposing&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey)inspect(event.target,event);}}>
     {collaboration&&<div className="live-collaborators" role="status" aria-live="polite" aria-label="People editing this page">{collaborators.filter(person=>person.clientId!==collaboration.clientId).slice(0,5).map(person=><span key={person.sessionId} title={`${person.name} is editing`}>{person.name.slice(0,1).toUpperCase()}</span>)}{collaborators.filter(person=>person.clientId!==collaboration.clientId).length>5&&<span>+{collaborators.length-6}</span>}</div>}
@@ -260,12 +279,17 @@ function RichEditorCore({document,editable,onChange,onCollaborativeChange,pageId
       <ReadingGuideControl model={readingGuide}/>
       <button ref={findButton} className="find-button" onClick={()=>{savedFindSelection.current=captureFindSelection(editor);setFindOpen(true);}}>⌕ Find</button>
     </div>
+    {editable && topToolboxHost && createPortal(
+      <div className="top-toolbox" role="group" aria-label="Top editor toolbox">
+        <div role="group" aria-label="Text"><span>Text</span>{commonFormatting}</div>
+        <div role="group" aria-label="Insert"><span>Insert</span>{insertButtons(true)}</div>
+      </div>, topToolboxHost)}
     {editable&&<aside className={`editor-toolbox ${toolboxOpen?'is-open':'is-collapsed'} ${toolboxPinned?'is-pinned':''}`} aria-label="Editor toolbox">
       <header><strong>Toolbox</strong><div><button type="button" aria-label={toolboxPinned?'Unpin toolbox':'Pin toolbox'} aria-pressed={toolboxPinned} onClick={()=>setToolboxPinned(value=>!value)}>⌖</button><button type="button" aria-label={toolboxOpen?'Collapse toolbox':'Open toolbox'} aria-expanded={toolboxOpen} onClick={()=>setToolboxOpen(value=>!value)}>{toolboxOpen?'›':'‹'}</button></div></header>
       {toolboxOpen&&<div className="editor-toolbox-body">
         <section aria-labelledby="toolbox-text"><span id="toolbox-text" className="toolbox-label">Text</span>{toolbar()}</section>
         <section aria-labelledby="toolbox-insert"><div className="toolbox-section-heading"><span id="toolbox-insert" className="toolbox-label">Insert</span><kbd>/</kbd></div><div className="toolbox-insert-grid">
-          <button type="button" disabled={!editable} onClick={()=>insertKind('heading')}>H1 <span>Heading</span></button><button type="button" disabled={!editable} onClick={()=>insertKind('bulletList')}>☷ <span>List</span></button><button type="button" disabled={!editable} onClick={()=>insertKind('taskList')}>☑ <span>Checklist</span></button><button type="button" disabled={!editable} onClick={()=>insertKind('table')}>▦ <span>Table</span></button><button type="button" disabled={!editable||!mediaEnabled} onClick={()=>insertKind('image')}>▧ <span>Image</span></button><button type="button" disabled={!editable} onClick={onCreateSubpage}>＋ <span>Subpage</span></button>
+          {insertButtons(false)}
         </div><button type="button" className="toolbox-more" aria-expanded={moreBlocks} onClick={()=>setMoreBlocks(value=>!value)}>More blocks <span>{moreBlocks?'−':'+'}</span></button>{moreBlocks&&<div className="toolbox-more-grid"><button type="button" disabled={!editable} onClick={()=>{try{turnIntoSyncedBlock(editor);setNotice("Synced block created. Copy synced block to place it on another page.");}catch(error){setNotice(error instanceof Error?error.message:"Select the blocks to sync.");}}}>Turn into synced block</button><button type="button" disabled={!editable} onClick={()=>setSnippetOpen(true)}>Insert snippet</button><button type="button" disabled={!editable} onClick={()=>insertKind('blockquote')}>Quote</button><button type="button" disabled={!editable} onClick={()=>insertKind('callout')}>Callout</button><button type="button" disabled={!editable} onClick={()=>insertKind('horizontalRule')}>Divider</button><button type="button" disabled={!editable} onClick={()=>insertKind('codeBlock')}>Code</button><button type="button" disabled={!editable} onClick={()=>insertKind('details')}>Section</button><button type="button" disabled={!editable} onClick={()=>insertKind('pageLink')}>Page link</button><button type="button" disabled={!editable} onClick={()=>insertKind('recordRef')}>Record</button><button type="button" disabled={!editable} onClick={()=>insertKind('recordView')}>Records view</button><button type="button" className="toolbox-browse" disabled={!editable} onClick={addBlock}>Browse all blocks</button></div>}</section>
         <section className="toolbox-utilities" aria-label="Review tools"><button type="button" onClick={onOpenComments}>◯ <span>Comments</span><small>{threads.length||''}</small></button><button type="button" disabled={!onOpenHistory} onClick={onOpenHistory}>↺ <span>History</span></button></section>
       </div>}

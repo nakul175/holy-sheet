@@ -418,3 +418,25 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .space-migration { display:grid; gap:12px; margin-top:32px; }
 .space-migration form,.space-migration label { display:grid; gap:6px; }
 .space-archive-banner { background:#fef3c7; color:#171717; border:1px solid #92400e; padding:12px 16px; margin:12px 0; }
+
+.document-card-heading { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; }
+.document-card-heading .page-command-bar { padding:0; background:transparent; margin-left:auto; }
+.top-toolbox-slot:not(:empty) { margin:10px 22px 12px; }
+.top-toolbox { display:flex; align-items:center; flex-wrap:wrap; gap:8px 18px; padding:6px 12px; border:1px solid var(--line); border-radius:12px; background:white; }
+.top-toolbox > div { display:flex; align-items:center; flex-wrap:wrap; gap:4px; }
+.top-toolbox > div > span { margin-right:6px; color:var(--muted); font-size:11px; font-weight:650; text-transform:uppercase; }
+.top-toolbox button { min-width:44px; min-height:44px; padding:4px 9px; border:1px solid var(--line); border-radius:7px; background:#fafbfc; color:var(--ink); cursor:pointer; }
+.top-toolbox button:hover,.top-toolbox button[aria-pressed=true] { background:#eff0f8; color:var(--navy); }
+@media(min-width:851px) {
+  .document:has(.top-toolbox) .editor-toolbox { top:214px; max-height:calc(100dvh - 234px); }
+}
+@media(max-width:850px) {
+  .top-toolbox-slot:not(:empty) { margin:8px 12px; }
+  .top-toolbox { flex-wrap:nowrap; overflow-x:auto; }
+  .top-toolbox > div { flex:none; flex-wrap:nowrap; }
+}
+
+/* Leave the card actions reachable above the dock in a short landscape viewport. */
+@media(max-width:850px) and (max-height:600px) {
+  .editor-toolbox { max-height:32dvh; }
+}
