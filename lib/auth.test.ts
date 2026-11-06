@@ -33,6 +33,6 @@ describe('trusted suite identity token boundaries',()=>{
     expect(check).toHaveBeenCalledWith(expect.objectContaining({sub:'immutable-user',aplyd_session_uid:'uid'}));
   });
   it('accepts a signed current session for the exact issuer and audience',async()=>expect(await verifyIdentityToken(await token(),keys,issuer,audience)).toEqual({id:'immutable-user'}));
-  it('rejects a future-issued token, expired token and excessive lifetime',async()=>{const now=Math.floor(Date.now()/1000);for(const claims of [{iat:now+60,exp:now+300},{iat:now-100,exp:now-60},{exp:now+3601}])await expect(verifyIdentityToken(await token(claims),keys,issuer,audience)).rejects.toThrow();});
+  it('rejects a future-issued token, expired token and excessive lifetime',async()=>{const now=Math.floor(Date.now()/1000);for(const claims of [{iat:now+60,exp:now+300},{iat:now-100,exp:now-60},{iat:now,exp:now+3601}])await expect(verifyIdentityToken(await token(claims),keys,issuer,audience)).rejects.toThrow();});
   it('rejects wrong issuer/audience and a token whose lifetime ends before issuance',async()=>{const now=Math.floor(Date.now()/1000);for(const claims of [{iss:'https://other.test'},{aud:'another-app'},{iat:now+2,exp:now+1}])await expect(verifyIdentityToken(await token(claims),keys,issuer,audience)).rejects.toThrow();});
 });
