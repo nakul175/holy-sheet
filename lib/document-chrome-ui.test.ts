@@ -22,7 +22,7 @@ it("puts the approved actions in their menu groups", () => {
   const integrations = app.indexOf('<span className="menu-label">Integrations</span>');
   expect(content).toBeGreaterThan(-1);
   expect(app.indexOf('Import a document', content)).toBeLessThan(governance);
-  expect(app.indexOf('Change owner', governance)).toBeLessThan(integrations);
+  expect(app.slice(governance, integrations)).toContain('ref={setGovernanceTarget}');
   expect(app.indexOf('Document bundles', integrations)).toBeGreaterThan(integrations);
   expect(app.indexOf('Create SHO task', integrations)).toBeGreaterThan(integrations);
 });

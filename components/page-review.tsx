@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { GovernanceControls } from './governance-controls';
 import { Dialog } from "./editor/dialog";
 import { ApiError, requestJson } from "./editor/use-document-session";
 import type { PageReviewView } from "../lib/page-review";
@@ -54,7 +55,7 @@ export function PageReviewHost({ pageId, workspaceId, spaceId }: { pageId: strin
   if (!view || (!view.canManage && !view.header && !view.banner && !view.verified && view.badge !== "Overdue")) return null;
   return <>
     <PageReviewChrome view={view} />
-    {view.canManage && <p className="review-actions"><button type="button" onClick={() => { setError(""); setOpen(true); }}>Review settings</button> <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(spaceId)}/reviews`}>Space reviews</a></p>}
+    {view.canManage && <GovernanceControls><button type="button" onClick={() => { setError(""); setOpen(true); }}>Review settings</button> <a href={`/workspaces/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(spaceId)}/reviews`}>Space reviews</a></GovernanceControls>}
     {open && <ReviewSettings view={view} busy={busy} error={error} onClose={() => { if (!busy) setOpen(false); }} onSave={send} />}
   </>;
 }

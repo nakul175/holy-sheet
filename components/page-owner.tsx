@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { GovernanceControls } from './governance-controls';
 import { Dialog } from "./editor/dialog";
 import { ApiError, requestJson } from "./editor/use-document-session";
 
@@ -88,8 +89,10 @@ export default function PageOwner({ pageId, workspaceId }: { pageId: string; wor
       <span className="page-owner-avatar" aria-hidden="true">{owner.avatar}</span>
       <span>Owner {owner.name}</span>
     </p> : <p className="page-owner-chip" aria-label="No active owner">No active owner</p>}
+    <GovernanceControls>
     {view.canChange && <button type="button" onClick={() => { setError(""); setOpen(true); }}>Change owner</button>}
     {view.canHandover && <a href={`/workspaces/${encodeURIComponent(workspaceId)}/handover`}>Hand over pages</a>}
+    </GovernanceControls>
     {notice && <p role="status">{notice}</p>}
     {open && <Dialog title="Change owner" onClose={() => { if (!busy) setOpen(false); }}>
       <form onSubmit={event => void save(event)}>

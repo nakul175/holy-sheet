@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import PageHandover from "../components/page-handover";
 import PageOwner from "../components/page-owner";
+import { GovernanceTarget } from "../components/governance-controls";
 
 const fetchMock = vi.fn();
 afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren(); });
@@ -39,6 +40,24 @@ it("shows an owner chip and changes the owner without rendering page content", a
     expect(JSON.parse(String(post[1].body))).toMatchObject({ ownerId: "own" });
     expect(view.host.textContent).toContain("Owner U-OWN");
     expect(view.host.textContent).toContain("02 Nov 2026, 12:00 IST");
+  } finally { await view.unmount(); }
+});
+
+it("renders permitted owner actions only in Governance and opens the original dialog", async () => {
+  fetchMock.mockImplementation(() => response({owner:null, canChange:true, canHandover:true, candidates:[]}));
+  const menu = document.createElement("details");
+  menu.open = true;
+  const target = document.createElement("div");
+  menu.append(document.createElement("summary"), target);
+  document.body.append(menu);
+  const view = await render(createElement(GovernanceTarget.Provider, {value:target},
+    createElement(PageOwner, {pageId:"page-1", workspaceId:"ws"})));
+  try {
+    expect(view.host.textContent).not.toMatch(/Change owner|Hand over pages/);
+    expect(target.querySelector("a")?.pathname).toBe("/workspaces/ws/handover");
+    await act(async () => target.querySelector("button")!.click());
+    expect(menu.open).toBe(false);
+    expect(view.host.querySelector("form")).toBeTruthy();
   } finally { await view.unmount(); }
 });
 

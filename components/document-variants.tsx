@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { GovernanceControls } from './governance-controls';
 import { Dialog } from "./editor/dialog";
 import { ApiError, requestJson } from "./editor/use-document-session";
 import { enqueuePageRead, pageReadDepth } from "../lib/page-read-queue";
@@ -123,7 +124,7 @@ export function VariantHost({ pageId, workspaceId, placement, onOpen }: { pageId
   return <>
     <VariantChrome view={view} placement="document" onOpen={onOpen} onChoose={choice => void post(`/api/v1/pages/${encodeURIComponent(pageId)}/variants`, { action: "choose", choice })} onMark={() => void post(`/api/v1/pages/${encodeURIComponent(pageId)}/variants`, { action: "mark-synced" })} onDiff={() => void openDiff()} />
     {grouped && <p className="variant-actions"><label>Reading language <select aria-label="Reading language" value={view.profileLanguage ?? ""} onChange={event => void post("/api/v1/profile/language", { language: event.target.value || null })}><option value="">No preference</option>{languageChoices.map(language => <option key={language.tag} value={language.tag}>{language.name}</option>)}</select></label></p>}
-    {(view.canLink || view.canSetRouting) && <p className="variant-actions"><button type="button" onClick={() => void openDialog()}>Language variants</button></p>}
+    {(view.canLink || view.canSetRouting) && <GovernanceControls><button type="button" onClick={() => void openDialog()}>Language variants</button></GovernanceControls>}
     {open && <Dialog title="Language variants" onClose={() => { if (!busy) setOpen(false); }}><form className="variant-dialog" onSubmit={event => { event.preventDefault(); void post(`/api/v1/pages/${encodeURIComponent(pageId)}/variants`, { action: "link", variantPageId, variantLanguage, ...(view.sourceLanguage ? {} : { sourceLanguage }) }, true); }}>
       <p>Link another page as a language variant of this document. Each language is a separate page. Machine translation is not part of this step.</p>
       {error && <p className="form-error" role="alert">{error}</p>}
