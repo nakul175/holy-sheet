@@ -258,7 +258,7 @@ function RichEditorCore({topToolboxHost,document,editable,onChange,onCollaborati
     <label className="colour-control">Highlight<select aria-label="Text highlight" disabled={!editable} value={state?.format.highlight??""} onChange={e=>e.target.value?editor.chain().focus().setHighlight({color:e.target.value}).run():editor.chain().focus().unsetHighlight().run()}><option value="">None</option>{state?.format.highlight===mixedPaletteValue&&<option value={mixedPaletteValue} disabled>Mixed highlights</option>}{highlights.map((c,i)=><option key={c} value={c}>{["Amber","Blue","Green","Red","Purple"][i]}</option>)}</select></label>
   </div>;}
   const insertKind=(type:string)=>{const item=catalogue.find(candidate=>candidate.type===type);if(item)insert(item);};
-  function insertButtons(compact: boolean) {
+  function insertButtons() {
     const blocks = [
       ['heading', 'H1', 'Heading'], ['bulletList', '☷', 'List'], ['taskList', '☑', 'Checklist'],
       ['table', '▦', 'Table'], ['image', '▧', 'Image'], ['subpage', '＋', 'Subpage'],
@@ -267,7 +267,7 @@ function RichEditorCore({topToolboxHost,document,editable,onChange,onCollaborati
       <button key={kind} type="button" disabled={!editable || (kind === 'image' && !mediaEnabled)}
         onMouseDown={event => event.preventDefault()}
         onClick={kind === 'subpage' ? onCreateSubpage : () => insertKind(kind)}>
-        {!compact && icon + ' '}<span>{label}</span>
+        {icon + ' '}<span>{label}</span>
       </button>
     ));
   }
@@ -281,15 +281,15 @@ function RichEditorCore({topToolboxHost,document,editable,onChange,onCollaborati
     </div>
     {editable && topToolboxHost && createPortal(
       <div className="top-toolbox" role="group" aria-label="Top editor toolbox">
-        <div role="group" aria-label="Text"><span>Text</span>{commonFormatting}</div>
-        <div role="group" aria-label="Insert"><span>Insert</span>{insertButtons(true)}</div>
+        <div role="group" aria-label="Text"><span className="toolbox-label">Text</span><div className="toolbox-format-buttons">{commonFormatting}</div></div>
+        <div role="group" aria-label="Insert"><span className="toolbox-label">Insert</span><div className="toolbox-insert-grid">{insertButtons()}</div></div>
       </div>, topToolboxHost)}
     {editable&&<aside className={`editor-toolbox ${toolboxOpen?'is-open':'is-collapsed'} ${toolboxPinned?'is-pinned':''}`} aria-label="Editor toolbox">
       <header><strong>Toolbox</strong><div><button type="button" aria-label={toolboxPinned?'Unpin toolbox':'Pin toolbox'} aria-pressed={toolboxPinned} onClick={()=>setToolboxPinned(value=>!value)}>⌖</button><button type="button" aria-label={toolboxOpen?'Collapse toolbox':'Open toolbox'} aria-expanded={toolboxOpen} onClick={()=>setToolboxOpen(value=>!value)}>{toolboxOpen?'›':'‹'}</button></div></header>
       {toolboxOpen&&<div className="editor-toolbox-body">
         <section aria-labelledby="toolbox-text"><span id="toolbox-text" className="toolbox-label">Text</span>{toolbar()}</section>
         <section aria-labelledby="toolbox-insert"><div className="toolbox-section-heading"><span id="toolbox-insert" className="toolbox-label">Insert</span><kbd>/</kbd></div><div className="toolbox-insert-grid">
-          {insertButtons(false)}
+          {insertButtons()}
         </div><button type="button" className="toolbox-more" aria-expanded={moreBlocks} onClick={()=>setMoreBlocks(value=>!value)}>More blocks <span>{moreBlocks?'−':'+'}</span></button>{moreBlocks&&<div className="toolbox-more-grid"><button type="button" disabled={!editable} onClick={()=>{try{turnIntoSyncedBlock(editor);setNotice("Synced block created. Copy synced block to place it on another page.");}catch(error){setNotice(error instanceof Error?error.message:"Select the blocks to sync.");}}}>Turn into synced block</button><button type="button" disabled={!editable} onClick={()=>setSnippetOpen(true)}>Insert snippet</button><button type="button" disabled={!editable} onClick={()=>insertKind('blockquote')}>Quote</button><button type="button" disabled={!editable} onClick={()=>insertKind('callout')}>Callout</button><button type="button" disabled={!editable} onClick={()=>insertKind('horizontalRule')}>Divider</button><button type="button" disabled={!editable} onClick={()=>insertKind('codeBlock')}>Code</button><button type="button" disabled={!editable} onClick={()=>insertKind('details')}>Section</button><button type="button" disabled={!editable} onClick={()=>insertKind('pageLink')}>Page link</button><button type="button" disabled={!editable} onClick={()=>insertKind('recordRef')}>Record</button><button type="button" disabled={!editable} onClick={()=>insertKind('recordView')}>Records view</button><button type="button" className="toolbox-browse" disabled={!editable} onClick={addBlock}>Browse all blocks</button></div>}</section>
         <section className="toolbox-utilities" aria-label="Review tools"><button type="button" onClick={onOpenComments}>◯ <span>Comments</span><small>{threads.length||''}</small></button><button type="button" disabled={!onOpenHistory} onClick={onOpenHistory}>↺ <span>History</span></button></section>
       </div>}
