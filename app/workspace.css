@@ -425,8 +425,8 @@ a.variant-switcher-link:link,a.variant-switcher-link:visited,a.variant-diff-link
 .document-card-heading .page-command-bar { padding:0; background:transparent; margin-left:auto; }
 .top-toolbox-slot:not(:empty) { margin:10px 22px 12px; }
 /* Shared control styles above keep the horizontal and side toolboxes consistent. */
-.top-toolbox { display:flex; align-items:center; flex-wrap:wrap; gap:12px 24px; padding:12px 15px; border:1px solid #dfe2e9; border-radius:15px; background:#fff; box-shadow:0 20px 55px #22284f18,0 2px 8px #22284f0a; }
-.top-toolbox > div { display:flex; align-items:center; gap:12px; }
+.top-toolbox { display:flex; align-items:center; flex-wrap:nowrap; overflow-x:auto; gap:12px 24px; padding:12px 15px; border:1px solid #dfe2e9; border-radius:15px; background:#fff; box-shadow:0 20px 55px #22284f18,0 2px 8px #22284f0a; }
+.top-toolbox > div { display:flex; flex:none; align-items:center; gap:12px; }
 .top-toolbox .toolbox-label { margin:0; }
 .toolbox-format-buttons { display:flex; gap:6px; }
 .top-toolbox .toolbox-insert-grid { grid-template-columns:repeat(6,minmax(60px,1fr)); }
