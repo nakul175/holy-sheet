@@ -29,7 +29,7 @@ the release identities. Both entry points must:
 
 1. require an operator-supplied positive integer `peak_budget_bytes` based on the
    selected build/image, backup, restore and rollback method;
-2. acquire `/run/lock/holy-sheet-release/release.lock` before copying/importing source,
+2. acquire `/run/holy-sheet-release/release.lock` before copying/importing source,
    building/pulling images, creating backups, migrating or switching containers;
 3. hold that file descriptor for the complete release and fail immediately when
    another HS staging or production release owns it;
@@ -49,7 +49,7 @@ Measurements are immediate. A path that does not exist is measured
 at its closest existing ancestor. Missing/invalid budgets, resolution/statvfs
 errors, stale injected measurements and insufficient capacity reject the phase.
 
-Installation creates `/run/lock/holy-sheet-release` as root-owned, group
+Installation creates `/run/holy-sheet-release` as root-owned, group
 `docker`, mode `2750`, and `release.lock` as root:`docker`, mode `0660`. This
 uses the staging identity's existing Docker group and grants no new privilege.
 Runtime code requires that preinstalled regular file, opens it with `O_NOFOLLOW`
@@ -77,7 +77,7 @@ python3 scripts/hs_release_guard.py \
   --peak-budget-bytes <explicit-conservative-bytes> \
   --path /opt/holy-sheet-staging \
   --path /var/lib/docker \
-  --lock-file /run/lock/holy-sheet-release/release.lock
+  --lock-file /run/holy-sheet-release/release.lock
 ```
 
 The JSON reports source, target environment, UTC timestamp, phase, resolved

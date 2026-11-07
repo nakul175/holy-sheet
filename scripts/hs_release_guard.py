@@ -367,7 +367,7 @@ class ReleaseGuard:
         source: str,
         peak_budget_bytes: int,
         paths: Iterable[str | pathlib.Path],
-        lock_path: str | pathlib.Path = "/run/lock/holy-sheet-release/release.lock",
+        lock_path: str | pathlib.Path = "/run/holy-sheet-release/release.lock",
         create_lock: bool = False,
         strict_lock_install: bool = True,
         reserve_bytes: int = DEFAULT_RESERVE_BYTES,
@@ -434,7 +434,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--peak-budget-bytes", required=True)
     parser.add_argument("--reserve-bytes", default=str(DEFAULT_RESERVE_BYTES))
     parser.add_argument("--path", action="append", required=True)
-    parser.add_argument("--lock-file", default="/run/lock/holy-sheet-release/release.lock")
+    parser.add_argument("--lock-file", default="/run/holy-sheet-release/release.lock")
     return parser
 
 

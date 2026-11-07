@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "helperSourceCommit": "a45cbac1fad037dfde12e266e6c50e05ccb885ed",
+  "helperSourceTree": "a4d7d3b1c70561c348220a6cc96df90814d41f5a",
+  "qualifiedApplicationSource": "f4f5a94fb16380021b501ab1da85e888994c0172",
+  "bundleDirectory": {
+    "path": "/opt/holy-sheet-qualification/holy127-4c1fdbda6becaf76",
+    "owner": 0,
+    "group": 0,
+    "mode": "0555"
+  },
+  "bundleFiles": [
+    {
+      "source": "scripts/holy127_disposable_staging_qualifier.py",
+      "installedName": "holy127_disposable_staging_qualifier.py",
+      "sha256": "3a8b0e8f9e2d382b0ba00dc5a0fb5b5c2be3d366913a4ac14f4d05b46b4070fd",
+      "owner": 0,
+      "group": 0,
+      "mode": "0444"
+    },
+    {
+      "source": "scripts/holy127_backup_orchestrator.py",
+      "installedName": "holy127_backup_orchestrator.py",
+      "sha256": "f1f4655f0129167ae9a2c85e5165780674ad5272aacb59e457eaa8e81ee1d79c",
+      "owner": 0,
+      "group": 0,
+      "mode": "0444"
+    },
+    {
+      "source": "scripts/hs_release_guard.py",
+      "installedName": "hs_release_guard.py",
+      "sha256": "11f13274f4f2e9255bc6382cfebef607ff201c2aa27e6a758ffdd3e8d1ed7f98",
+      "owner": 0,
+      "group": 0,
+      "mode": "0444"
+    }
+  ],
+  "reviewOnlyFiles": [
+    {"source": "scripts/holy127_bounded_stream.py", "sha256": "8c874d97c9f6e86be0581ed82c4fff5ab1e539bf57b562c598c5c846040077e2"},
+    {"source": "scripts/test_holy127_disposable_staging_qualifier.py", "sha256": "004893b54f7cacdd708f3b67ca0a98fb9f5bc025f2a3b3715004c1cda7e8facc"},
+    {"source": "scripts/test_holy127_qualifier_entrypoints.py", "sha256": "cfefb50406020ae23fbcb96dc8f01c69fb78d56c7573319dfe4dd94dbc2ec7e1"},
+    {"source": "scripts/test_holy127_backup_orchestrator.py", "sha256": "8e56992b0d2f71292b3295f592f7a03766e374b9f659239abf8c8c9b73906724"},
+    {"source": "scripts/test_holy127_bounded_stream.py", "sha256": "d05e29ea56a3b7fec91a1e9b0d0a97e954fb4c1770088231d3c8d4dc3d15af44"},
+    {"source": "scripts/test_hs_release_guard.py", "sha256": "6a7d3a6544a1e1548b79abdaf55e260c0e2071e1b2409cbf88a382045ea80b40"},
+    {"source": "deployment/HOLY-127-DISPOSABLE-STAGING-QUALIFICATION.md", "sha256": "71c5a1ea4f2571890d227ba071e5f3604b9e1d4d22c74cda38a5e8ae3aa3b7d2"},
+    {"source": "deployment/HOLY-127-RELEASE-PACKET.md", "sha256": "6362e0a3847bc8b88b645124b29a73afada63d0a3d09ac4de243274a48b35c5f"}
+  ],
+  "rootOwnedEntrypoints": [
+    {
+      "source": "scripts/holy127_qualifier_entrypoint.sh",
+      "installedPath": "/usr/local/sbin/holy127-q-f4f5a94",
+      "sha256": "ab5efb6d8ba83f1dba6ec93495e593659f9eeba0b9e104d23cf1ba34e69165f2",
+      "owner": 0,
+      "group": 0,
+      "mode": "0555",
+      "allowedInvocation": "sudo -n /usr/local/sbin/holy127-q-f4f5a94"
+    },
+    {
+      "source": "scripts/holy127_qualifier_receipt_collect.sh",
+      "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-receipt",
+      "sha256": "7f7e66316a1fa8adcf3b47f6a86dedc2e4c637fda470cf4deca930b7221326fd",
+      "owner": 0,
+      "group": 0,
+      "mode": "0555",
+      "allowedInvocation": "sudo -n /usr/local/sbin/holy127-q-f4f5a94-receipt"
+    },
+    {
+      "source": "scripts/holy127_qualifier_receipt_cleanup.sh",
+      "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-cleanup",
+      "sha256": "e2ead68983d9c0119515129125652eb8026557f16cdbef931adfb0ae8f1471e5",
+      "owner": 0,
+      "group": 0,
+      "mode": "0555",
+      "allowedInvocation": "sudo -n /usr/local/sbin/holy127-q-f4f5a94-cleanup"
+    }
+  ],
+  "pythonIsolation": {
+    "executable": "/usr/bin/python3",
+    "flags": ["-I"],
+    "importPath": "/opt/holy-sheet-qualification/holy127-4c1fdbda6becaf76",
+    "environmentIgnored": true
+  },
+  "processEnvironment": {
+    "cleanEnvironment": true,
+    "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
+    "DOCKER_HOST": "unix:///var/run/docker.sock",
+    "forbiddenInheritedVariables": ["DOCKER_CONTEXT", "DOCKER_CONFIG", "PYTHONPATH", "PYTHONHOME"],
+    "absoluteExecutables": ["/usr/bin/docker", "/usr/bin/pgrep", "/usr/bin/python3"],
+    "dockerSocketRequirements": {"path": "/var/run/docker.sock", "type": "socket", "owner": 0, "symlink": false}
+  },
+  "ancestorPolicy": "The separate /opt/holy-sheet-qualification bundle path and every entrypoint ancestor must be root-owned and not group/other writable. The hs-staging-owned live application tree is not an ancestor and is never re-owned. /var/tmp must be root-owned mode 1777; its sticky bit plus root-owned private staging/receipt directories protects fixed paths.",
+  "operatorAccount": "deploy",
+  "sudoPolicy": "Permit only the three exact no-argument installed entrypoints above; do not permit shells, Python, Docker, cat, rm, arbitrary paths or arguments.",
+  "installationMechanism": {
+    "source": "scripts/holy127_qualifier_installer.py",
+    "sha256": "84bb2fbf11e64e05fd963c537b7404f0a935a247bd2f1529822283ae276a1cb4",
+    "installedPath": "/usr/local/sbin/holy127-q-f4f5a94-install",
+    "allowedInvocation": "/usr/local/sbin/holy127-q-f4f5a94-install",
+    "operatorOnly": true,
+    "deploySudoAllowed": false,
+    "arguments": 0,
+    "sourceRoot": "/var/tmp/holy127-installer-rootpath-v2/source",
+    "sourceRootOwner": 0,
+    "sourceRootGroup": 0,
+    "sourceRootMode": "0500",
+    "verifiedPayloadCount": 14,
+    "installsOnly": [
+      "the three frozen bundle files",
+      "the three fixed no-argument entrypoints",
+      "the exact three-command sudoers fragment",
+      "the shared root-owned release lock when absent"
+    ],
+    "doesNotExecuteQualifier": true,
+    "requiresVisudoValidation": true,
+    "refusesExistingInstallTargets": true,
+    "refusesUnsafeOrIncompatibleAncestorsAndLock": true,
+    "rollbackScope": "Only pending or committed paths created by the current failed attempt; never live application paths or pre-existing lock state."
+  },
+  "bootstrapPacket": {
+    "manifest": "deployment/HOLY-127-BOOTSTRAP-PACKET-RUNPATH-V2.json",
+    "script": "scripts/holy127_qualifier_bootstrap_runpath_v2.py",
+    "scriptSha256": "c51d11f105a47e10ef68f8fee4935aa4c2db49e974cb37e286f25827752b0dfe",
+    "payload": "deployment/HOLY-127-BOOTSTRAP-PAYLOAD-86bfdfe.tar",
+    "payloadSha256": "97399256fc32b2a7009f3615391cb61ad910ef7c2324faa531ffbbe9be99b3d7",
+    "payloadSizeBytes": 143360,
+    "sourceCommit": "86bfdfe313f55630a1589f58788d16fa1142e951",
+    "reviewOnly": true
+  },
+  "orderedOperatorSteps": [
+    "Acquire a Product-issued serialized staging slot and fresh preflight approval.",
+    "Invoke only sudo -n /usr/local/sbin/holy127-q-f4f5a94.",
+    "Collect the retained receipt with sudo -n /usr/local/sbin/holy127-q-f4f5a94-receipt and save it off-host.",
+    "Verify the off-host receipt parses, records post-cleanup gates and matches the run output.",
+    "Invoke sudo -n /usr/local/sbin/holy127-q-f4f5a94-cleanup; compare its printed SHA-256 with the off-host receipt hash and verify the fixed receipt directory is absent."
+  ],
+  "authorization": "Manifest publication is not installation or execution authority. Installation, sudo policy, slot, run, receipt collection and cleanup require direct bounded human approval."
+}
