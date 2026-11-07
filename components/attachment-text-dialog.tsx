@@ -1,4 +1,5 @@
 'use client';
+import {applicationDisplayName} from '../lib/application-display-name';
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from './editor/rich-editor';
 import { ApiError, requestJson } from './editor/use-document-session';
@@ -153,7 +154,7 @@ export default function AttachmentTextDialog({ workspaceId, onClose }: { workspa
         <pre aria-label="Attachment page text">{openHit.text}</pre>
         <div className="actions">
           {openHit.canDownload && <button type="button" style={control} disabled={busy} onClick={() => void download(openHit)}>Download version</button>}
-          {openHit.canHistory && <button type="button" style={control} disabled={busy} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`${root}?view=history&recordId=${encodeURIComponent(openHit.recordId)}&fileId=${encodeURIComponent(openHit.fileId)}`).then(value => { if (alive.current) setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${event.source}`).join('\n')); }).catch(failed)}>Text history</button>}
+          {openHit.canHistory && <button type="button" style={control} disabled={busy} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`${root}?view=history&recordId=${encodeURIComponent(openHit.recordId)}&fileId=${encodeURIComponent(openHit.fileId)}`).then(value => { if (alive.current) setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${applicationDisplayName(event.source)}`).join('\n')); }).catch(failed)}>Text history</button>}
         </div>
       </section>}
       <label>Permitted files
@@ -171,7 +172,7 @@ export default function AttachmentTextDialog({ workspaceId, onClose }: { workspa
         <div className="actions">
           <button type="button" style={control} disabled={busy} onClick={() => void command('save', { action: 'save', expectedVersion: config.version, enabled, language: 'en' }, 'Configuration saved.')}>Save configuration</button>
           <button type="button" style={control} disabled={busy} onClick={() => void command('stash', { action: 'stash', expectedVersion: config.version, enabled, language: 'en' }, 'Draft kept. Cancel leaves the saved configuration unchanged.')}>Keep draft</button>
-          <button type="button" style={control} disabled={busy} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`${root}?view=config-history`).then(value => { if (alive.current) setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${event.source}`).join('\n')); }).catch(failed)}>Configuration history</button>
+          <button type="button" style={control} disabled={busy} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`${root}?view=config-history`).then(value => { if (alive.current) setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${applicationDisplayName(event.source)}`).join('\n')); }).catch(failed)}>Configuration history</button>
         </div>
       </section>}
       {history && <pre aria-label="Attachment text history">{history}</pre>}

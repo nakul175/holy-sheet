@@ -1,4 +1,5 @@
 'use client';
+import {applicationDisplayName} from '../lib/application-display-name';
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from './editor/rich-editor';
 import { ApiError, requestJson } from './editor/use-document-session';
@@ -149,13 +150,13 @@ export default function CollectionHierarchyDialog({ workspaceId, onClose }: { wo
       {preview && <section aria-label="Hierarchy preview">
         <p>{preview.review} Permissions stay on each record. Descendants are not archived or deleted.</p>
         <ul>{preview.subtree.map(item => <li key={item.id}>{item.name}</li>)}</ul>
-        <ul>{preview.references.map(item => <li key={`${item.sourceApp}:${item.sourceType}:${item.sourceId}`}>{item.recordName} · {item.sourceApp} · {item.sourceType} · {item.sourceId}</li>)}</ul>
+        <ul>{preview.references.map(item => <li key={`${item.sourceApp}:${item.sourceType}:${item.sourceId}`}>{item.recordName} · {applicationDisplayName(item.sourceApp)} · {item.sourceType} · {item.sourceId}</li>)}</ul>
         <div className="actions">
           {confirm === 'apply' ? <button type="button" style={control} disabled={busy} onClick={() => void command(`apply:${preview.previewId}`, { action: 'apply', previewId: preview.previewId, expectedVersion: preview.version }, 'Hierarchy change saved.')}>Confirm change</button> : <button type="button" style={control} disabled={busy} onClick={() => setConfirm('apply')}>Confirm change</button>}
         </div>
       </section>}
       <div className="actions">
-        <button type="button" style={control} disabled={busy || !recordId.trim()} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`${root}?view=history&collection=${encodeURIComponent(collection)}&recordId=${encodeURIComponent(recordId.trim())}`).then(value => { if (alive.current) setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${event.source}`).join('\n')); }).catch(failed)}>Record history</button>
+        <button type="button" style={control} disabled={busy || !recordId.trim()} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`${root}?view=history&collection=${encodeURIComponent(collection)}&recordId=${encodeURIComponent(recordId.trim())}`).then(value => { if (alive.current) setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${applicationDisplayName(event.source)}`).join('\n')); }).catch(failed)}>Record history</button>
         <button type="button" style={control} disabled={busy || !collection} onClick={() => void requestJson<{ body: string }>(root, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'download', operationId: operation('download'), collection }) }).then(value => { if (alive.current) setDownload(value.body); }).catch(failed)}>Download hierarchy</button>
       </div>
       {history && <pre aria-label="Hierarchy history">{history}</pre>}

@@ -504,5 +504,5 @@ export async function downloadComplianceExport(r: Repository, actor: Actor, id: 
     if (!access.export_enabled) throw new DocumentError("This workspace has disabled document exports.", "export_disabled", 403);
     await audit(tx, actor.id, "compliance-export.download", row.operation_id, null, { jobId: id, bytes: bytes.length, scope: row.scope });
   });
-  return { bytes, filename: "holy-sheet-compliance-pack.zip", contentType: "application/zip" };
+  return { bytes, filename: "pages-by-aplyd-compliance-pack.zip", contentType: "application/zip" };
 }

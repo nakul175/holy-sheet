@@ -18,7 +18,7 @@ export default function SchemaFallback({ title, document, schemaVersion }: { tit
   function download() {
     const blob = new Blob([JSON.stringify({ title, schemaVersion, document }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob), link = window.document.createElement('a');
-    link.href = url; link.download = 'holy-sheet-document.json';
+    link.href = url; link.download = 'pages-by-aplyd-document.json';
     try { link.click(); } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
   }
   return <section aria-label="Read-only document preview">

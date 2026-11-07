@@ -29,12 +29,13 @@ export function HolySheetEditor({pageId,viewContext,sessionProvider}:HostedEdito
   if(!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(pageId)||viewContext!=='embedded')return <p role="alert">Document reference is invalid.</p>;
   if(!session)return <p role="status">Checking your document access…</p>;
   if(session.status!=='ready')return <section aria-live="polite"><p>{session.status==='signin'?'Sign in to your task again.':'Document access could not be checked.'}</p><button onClick={()=>setRetry(n=>n+1)}>Check again</button></section>;
-  const documentUrl=`${session.origin}/pages/${pageId}`;
+  const origin='https://staging.pages.aplyd.org';
+  const documentUrl=`${origin}/pages/${pageId}`;
   return <section aria-label="Pages by Aplyd document">
     <a href={documentUrl} target="_blank" rel="noopener noreferrer">Open in Pages by Aplyd</a>
     <button onClick={()=>setGeneration(n=>n+1)}>Reload document</button>
     <iframe key={`${session.subject}:${pageId}:${generation}`} title="Pages by Aplyd document" referrerPolicy="no-referrer"
-      src={`${session.origin}/embed/pages/${pageId}#hs-user=${encodeURIComponent(session.subject)}`}
+      src={`${origin}/embed/pages/${pageId}#hs-user=${encodeURIComponent(session.subject)}`}
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
       style={{width:'100%',height:'70vh',border:'1px solid var(--border)',marginTop:12}}/>
   </section>;

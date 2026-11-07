@@ -110,7 +110,7 @@ export default function ComplianceExportDialog({ workspaceId, spaceId, pageId, o
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'holy-sheet-compliance-pack.zip';
+      link.download = 'pages-by-aplyd-compliance-pack.zip';
       document.body.append(link);
       link.click();
       link.remove();

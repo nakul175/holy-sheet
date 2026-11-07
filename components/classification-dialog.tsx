@@ -1,4 +1,5 @@
 'use client';
+import {applicationDisplayName} from '../lib/application-display-name';
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from './editor/rich-editor';
 import { ApiError, requestJson } from './editor/use-document-session';
@@ -125,7 +126,7 @@ export default function ClassificationDialog({ workspaceId, pageId, onClose }: {
         {confirm === 'page' ? <button type="button" style={control} disabled={busy} onClick={() => void command('assign-page', { action: 'assign', targetKind: 'page', targetId: pageId, expectedVersion: page.version, tagIds: selected }, 'Page tags saved.')}>Confirm page tags</button> : <button type="button" style={control} disabled={busy} onClick={() => setConfirm('page')}>Save page tags</button>}
       </div>}
       <div className="actions">
-        <button type="button" style={control} disabled={busy || !page} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`${root}?view=history&targetKind=page&targetId=${encodeURIComponent(pageId)}`).then(value => { if (alive.current) setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${event.source}`).join('\n')); }).catch(failed)}>Page tag history</button>
+        <button type="button" style={control} disabled={busy || !page} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`${root}?view=history&targetKind=page&targetId=${encodeURIComponent(pageId)}`).then(value => { if (alive.current) setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${applicationDisplayName(event.source)}`).join('\n')); }).catch(failed)}>Page tag history</button>
         <button type="button" style={control} disabled={busy || !page} onClick={() => void requestJson<{ body: string }>(root, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'download', operationId: operation('download-page'), targetKind: 'page', targetId: pageId, expectedVersion: page?.version ?? 0 }) }).then(value => { if (alive.current) setDownload(value.body); }).catch(failed)}>Download classification</button>
       </div>
       <label>Record id

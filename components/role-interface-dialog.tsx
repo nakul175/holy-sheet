@@ -1,4 +1,5 @@
 'use client';
+import {applicationDisplayName} from '../lib/application-display-name';
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from './editor/rich-editor';
 import { ApiError, requestJson } from './editor/use-document-session';
@@ -147,7 +148,7 @@ export default function RoleInterfaceDialog({ workspaceId, onClose }: { workspac
         </div> : null}
         <p>{preview?.review} {preview?.plan ? `Impact on ${preview.plan.componentId}.` : ''}</p>
         <div className="actions">
-          <button type="button" style={control} disabled={busy || !selected} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string; revision: number | null }[] }>(`${root}?view=history&interfaceId=${encodeURIComponent(selected?.id ?? '')}`).then(value => { if (alive.current) setHistory(value.events.map(item => `${item.action} · ${item.actorName} · ${item.atIst} · ${item.source} · revision ${item.revision ?? ''}`).join('\n')); }).catch(failed)}>Interface history</button>
+          <button type="button" style={control} disabled={busy || !selected} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string; revision: number | null }[] }>(`${root}?view=history&interfaceId=${encodeURIComponent(selected?.id ?? '')}`).then(value => { if (alive.current) setHistory(value.events.map(item => `${item.action} · ${item.actorName} · ${item.atIst} · ${applicationDisplayName(item.source)} · revision ${item.revision ?? ''}`).join('\n')); }).catch(failed)}>Interface history</button>
           <button type="button" style={control} disabled={busy || !selected} onClick={() => void command(`download:${selected?.id}`, { action: 'download', interfaceId: selected?.id, expectedVersion: selected?.version }, 'Download ready.')}>Download interface</button>
         </div>
         <label>Search <input aria-label="Interface search" value={query} disabled={busy} onChange={event => setQuery(event.target.value)} /></label>

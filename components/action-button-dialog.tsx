@@ -1,4 +1,5 @@
 'use client';
+import {applicationDisplayName} from '../lib/application-display-name';
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from './editor/rich-editor';
 import { ApiError, requestJson } from './editor/use-document-session';
@@ -260,9 +261,9 @@ export default function ActionButtonDialog({ workspaceId, pageId, onClose }: { w
           <button type="button" style={control} disabled={busy || preview?.action !== 'invoke'} onClick={() => void command(`confirm:${selected?.id}`, { action: 'apply', previewId: preview?.previewId, expectedVersion: selected?.version }, 'Action saved.')}>Confirm action</button>
           <button type="button" style={control} disabled={busy || !receipt?.id || receipt.linkStatus === 'none'} onClick={() => void command(`retry:${receipt?.id}`, { action: 'retry-link', receiptId: receipt?.id }, 'Follow-up link checked again. The saved action was not repeated.')}>Retry follow-up link</button>
         </div>
-        {receipt ? <p role="status">Action {receipt.actionStatus}. Follow-up link {receipt.linkStatus}. Source {receipt.source}. Revision {receipt.revision}. The receipt is recoverable.</p> : null}
+        {receipt ? <p role="status">Action {receipt.actionStatus}. Follow-up link {receipt.linkStatus}. Source {applicationDisplayName(receipt.source)}. Revision {receipt.revision}. The receipt is recoverable.</p> : null}
         <div className="actions">
-          <button type="button" style={control} disabled={busy || !selected} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string; revision: number | null; actionId: string | null }[]; receipts: { revision: number; actionStatus: string; linkStatus: string }[] }>(`${root}?view=history&buttonId=${encodeURIComponent(selected?.id ?? '')}`).then(value => { if (alive.current) setHistory([...value.events.map(item => `${item.action} · ${item.actorName} · ${item.atIst} · ${item.source} · ${item.actionId ?? ''} · revision ${item.revision ?? ''}`), ...value.receipts.map(item => `revision ${item.revision} · action ${item.actionStatus} · link ${item.linkStatus}`)].join('\n')); }).catch(failed)}>Action history</button>
+          <button type="button" style={control} disabled={busy || !selected} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string; revision: number | null; actionId: string | null }[]; receipts: { revision: number; actionStatus: string; linkStatus: string }[] }>(`${root}?view=history&buttonId=${encodeURIComponent(selected?.id ?? '')}`).then(value => { if (alive.current) setHistory([...value.events.map(item => `${item.action} · ${item.actorName} · ${item.atIst} · ${applicationDisplayName(item.source)} · ${item.actionId ?? ''} · revision ${item.revision ?? ''}`), ...value.receipts.map(item => `revision ${item.revision} · action ${item.actionStatus} · link ${item.linkStatus}`)].join('\n')); }).catch(failed)}>Action history</button>
           <button type="button" style={control} disabled={busy || !selected} onClick={() => void command(`download:${selected?.id}`, { action: 'download', buttonId: selected?.id, expectedVersion: selected?.version }, 'Download ready.')}>Download action button</button>
         </div>
         <label>Search <input aria-label="Action search" value={query} disabled={busy} onChange={event => setQuery(event.target.value)} /></label>

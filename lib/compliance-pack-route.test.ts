@@ -31,7 +31,7 @@ beforeEach(() => {
   mocks.read.mockResolvedValue({ id, state: "ready" });
   mocks.policy.mockResolvedValue({ attachments: true, version: 1, manage: true });
   mocks.change.mockResolvedValue({ attachments: false, version: 2, manage: true });
-  mocks.download.mockResolvedValue({ bytes: Buffer.from("PK\u0003\u0004pack"), filename: "holy-sheet-compliance-pack.zip", contentType: "application/zip" });
+  mocks.download.mockResolvedValue({ bytes: Buffer.from("PK\u0003\u0004pack"), filename: "pages-by-aplyd-compliance-pack.zip", contentType: "application/zip" });
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -60,7 +60,7 @@ it("returns a private zip and the same not-found shape for a denied download", a
   expect(response.headers.get("content-type")).toBe("application/zip");
   expect(response.headers.get("cache-control")).toBe("private, no-store");
   expect(response.headers.get("x-content-type-options")).toBe("nosniff");
-  expect(response.headers.get("content-disposition")).toContain("holy-sheet-compliance-pack.zip");
+  expect(response.headers.get("content-disposition")).toContain("pages-by-aplyd-compliance-pack.zip");
   const { DocumentError } = await import("./document");
   mocks.download.mockRejectedValueOnce(new DocumentError("Export unavailable", "not_found", 404));
   const denied = await download(request("/api/test", { token: "b".repeat(32) }), { params: Promise.resolve({ id }) });

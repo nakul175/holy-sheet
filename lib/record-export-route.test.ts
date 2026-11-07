@@ -102,12 +102,12 @@ it("returns the pinned file without adopting a supplied filename or content type
   const response = await download(jobPost({ reviewHash, acknowledgeEscaping: false }), detail());
   expect(response.status).toBe(200);
   expect(response.headers.get("content-type")).toBe("text/csv; charset=utf-8");
-  expect(response.headers.get("content-disposition")).toBe('attachment; filename="holy-sheet-records.csv"');
+  expect(response.headers.get("content-disposition")).toBe('attachment; filename="pages-by-aplyd-records.csv"');
   expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   expect(response.headers.get("cache-control")).toBe("no-store");
   expect(Buffer.from(await response.arrayBuffer()).equals(csv)).toBe(true);
   expect(mocks.downloadRecordExport).toHaveBeenCalledWith(expect.anything(), jobId, { reviewHash, acknowledgeEscaping: false });
-  mocks.downloadRecordExport.mockResolvedValue({ filename: "holy-sheet-records.xlsx", contentType: "text/html", bytes: csv, rows: 1 });
+  mocks.downloadRecordExport.mockResolvedValue({ filename: "pages-by-aplyd-records.xlsx", contentType: "text/html", bytes: csv, rows: 1 });
   const replaced = await download(jobPost({ reviewHash, acknowledgeEscaping: true }), detail());
   expect(replaced.status).toBe(404);
   expect(await replaced.json()).toMatchObject({ code: "record_export_unavailable" });
