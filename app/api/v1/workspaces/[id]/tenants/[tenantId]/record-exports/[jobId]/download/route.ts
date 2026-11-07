@@ -22,7 +22,7 @@ export async function POST(request:Request,{params}:Context){
   const file=await repo.downloadRecordExport({actor,workspaceId,tenantId},jobId,parsed.data);
   const bytes=file.bytes instanceof Uint8Array?file.bytes:null;
   const type=file.contentType===csv?csv:file.contentType===xlsx?xlsx:'';
-  const filename=type===csv?'holy-sheet-records.csv':type===xlsx?'holy-sheet-records.xlsx':'';
+  const filename=type===csv?'pages-by-aplyd-records.csv':type===xlsx?'pages-by-aplyd-records.xlsx':'';
   if(!bytes||!filename)throw new DocumentError('The export file is unavailable.','record_export_unavailable',404);
   return new Response(Buffer.from(bytes),{headers:{...headers,'Content-Type':type,'Content-Disposition':`attachment; filename="${filename}"`}});
  }catch(error){return failure(error);}

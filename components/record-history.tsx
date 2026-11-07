@@ -1,4 +1,5 @@
 "use client";
+import {applicationDisplayName} from "../lib/application-display-name";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   acceptedHistoryPage,
@@ -251,7 +252,7 @@ export default function RecordHistory({
           <h4>{event.kind} · version {event.version}</h4>
           <p><time dateTime={event.at}>{event.at} UTC</time></p>
           {event.kind.startsWith("attachment-") && <p><time dateTime={event.at}>{formatIst(event.at)}</time></p>}
-          <p>Actor {event.actorId} · {event.sourceApp} · operation {event.operationId}</p>
+          <p>Actor {event.actorId} · {applicationDisplayName(event.sourceApp)} · operation {event.operationId}</p>
           {event.serviceSubject && <p>Service subject {event.serviceSubject}</p>}
           {event.batchId && <p>Import batch {event.batchId}{event.sourceRow !== null ? ` · source row ${event.sourceRow}` : ""}</p>}
           <Snapshot title="Before" snapshot={event.before} fields={fields} />

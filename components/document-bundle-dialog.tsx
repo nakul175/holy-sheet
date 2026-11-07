@@ -1,4 +1,5 @@
 'use client';
+import {applicationDisplayName} from '../lib/application-display-name';
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from './editor/rich-editor';
 import { ApiError, requestJson } from './editor/use-document-session';
@@ -222,7 +223,7 @@ export default function DocumentBundleDialog({ workspaceId, pageId, onClose }: {
         <div className="actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <button type="button" style={control} disabled={busy} onClick={() => void requestJson<Preview>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/document-bundles/${encodeURIComponent(bundle.id)}?view=preview${bundle.publicationId ? `&publicationId=${encodeURIComponent(bundle.publicationId)}` : ''}`).then(value => { if (alive.current) { setPreview(value); setNotice(value.immutable ? 'Previewing the immutable published package.' : 'Previewing the current draft.'); } }).catch(failed)}>Preview package</button>
           <button type="button" style={control} disabled={busy} onClick={() => void command('download', { action: 'download', expectedVersion: bundle.publicationNo ?? bundle.version, publicationId: bundle.publicationId }, 'Package download checked export rights, assets, and retention.')}>Download package</button>
-          <button type="button" style={control} disabled={busy} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/document-bundles/${encodeURIComponent(bundle.id)}?view=history`).then(value => { if (!alive.current) return; setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${event.source}`).join('\n')); }).catch(failed)}>Bundle history</button>
+          <button type="button" style={control} disabled={busy} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/document-bundles/${encodeURIComponent(bundle.id)}?view=history`).then(value => { if (!alive.current) return; setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${applicationDisplayName(event.source)}`).join('\n')); }).catch(failed)}>Bundle history</button>
         </div>
         {editable && <fieldset>
           <legend>Share this bundle</legend>

@@ -1,4 +1,5 @@
 'use client';
+import {applicationDisplayName} from '../lib/application-display-name';
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from './editor/rich-editor';
 import { ApiError, requestJson } from './editor/use-document-session';
@@ -227,7 +228,7 @@ export default function WorkflowAutomationDialog({ workspaceId, onClose }: { wor
       <label>Record id <input aria-label="Workflow record id" value={recordId} disabled={busy} onChange={event => setRecordId(event.target.value)} /></label>
       <div className="actions">
         <button type="button" style={control} disabled={busy || !selected || !recordId.trim()} onClick={() => void command(`dry:${selected?.id}`, { action: 'preview', workflowId: selected?.id, kind: 'dry-run', expectedVersion: selected?.version, recordId: recordId.trim(), useDraft: !!selected?.recoverableDraft }, 'Dry-run finished. No record was changed.')}>Dry-run</button>
-        <button type="button" style={control} disabled={busy || !selected} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string; outcome: string | null }[]; runs: { revision: number; outcome: string; status: string }[] }>(`${root}?view=history&workflowId=${encodeURIComponent(selected?.id ?? '')}`).then(value => { if (alive.current) setHistory([...value.events.map(item => `${item.action} · ${item.actorName} · ${item.atIst} · ${item.source}`), ...value.runs.map(item => `revision ${item.revision} · ${item.outcome} · ${item.status}`)].join('\n')); }).catch(failed)}>Workflow history</button>
+        <button type="button" style={control} disabled={busy || !selected} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string; outcome: string | null }[]; runs: { revision: number; outcome: string; status: string }[] }>(`${root}?view=history&workflowId=${encodeURIComponent(selected?.id ?? '')}`).then(value => { if (alive.current) setHistory([...value.events.map(item => `${item.action} · ${item.actorName} · ${item.atIst} · ${applicationDisplayName(item.source)}`), ...value.runs.map(item => `revision ${item.revision} · ${item.outcome} · ${item.status}`)].join('\n')); }).catch(failed)}>Workflow history</button>
         <button type="button" style={control} disabled={busy || !selected} onClick={() => void command(`download:${selected?.id}`, { action: 'download', workflowId: selected?.id, expectedVersion: selected?.version }, 'Download ready.')}>Download workflow</button>
       </div>
       <label>Search <input aria-label="Workflow search" value={query} disabled={busy} onChange={event => setQuery(event.target.value)} /></label>

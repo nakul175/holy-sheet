@@ -1,4 +1,5 @@
 'use client';
+import {applicationDisplayName} from '../lib/application-display-name';
 import { useEffect, useRef, useState } from 'react';
 import { unrelatedMetadataStatement } from '../lib/dependency-impact-plan';
 import { Dialog } from './editor/rich-editor';
@@ -185,7 +186,7 @@ export default function DependencyImpactDialog({ workspaceId, pageId, onClose }:
           <button type="button" style={control} disabled={busy} onClick={() => void requestJson<Impact>(`${base}?view=impact&kind=${encodeURIComponent(edge.kind)}&sourceId=${encodeURIComponent(edge.sourceId)}`).then(value => { if (alive.current) setImpact(value); }).catch(failed)}>Show impact</button>
           <button type="button" style={control} disabled={busy} onClick={() => void requestJson<Impact>(`${base}?view=preview&kind=${encodeURIComponent(edge.kind)}&sourceId=${encodeURIComponent(edge.sourceId)}`).then(value => { if (alive.current) setImpact(value); }).catch(failed)}>Preview impact</button>
           <button type="button" style={control} disabled={busy} onClick={() => void command('download', base, { action: 'download', expectedVersion: edge.sourceVersion, kind: edge.kind, sourceId: edge.sourceId }, 'Impact report downloaded.')}>Download impact</button>
-          <button type="button" style={control} disabled={busy} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`${base}/${encodeURIComponent(edge.id)}?view=history`).then(value => { if (alive.current) setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${event.source}`).join('\n')); }).catch(failed)}>Dependency history</button>
+          <button type="button" style={control} disabled={busy} onClick={() => void requestJson<{ events: { action: string; actorName: string; atIst: string; source: string }[] }>(`${base}/${encodeURIComponent(edge.id)}?view=history`).then(value => { if (alive.current) setHistory(value.events.map(event => `${event.action} · ${event.actorName} · ${event.atIst} · ${applicationDisplayName(event.source)}`).join('\n')); }).catch(failed)}>Dependency history</button>
           {editable && confirm !== 'retire' && <button type="button" style={control} disabled={busy} onClick={() => setConfirm('retire')}>Retire source</button>}
           {editable && confirm === 'retire' && <button type="button" style={control} disabled={busy} onClick={() => void command('retire', base, { action: 'retire', kind: edge.kind, sourceId: edge.sourceId, expectedVersion: edge.sourceVersion }, 'Source retired. Dependent pages were not rewritten.')}>Confirm retire</button>}
           {editable && <label>Merge target

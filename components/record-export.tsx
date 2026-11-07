@@ -221,7 +221,7 @@ export default function RecordExport({
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `holy-sheet-records.${current.format}`;
+      anchor.download = `pages-by-aplyd-records.${current.format}`;
       document.body.append(anchor);
       anchor.click();
       anchor.remove();

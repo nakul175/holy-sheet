@@ -1,4 +1,5 @@
 "use client";
+import {applicationDisplayName} from "../lib/application-display-name";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
@@ -380,7 +381,7 @@ function ResultTable({ rows }: { rows: PreviewRow[] }) {
               <th scope="row">{row.sourceName || "Restricted or unavailable"}</th>
               <td>{row.outcome}</td>
               <td>{row.message}</td>
-              <td>{row.contextReferences.length ? row.contextReferences.map((ref) => `${ref.sourceApp} ${ref.sourceType}`).join(", ") : "None"}{row.affectedContracts.length ? `. Contracts: ${row.affectedContracts.map((contract) => contract.name).join(", ")}` : ""}{row.hiddenAffectedContracts ? " Other affected contracts are hidden." : ""}</td>
+              <td>{row.contextReferences.length ? row.contextReferences.map((ref) => `${applicationDisplayName(ref.sourceApp)} ${ref.sourceType}`).join(", ") : "None"}{row.affectedContracts.length ? `. Contracts: ${row.affectedContracts.map((contract) => contract.name).join(", ")}` : ""}{row.hiddenAffectedContracts ? " Other affected contracts are hidden." : ""}</td>
               <td>{row.deletionConstraints.length ? row.deletionConstraints.map((item) => item.message).join(" ") : "None"}</td>
             </tr>
           ))}

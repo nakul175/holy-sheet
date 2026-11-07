@@ -1,4 +1,5 @@
 "use client";
+import {applicationDisplayName} from "../lib/application-display-name";
 import { FormEvent, useRef, useState } from "react";
 import { parseExternalIdentifier } from "../lib/external-identifier-mapping";
 
@@ -210,7 +211,7 @@ export default function ExternalIdentifierMappings({ workspaceId, tenantId, coll
           {canExport && <a className="external-identifier-link" href={`${root}/download?recordId=${encodeURIComponent(recordId)}`}>Download identifier mappings</a>}
           {history && (
             <ul aria-label="Identifier history">
-              {history.map((version) => <li key={version.version}>Version {version.version} · {version.state} · {version.atIst} · {version.source} · {version.actorId}{version.redirectReason ? ` · ${version.redirectReason}` : ""}</li>)}
+              {history.map((version) => <li key={version.version}>Version {version.version} · {version.state} · {version.atIst} · {applicationDisplayName(version.source)} · {version.actorId}{version.redirectReason ? ` · ${version.redirectReason}` : ""}</li>)}
             </ul>
           )}
           <form aria-label="Connect external identifier" onSubmit={review}>

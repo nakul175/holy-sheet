@@ -1,4 +1,5 @@
 "use client";
+import {applicationDisplayName} from "../lib/application-display-name";
 import { FormEvent, useRef, useState } from "react";
 import { identifierPayloadHasCredential } from "../lib/external-identifier-mapping";
 import { mismatchLabel, parseConsumerIdentity, repairChoices, type MismatchClass } from "../lib/integration-health";
@@ -181,7 +182,7 @@ export default function IntegrationHealth({ workspaceId, tenantId, collection }:
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(typeof body?.error === "string" ? body.error : "History is unavailable.");
       const version = Array.isArray(body?.versions) ? body.versions[0] : null;
-      setHistory(version ? `Version ${version.version} · ${version.atIst} · ${version.source}` : "No saved versions.");
+      setHistory(version ? `Version ${version.version} · ${version.atIst} · ${applicationDisplayName(version.source)}` : "No saved versions.");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "History is unavailable."); } finally { setBusy(false); }
   }
 

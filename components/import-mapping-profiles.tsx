@@ -1,4 +1,5 @@
 "use client";
+import {applicationDisplayName} from "../lib/application-display-name";
 import { FormEvent, useRef, useState } from "react";
 import { acceptedProfilePreview, type ImportProfilePreview, type ImportProfileScope, type PositionalImportMapping } from "../lib/import-mapping-profile";
 
@@ -242,7 +243,7 @@ export default function ImportMappingProfiles({
               <summary>Profile history</summary>
               {history && (
                 <ul>
-                  {history.map((version) => <li key={version.version}>Version {version.version} · {version.mode} · {version.source} · {version.atIst} · {version.operationId}{version.restricted ? " · mapping hidden" : ""}</li>)}
+                  {history.map((version) => <li key={version.version}>Version {version.version} · {version.mode} · {applicationDisplayName(version.source)} · {version.atIst} · {version.operationId}{version.restricted ? " · mapping hidden" : ""}</li>)}
                 </ul>
               )}
             </details>
